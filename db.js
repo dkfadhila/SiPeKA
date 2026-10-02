@@ -5,7 +5,7 @@ const { createHash, randomBytes, scryptSync, timingSafeEqual } = require("node:c
 const path = require("node:path");
 const fs = require("node:fs");
 
-const DB_PATH = path.join(__dirname, "sipeka.db");
+const DB_PATH = process.env.VERCEL ? path.join("/tmp", "sipeka.db") : path.join(__dirname, "sipeka.db");
 const db = new DatabaseSync(DB_PATH);
 db.exec("PRAGMA journal_mode = WAL;");
 db.exec("PRAGMA foreign_keys = ON;");

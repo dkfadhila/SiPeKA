@@ -7,3 +7,6 @@ sipeka.db-shm
 public/uploads/receipts/
 _scripts_archive/
 .vercel
+
+.vercel
+.env*
