@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.local
+sipeka.db
+sipeka.db-wal
+sipeka.db-shm
+public/uploads/receipts/
+_scripts_archive/
+.vercel
