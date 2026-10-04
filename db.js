@@ -1,14 +1,21 @@
 // SiPeKA — Database layer (SQLite via node:sqlite, zero deps)
 // Skema mengikuti SRS_SIPEKA_SPEC §3 / PRD_SIPEKA_V2 §6 + Client Operational Extension
+// HARDENING v2: session expiry, token revoke on pw change/reset, idempotency scoped,
+//   approval atomic, balance approved-only, closing lock, triggers extended,
+//   safe integer, migration error visibility, env-controlled seed.
 const { DatabaseSync } = require("node:sqlite");
-const { createHash, randomBytes, scryptSync, timingSafeEqual } = require("node:crypto");
+const { randomBytes, scryptSync, timingSafeEqual } = require("node:crypto");
 const path = require("node:path");
-const fs = require("node:fs");
 
-const DB_PATH = process.env.VERCEL ? path.join("/tmp", "sipeka.db") : path.join(__dirname, "sipeka.db");
+const DB_PATH = process.env.DB_PATH ||
+  (process.env.VERCEL ? path.join("/tmp", "sipeka.db") : path.join(__dirname, "sipeka.db"));
 const db = new DatabaseSync(DB_PATH);
 db.exec("PRAGMA journal_mode = WAL;");
 db.exec("PRAGMA foreign_keys = ON;");
+
+// Session TTL: 12 jam (configurable via SESSION_TTL_HOURS)
+const SESSION_TTL_HOURS = Number(process.env.SESSION_TTL_HOURS || 12);
+if (!Number.isFinite(SESSION_TTL_HOURS) || SESSION_TTL_HOURS <= 0 || SESSION_TTL_HOURS > 168) throw new Error("SESSION_TTL_HOURS harus 0-168 jam");
 
 // ============ SCHEMA ============
 db.exec(`
@@ -87,46 +94,108 @@ CREATE TABLE IF NOT EXISTS cash_closings (
 );
 `);
 
-// Migrasi kolom tambahan bila belum ada di DB fisik
-try { db.exec("ALTER TABLE ledger_transactions ADD COLUMN tx_intent TEXT DEFAULT 'SETOR_NOTA';"); } catch(e) {}
-try { db.exec("ALTER TABLE cash_closings ADD COLUMN total_nota INTEGER DEFAULT 0;"); } catch(e) {}
-try { db.exec("ALTER TABLE cash_closings ADD COLUMN kg_reguler REAL DEFAULT 0;"); } catch(e) {}
-try { db.exec("ALTER TABLE cash_closings ADD COLUMN kg_express REAL DEFAULT 0;"); } catch(e) {}
-try { db.exec("ALTER TABLE cash_closings ADD COLUMN kg_kilat REAL DEFAULT 0;"); } catch(e) {}
-try { db.exec("ALTER TABLE cash_closings ADD COLUMN income_cash INTEGER DEFAULT 0;"); } catch(e) {}
-try { db.exec("ALTER TABLE cash_closings ADD COLUMN income_qris INTEGER DEFAULT 0;"); } catch(e) {}
-try { db.exec("ALTER TABLE cash_closings ADD COLUMN income_transfer INTEGER DEFAULT 0;"); } catch(e) {}
-try { db.exec("ALTER TABLE cash_closings ADD COLUMN stock_detergent REAL DEFAULT 0;"); } catch(e) {}
-try { db.exec("ALTER TABLE cash_closings ADD COLUMN stock_perfume REAL DEFAULT 0;"); } catch(e) {}
-try { db.exec("ALTER TABLE cash_closings ADD COLUMN operational_notes TEXT;"); } catch(e) {}
+// Migrasi kolom tambahan bila belum ada di DB fisik — error dilogkan bukan ditelan diam
+function tryMigrate(sql, label) {
+  try {
+    db.exec(sql);
+  } catch (e) {
+    // "duplicate column" adalah expected pada DB yang sudah ada; sisanya log sebagai WARNING
+    if (!e.message.includes("duplicate column")) {
+      throw new Error(`Migrasi gagal [${label}]: ${e.message}`);
+    }
+  }
+}
 
+tryMigrate("ALTER TABLE ledger_transactions ADD COLUMN tx_intent TEXT DEFAULT 'SETOR_NOTA';", "tx_intent");
+tryMigrate("ALTER TABLE cash_closings ADD COLUMN total_nota INTEGER DEFAULT 0;", "total_nota");
+tryMigrate("ALTER TABLE cash_closings ADD COLUMN kg_reguler REAL DEFAULT 0;", "kg_reguler");
+tryMigrate("ALTER TABLE cash_closings ADD COLUMN kg_express REAL DEFAULT 0;", "kg_express");
+tryMigrate("ALTER TABLE cash_closings ADD COLUMN kg_kilat REAL DEFAULT 0;", "kg_kilat");
+tryMigrate("ALTER TABLE cash_closings ADD COLUMN income_cash INTEGER DEFAULT 0;", "income_cash");
+tryMigrate("ALTER TABLE cash_closings ADD COLUMN income_qris INTEGER DEFAULT 0;", "income_qris");
+tryMigrate("ALTER TABLE cash_closings ADD COLUMN income_transfer INTEGER DEFAULT 0;", "income_transfer");
+tryMigrate("ALTER TABLE cash_closings ADD COLUMN stock_detergent REAL DEFAULT 0;", "stock_detergent");
+tryMigrate("ALTER TABLE cash_closings ADD COLUMN stock_perfume REAL DEFAULT 0;", "stock_perfume");
+tryMigrate("ALTER TABLE cash_closings ADD COLUMN operational_notes TEXT;", "operational_notes");
+// Tambah kolom session expiry
+db.exec("CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES app_users(id),created_at TEXT DEFAULT (datetime('now')));");
+tryMigrate("ALTER TABLE sessions ADD COLUMN expired_at TEXT;", "sessions.expired_at");
+db.prepare("DELETE FROM sessions WHERE expired_at IS NULL").run();
+// Tambah kolom idempotency scope + fingerprint ke ledger_transactions
+tryMigrate("ALTER TABLE ledger_transactions ADD COLUMN idempotency_user_id TEXT;", "tx.idempotency_user_id");
+tryMigrate("ALTER TABLE ledger_transactions ADD COLUMN idempotency_branch_id TEXT;", "tx.idempotency_branch_id");
+tryMigrate("ALTER TABLE ledger_transactions ADD COLUMN idempotency_fingerprint TEXT;", "tx.idempotency_fingerprint");
+
+// Schema sessions (jika belum ada — termasuk expired_at dari awal)
+db.exec(`
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES app_users(id),
+  expired_at TEXT NOT NULL DEFAULT (datetime('now', '+12 hours')),
+  created_at TEXT DEFAULT (datetime('now'))
+);
+`);
+
+tryMigrate("ALTER TABLE cash_closings ADD COLUMN idempotency_key TEXT;", "closing.idempotency_key");
+tryMigrate("ALTER TABLE cash_closings ADD COLUMN fingerprint TEXT;", "closing.fingerprint");
+db.exec(`CREATE TABLE IF NOT EXISTS receipt_assets (
+ filename TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES app_users(id),
+ branch_id TEXT REFERENCES business_units(id),mime TEXT NOT NULL,created_at TEXT DEFAULT (datetime('now'))
+);`);
+
+// ============ TRIGGERS ============
 db.exec(`
 DROP TRIGGER IF EXISTS ledger_no_update;
 CREATE TRIGGER IF NOT EXISTS ledger_no_update
 BEFORE UPDATE ON ledger_transactions
 WHEN (
-  OLD.id != NEW.id OR
-  OLD.idempotency_key != NEW.idempotency_key OR
-  OLD.branch_id != NEW.branch_id OR
-  OLD.user_id != NEW.user_id OR
-  OLD.coa_id != NEW.coa_id OR
-  OLD.tx_type != NEW.tx_type OR
-  OLD.amount != NEW.amount OR
-  OLD.payment_method != NEW.payment_method OR
-  (OLD.memo IS NOT NULL AND NEW.memo IS NOT NULL AND OLD.memo != NEW.memo) OR
-  OLD.created_at != NEW.created_at
+  OLD.id IS NOT NEW.id OR
+  OLD.idempotency_key IS NOT NEW.idempotency_key OR
+  OLD.branch_id IS NOT NEW.branch_id OR
+  OLD.user_id IS NOT NEW.user_id OR
+  OLD.coa_id IS NOT NEW.coa_id OR
+  OLD.tx_type IS NOT NEW.tx_type OR
+  OLD.amount IS NOT NEW.amount OR
+  OLD.payment_method IS NOT NEW.payment_method OR
+  OLD.memo IS NOT NEW.memo OR
+  OLD.receipt_key IS NOT NEW.receipt_key OR
+  OLD.tx_intent IS NOT NEW.tx_intent OR
+  OLD.created_at IS NOT NEW.created_at OR
+  OLD.idempotency_user_id IS NOT NEW.idempotency_user_id OR
+  OLD.idempotency_branch_id IS NOT NEW.idempotency_branch_id OR
+  OLD.idempotency_fingerprint IS NOT NEW.idempotency_fingerprint
 )
 BEGIN SELECT RAISE(ABORT, 'APPEND_ONLY: data finansial transaksi terkunci, hanya status approval yang boleh diubah'); END;
 
+DROP TRIGGER IF EXISTS ledger_no_delete;
 CREATE TRIGGER IF NOT EXISTS ledger_no_delete
 BEFORE DELETE ON ledger_transactions
-BEGIN SELECT RAISE(ABORT, 'APPEND_ONLY: transaksi tidak boleh dihapus'); END;
+BEGIN SELECT RAISE(ABORT, 'APPEND_ONLY_TRANSAKSI_TERKUNCI'); END;
 
-CREATE TABLE IF NOT EXISTS sessions (
-  token TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES app_users(id),
-  created_at TEXT DEFAULT (datetime('now'))
-);
+DROP TRIGGER IF EXISTS closing_no_update;
+CREATE TRIGGER IF NOT EXISTS closing_no_update
+BEFORE UPDATE ON cash_closings
+WHEN (
+  OLD.id IS NOT NEW.id OR
+  OLD.system_balance IS NOT NEW.system_balance OR
+  OLD.physical_cash IS NOT NEW.physical_cash OR
+  OLD.difference IS NOT NEW.difference OR
+  OLD.branch_id IS NOT NEW.branch_id OR
+  OLD.user_id IS NOT NEW.user_id OR
+  OLD.closing_date IS NOT NEW.closing_date OR
+  OLD.reason IS NOT NEW.reason OR OLD.total_nota IS NOT NEW.total_nota OR
+  OLD.kg_reguler IS NOT NEW.kg_reguler OR OLD.kg_express IS NOT NEW.kg_express OR OLD.kg_kilat IS NOT NEW.kg_kilat OR
+  OLD.income_cash IS NOT NEW.income_cash OR OLD.income_qris IS NOT NEW.income_qris OR OLD.income_transfer IS NOT NEW.income_transfer OR
+  OLD.stock_detergent IS NOT NEW.stock_detergent OR OLD.stock_perfume IS NOT NEW.stock_perfume OR
+  OLD.operational_notes IS NOT NEW.operational_notes OR OLD.status IS NOT NEW.status OR OLD.created_at IS NOT NEW.created_at OR
+  OLD.idempotency_key IS NOT NEW.idempotency_key OR OLD.fingerprint IS NOT NEW.fingerprint
+)
+BEGIN SELECT RAISE(ABORT, 'APPEND_ONLY_CLOSING: data closing terkunci'); END;
+
+DROP TRIGGER IF EXISTS closing_no_delete;
+CREATE TRIGGER IF NOT EXISTS closing_no_delete
+BEFORE DELETE ON cash_closings
+BEGIN SELECT RAISE(ABORT, 'APPEND_ONLY_CLOSING_TERKUNCI'); END;
 `);
 
 // ============ PASSWORD ============
@@ -135,27 +204,45 @@ function hashPassword(pw, salt) {
   return salt + ":" + scryptSync(pw, salt, 64).toString("hex");
 }
 function verifyPassword(pw, stored) {
-  const [salt, hash] = stored.split(":");
-  const calc = scryptSync(pw, salt, 64);
-  return timingSafeEqual(calc, Buffer.from(hash, "hex"));
+  try {
+    const [salt, hash] = stored.split(":");
+    if (!salt || !hash) return false;
+    const calc = scryptSync(pw, salt, 64);
+    return timingSafeEqual(calc, Buffer.from(hash, "hex"));
+  } catch { return false; }
 }
 
-// ============ SEED (idempoten) ============
+// ============ SEED (env-controlled, hanya fresh DB tanpa user) ============
 const uid = () => randomBytes(12).toString("hex");
-const DEMO_PASSWORD = "SiPeKA@2026"; // password sama utk semua akun demo
 
+// DEMO_PASSWORD dihapus — tidak ada konstanta hardcoded.
+// Seed hanya berjalan jika SIPEKA_SEED=1 DAN DB belum punya user.
+// Password owner wajib dari env SIPEKA_OWNER_PASSWORD.
 function seed() {
+  const existingUserCount = db.prepare("SELECT COUNT(*) AS n FROM app_users").get().n;
+  if (existingUserCount > 0) {
+    // DB sudah ada user — skip seed tanpa log credential
+    return;
+  }
+  if (process.env.SIPEKA_SEED !== "1") return;
+
+  const ownerPassword = process.env.SIPEKA_OWNER_PASSWORD;
+  if (!ownerPassword || ownerPassword.length < 8) {
+    console.error("[db] SIPEKA_SEED=1 tapi SIPEKA_OWNER_PASSWORD tidak di-set atau < 8 karakter. Seed dibatalkan.");
+    return;
+  }
+
   const units = [
-    ["UNIT_LP", "Laundry Pusat", "LAUNDRY"],
-    ["UNIT_LC", "Laundry Cabang", "LAUNDRY"],
-    ["UNIT_KOS", "Kos RedDoorz", "KOS"],
-    ["UNIT_CFE", "Cafe Dummy", "FNB"],
-    ["UNIT_VIL", "Villa", "VILLA"],
-    ["UNIT_CWS", "Car Wash Dummy", "JASA"],
+    ["UNIT_LP", "LP", "Laundry Pusat", "LAUNDRY"],
+    ["UNIT_LC", "LC", "Laundry Cabang", "LAUNDRY"],
+    ["UNIT_KOS", "KOS", "Kos RedDoorz", "KOS"],
+    ["UNIT_CFE", "CFE", "Cafe Dummy", "FNB"],
+    ["UNIT_VIL", "VIL", "Villa", "VILLA"],
+    ["UNIT_CWS", "CWS", "Car Wash Dummy", "JASA"],
   ];
   const insUnit = db.prepare("INSERT OR IGNORE INTO business_units (id, code, name, category) VALUES (?,?,?,?)");
-  for (const [code, name, cat] of units) {
-    insUnit.run(code, code, name, cat);
+  for (const [id, code, name, cat] of units) {
+    insUnit.run(id, code, name, cat);
   }
 
   const coa = [
@@ -174,19 +261,86 @@ function seed() {
   const insUser = db.prepare(
     "INSERT OR IGNORE INTO app_users (id, username, password_hash, full_name, role, assigned_branch_id) VALUES (?,?,?,?,?,?)"
   );
-  const pw = hashPassword(DEMO_PASSWORD);
-  // Owner
-  insUser.run("U_OWNER", "owner", pw, "Decka Prasetya", "OWNER", null);
-  // 3 Staff — masing-masing terikat 1 cabang (isolasi)
-  insUser.run("U_STAFF1", "dimas", pw, "Dimas Arya", "STAFF", "UNIT_LC");
-  insUser.run("U_STAFF2", "sari", pw, "Sari Wulandari", "STAFF", "UNIT_KOS");
-  insUser.run("U_STAFF3", "bagas", pw, "Bagas Nugroho", "STAFF", "UNIT_CFE");
+  const ownerUsername = process.env.SIPEKA_OWNER_USERNAME || "mafucan";
+  const ownerPw = hashPassword(ownerPassword);
+  insUser.run("U_OWNER_RADIT", ownerUsername, ownerPw, "Radit Martanegara", "OWNER", null);
 
   const txCount = db.prepare("SELECT COUNT(*) AS n FROM ledger_transactions").get().n;
-  console.log(`[db] seed OK — units=${units.length}, users=4 (1 owner + 3 staff), transactions=${txCount}`);
+  // Log tanpa credential
+  console.log(`[db] seed OK — units=${units.length}, users=1 (Owner: Radit Martanegara), transactions=${txCount}`);
 }
 
 seed();
+
+// ============ HELPER: approval atomik ============
+// DatabaseSync (node:sqlite) tidak punya .transaction() — gunakan BEGIN/COMMIT/ROLLBACK manual
+function atomicApprove(txId, action, reviewerId, notes) {
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    const tx = db.prepare("SELECT status FROM ledger_transactions WHERE id = ?").get(txId);
+    if (!tx) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: "Transaksi tidak ditemukan", statusCode: 404 };
+    }
+    if (tx.status !== "PENDING_APPROVAL") {
+      db.exec("ROLLBACK");
+      return {
+        ok: false,
+        error: `Transaksi sudah dalam status ${tx.status}; hanya PENDING_APPROVAL yang dapat diubah`,
+        statusCode: 409,
+        currentStatus: tx.status,
+      };
+    }
+    db.prepare("UPDATE ledger_transactions SET status = ? WHERE id = ? AND status = 'PENDING_APPROVAL'").run(action, txId);
+    db.prepare(
+      "INSERT INTO approval_logs (id, transaction_id, action, reviewer_id, notes) VALUES (?,?,?,?,?)"
+    ).run(uid(), txId, action, reviewerId, notes || "");
+    db.exec("COMMIT");
+    return { ok: true, status: action };
+  } catch (e) {
+    try { db.exec("ROLLBACK"); } catch {}
+    console.error("[db] approval gagal", e.message);
+    return { ok: false, error: "Gagal memproses approval", statusCode: 500 };
+  }
+}
+
+// ============ HELPER: session dengan expiry ============
+function createSession(token, userId) {
+  const expiredAt = new Date(Date.now() + SESSION_TTL_HOURS * 3600_000).toISOString().replace("T", " ").slice(0, 19);
+  db.prepare("INSERT INTO sessions (token, user_id, expired_at) VALUES (?,?,?)").run(token, userId, expiredAt);
+}
+
+function getValidSession(token) {
+  const row = db.prepare(
+    "SELECT s.token, s.user_id, s.expired_at, u.* FROM sessions s JOIN app_users u ON u.id = s.user_id WHERE s.token = ?"
+  ).get(token);
+  if (!row) return null;
+  const expires = row.expired_at && Date.parse(row.expired_at.replace(" ","T") + "Z");
+  if (!Number.isFinite(expires) || expires <= Date.now()) {
+    db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
+    return null;
+  }
+  return row;
+}
+
+function revokeUserSessions(userId) {
+  db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
+}
+
+// ============ HELPER: idempotency scoped ============
+function checkIdempotency(idemKey, userId, branchId, fingerprint) {
+  const existing = db.prepare(
+    "SELECT * FROM ledger_transactions WHERE idempotency_key = ?"
+  ).get(idemKey);
+  if (!existing) return { exists: false };
+  if (existing.idempotency_user_id !== userId || existing.idempotency_branch_id !== branchId) {
+    return { exists: true, conflict: true, reason: "Idempotency key digunakan oleh pengguna/cabang lain" };
+  }
+  if (existing.idempotency_fingerprint && existing.idempotency_fingerprint !== fingerprint) {
+    return { exists: true, conflict: true, reason: "Idempotency key dengan payload berbeda" };
+  }
+  return { exists: true, conflict: false, id: existing.id };
+}
 
 // ============ QUERIES ============
 const q = {
@@ -194,8 +348,10 @@ const q = {
   userById: db.prepare("SELECT * FROM app_users WHERE id = ?"),
   updateUserPassword: db.prepare("UPDATE app_users SET password_hash = ? WHERE id = ?"),
   unitById: db.prepare("SELECT * FROM business_units WHERE id = ?"),
+  unitByIdActive: db.prepare("SELECT * FROM business_units WHERE id = ? AND is_active = 1"),
   allUnits: db.prepare("SELECT * FROM business_units WHERE is_active = 1 ORDER BY name"),
   allCoa: db.prepare("SELECT * FROM chart_of_accounts ORDER BY account_code"),
+  coaById: db.prepare("SELECT * FROM chart_of_accounts WHERE id = ?"),
 
   // OWNER: seluruh transaksi semua cabang + semua staf
   txAll: db.prepare(`
@@ -207,7 +363,7 @@ const q = {
     ORDER BY t.created_at DESC
   `),
 
-  // STAFF: HANYA transaksi miliknya sendiri, HANYA hari ini (reset tiap hari)
+  // STAFF: HANYA transaksi miliknya sendiri, HANYA hari ini (WIB +7)
   txStaffToday: db.prepare(`
     SELECT t.*, u.full_name AS user_name, u.username, b.name AS branch_name, c.account_code, c.account_name
     FROM ledger_transactions t
@@ -215,17 +371,17 @@ const q = {
     JOIN business_units b ON b.id = t.branch_id
     JOIN chart_of_accounts c ON c.id = t.coa_id
     WHERE t.user_id = ? AND t.branch_id = ?
-      AND date(t.created_at) = date('now')
+      AND date(t.created_at, '+7 hours') = date('now', '+7 hours')
     ORDER BY t.created_at DESC
   `),
 
-  // Kinerja staf utk Owner
+  // Kinerja staf utk Owner — APPROVED only
   staffPerf: db.prepare(`
     SELECT u.id, u.username, u.full_name, b.name AS branch_name,
            COUNT(t.id) AS tx_count,
-           COALESCE(SUM(CASE WHEN t.tx_type='INCOME' THEN t.amount END),0) AS income,
-           COALESCE(SUM(CASE WHEN t.tx_type='EXPENSE' THEN t.amount END),0) AS expense,
-           SUM(CASE WHEN date(t.created_at)=date('now') THEN 1 ELSE 0 END) AS today_count
+           COALESCE(SUM(CASE WHEN t.tx_type='INCOME' AND t.status='APPROVED' AND t.tx_intent='SETOR_NOTA' THEN t.amount END),0) AS income,
+           COALESCE(SUM(CASE WHEN t.tx_type='EXPENSE' AND t.status='APPROVED' AND t.tx_intent='SETOR_NOTA' THEN t.amount END),0) AS expense,
+           SUM(CASE WHEN date(t.created_at, '+7 hours')=date('now', '+7 hours') THEN 1 ELSE 0 END) AS today_count
     FROM app_users u
     LEFT JOIN business_units b ON b.id = u.assigned_branch_id
     LEFT JOIN ledger_transactions t ON t.user_id = u.id
@@ -236,8 +392,9 @@ const q = {
 
   insertTx: db.prepare(`
     INSERT INTO ledger_transactions
-      (id, idempotency_key, branch_id, user_id, coa_id, tx_type, amount, payment_method, memo, receipt_key, status, tx_intent)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+      (id, idempotency_key, branch_id, user_id, coa_id, tx_type, amount, payment_method, memo, receipt_key, status, tx_intent,
+       idempotency_user_id, idempotency_branch_id, idempotency_fingerprint)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `),
   txByIdempotency: db.prepare("SELECT * FROM ledger_transactions WHERE idempotency_key = ?"),
   txById: db.prepare("SELECT * FROM ledger_transactions WHERE id = ?"),
@@ -256,29 +413,37 @@ const q = {
     ORDER BY a.created_at DESC
   `),
 
-  // Cash Closing
+  // Cash Closing — APPROVED only; PENGAJUAN_DANA excluded until settlement
   cashDrawerBalanceToday: db.prepare(`
     SELECT
-      COALESCE(SUM(CASE WHEN tx_type='INCOME' THEN amount ELSE 0 END), 0) -
-      COALESCE(SUM(CASE WHEN tx_type='EXPENSE' THEN amount ELSE 0 END), 0) AS balance
+      COALESCE(SUM(CASE WHEN tx_type='INCOME' AND status='APPROVED' THEN amount ELSE 0 END), 0) -
+      COALESCE(SUM(CASE WHEN tx_type='EXPENSE' AND status='APPROVED' THEN amount ELSE 0 END), 0) AS balance
     FROM ledger_transactions
     WHERE branch_id = ? AND payment_method = 'CASH_DRAWER'
-      AND date(created_at) = date('now') AND status != 'REJECTED'
+      AND date(created_at, '+7 hours') = date('now', '+7 hours')
+      AND tx_intent='SETOR_NOTA'
   `),
+
+  // Cek apakah sudah ada closing hari ini (WIB) untuk branch ini
+  closingTodayByBranch: db.prepare(`
+    SELECT COUNT(*) AS n FROM cash_closings
+    WHERE branch_id = ? AND closing_date = date('now', '+7 hours')
+  `),
+
   insertClosing: db.prepare(`
     INSERT INTO cash_closings (
       id, branch_id, user_id, closing_date, system_balance, physical_cash, difference, reason,
       total_nota, kg_reguler, kg_express, kg_kilat, income_cash, income_qris, income_transfer,
-      stock_detergent, stock_perfume, operational_notes, status
+      stock_detergent, stock_perfume, operational_notes, idempotency_key, fingerprint, status
     )
-    VALUES (?,?,?,date('now'),?,?,?,?,?,?,?,?,?,?,?,?,?,?,'CLOSED')
+    VALUES (?,?,?,date('now', '+7 hours'),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'CLOSED')
   `),
   closingsByBranchToday: db.prepare(`
     SELECT c.*, u.full_name as user_name, b.name as branch_name
     FROM cash_closings c
     JOIN app_users u ON u.id = c.user_id
     JOIN business_units b ON b.id = c.branch_id
-    WHERE c.branch_id = ? AND c.closing_date = date('now')
+    WHERE c.branch_id = ? AND c.closing_date = date('now', '+7 hours')
     ORDER BY c.created_at DESC
   `),
   allClosingsToday: db.prepare(`
@@ -286,13 +451,49 @@ const q = {
     FROM cash_closings c
     JOIN app_users u ON u.id = c.user_id
     JOIN business_units b ON b.id = c.branch_id
-    WHERE c.closing_date = date('now')
+    WHERE c.closing_date = date('now', '+7 hours')
     ORDER BY c.created_at DESC
   `),
 
-  createSession: db.prepare("INSERT INTO sessions (token, user_id) VALUES (?,?)"),
-  getSession: db.prepare("SELECT s.token, s.user_id, u.* FROM sessions s JOIN app_users u ON u.id = s.user_id WHERE s.token = ?"),
+  closingTodayByUser: db.prepare("SELECT * FROM cash_closings WHERE user_id=? AND branch_id=? AND closing_date=date('now','+7 hours') ORDER BY created_at DESC LIMIT 1"),
+  closingByUserDate: db.prepare("SELECT * FROM cash_closings WHERE user_id=? AND branch_id=? AND closing_date=? LIMIT 1"),
+  insertReceipt: db.prepare("INSERT INTO receipt_assets(filename,user_id,branch_id,mime) VALUES(?,?,?,?)"),
+  receiptByFilename: db.prepare("SELECT * FROM receipt_assets WHERE filename=?"),
+
+  // Sessions — pakai helper createSession/getValidSession, bukan prepare langsung
   dropSession: db.prepare("DELETE FROM sessions WHERE token = ?"),
+  dropUserSessions: db.prepare("DELETE FROM sessions WHERE user_id = ?"),
+
+  // Users & Staff management
+  allUsers: db.prepare(`
+    SELECT u.id, u.username, u.full_name, u.role, u.assigned_branch_id, u.created_at, b.name as branch_name, b.code as branch_code
+    FROM app_users u
+    LEFT JOIN business_units b ON b.id = u.assigned_branch_id
+    ORDER BY u.role DESC, u.full_name ASC
+  `),
+  insertUser: db.prepare(`
+    INSERT INTO app_users (id, username, password_hash, full_name, role, assigned_branch_id)
+    VALUES (?,?,?,?,?,?)
+  `),
+  resetUserPassword: db.prepare("UPDATE app_users SET password_hash = ? WHERE id = ?"),
+
+  // Branch management
+  insertBranch: db.prepare(`
+    INSERT INTO business_units (id, code, name, category, is_active)
+    VALUES (?,?,?,?,1)
+  `),
 };
 
-module.exports = { db, q, verifyPassword, hashPassword, uid, DEMO_PASSWORD };
+module.exports = {
+  db,
+  q,
+  verifyPassword,
+  hashPassword,
+  uid,
+  atomicApprove,
+  createSession,
+  getValidSession,
+  revokeUserSessions,
+  checkIdempotency,
+  // DEMO_PASSWORD tidak diekspor
+};
