@@ -1412,9 +1412,9 @@ function closingPage(){
   + '<div class="cls-section-title">1. Total Nota Masuk</div>'
   + '<div class="cls-grid-4">'
   + '<div class="cls-item"><span class="cls-label">Total Nota (pcs)</span><input class="cls-input mono" id="clsTotalNota" type="number" placeholder="0" min="0"></div>'
-  + '<div class="cls-item"><span class="cls-label">• Reguler (kg)</span><input class="cls-input mono" id="clsKgReguler" type="number" step="1" min="0" placeholder="0"></div>'
-  + '<div class="cls-item"><span class="cls-label">• Express (kg)</span><input class="cls-input mono" id="clsKgExpress" type="number" step="1" min="0" placeholder="0"></div>'
-  + '<div class="cls-item"><span class="cls-label">• Kilat (kg)</span><input class="cls-input mono" id="clsKgKilat" type="number" step="1" min="0" placeholder="0"></div>'
+  + '<div class="cls-item"><span class="cls-label">• Reguler (kg)</span><input class="cls-input mono" id="clsKgReguler" type="number" step="0.001" min="0" placeholder="0"></div>'
+  + '<div class="cls-item"><span class="cls-label">• Express (kg)</span><input class="cls-input mono" id="clsKgExpress" type="number" step="0.001" min="0" placeholder="0"></div>'
+  + '<div class="cls-item"><span class="cls-label">• Kilat (kg)</span><input class="cls-input mono" id="clsKgKilat" type="number" step="0.001" min="0" placeholder="0"></div>'
   + '</div>'
   + '</div>'
 
@@ -1441,8 +1441,8 @@ function closingPage(){
   + '<div class="cls-section">'
   + '<div class="cls-section-title">3. Sisa Bahan Baku</div>'
   + '<div class="cls-grid-2">'
-  + '<div class="cls-item"><span class="cls-label">• Deterjen (Liter)</span><input class="cls-input mono" id="clsStockDetergent" type="number" step="1" min="0" placeholder="0"></div>'
-  + '<div class="cls-item"><span class="cls-label">• Parfum (Liter)</span><input class="cls-input mono" id="clsStockPerfume" type="number" step="1" min="0" placeholder="0"></div>'
+  + '<div class="cls-item"><span class="cls-label">• Deterjen (Liter)</span><input class="cls-input mono" id="clsStockDetergent" type="number" step="0.001" min="0" placeholder="0"></div>'
+  + '<div class="cls-item"><span class="cls-label">• Parfum (Liter)</span><input class="cls-input mono" id="clsStockPerfume" type="number" step="0.001" min="0" placeholder="0"></div>'
   + '</div>'
   + '</div>'
 
@@ -2172,8 +2172,11 @@ window.SipekaAuth.bootstrap=bootstrap;
         const v=((document.getElementById(id)||{}).value||'').trim();
         return integer(v||'0');
       };
-      // Current API requires safe integers for kg and stock as well.
-      const parseNonNegFloat=parseNonNegInt;
+      const parseNonNegFloat=(id)=>{
+        const v=(((document.getElementById(id)||{}).value||'').trim()||'0');
+        const n=Number(v);
+        return /^[0-9]+(?:\.[0-9]{1,3})?$/.test(v)&&Number.isFinite(n)&&n>=0&&n<=Number.MAX_SAFE_INTEGER/1000?n:null;
+      };
       const totalNota=parseNonNegInt('clsTotalNota');
       const incomeCash=parseNonNegInt('clsIncomeCash');
       const incomeQris=parseNonNegInt('clsIncomeQris');
@@ -2182,9 +2185,9 @@ window.SipekaAuth.bootstrap=bootstrap;
       const kgReguler=parseNonNegFloat('clsKgReguler');
       const kgExpress=parseNonNegFloat('clsKgExpress');
       const kgKilat=parseNonNegFloat('clsKgKilat');
-      if([kgReguler,kgExpress,kgKilat].some(v=>v===null||v<0)){toast('Kontrak closing saat ini: berat kg harus angka bulat non-negatif');return;}
+      if([kgReguler,kgExpress,kgKilat].some(v=>v===null||v<0)){toast('Berat kg harus non-negatif, maksimal 3 desimal');return;}
       const stockDetergent=parseNonNegFloat('clsStockDetergent'),stockPerfume=parseNonNegFloat('clsStockPerfume');
-      if(stockDetergent===null||stockPerfume===null){toast('Kontrak closing saat ini: sisa bahan harus angka bulat non-negatif');return;}
+      if(stockDetergent===null||stockPerfume===null){toast('Sisa bahan harus non-negatif, maksimal 3 desimal');return;}
       const payload={
         branch_id:cu.branch_id,
         physical_cash:phys,
@@ -2239,7 +2242,7 @@ window.SipekaAuth.bootstrap=bootstrap;
         try{
           const dataUrl=await toDataUrl(f);
           if(!receipts.current('manual',upload,img))return;
-          const res=await window.SipekaAuth.api('/api/widya/extract',{method:'POST',body:{image:dataUrl,branch_id:branchId}});
+          const res=await window.SipekaAuth.api('/api/receipts/upload',{method:'POST',body:{image:dataUrl,branch_id:branchId}});
           if(!receipts.current('manual',upload,img))return;
           window.__manualReceiptKey=receipts.safeReceipt(res.receipt_key);
           if(st)st.textContent='Foto bukti terlampir ✓';

@@ -8,7 +8,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { q, verifyPassword, hashPassword, uid, atomicApprove, createSession, getValidSession,
-  revokeUserSessions, checkIdempotency } = require("./db");
+  revokeUserSessions, checkIdempotency, ready, withRequestTransaction, db } = require(process.env.DATABASE_URL ? "./db-postgres" : "./db");
 
 const PORT = process.env.PORT || 4321;
 const HOST = process.env.HOST || "127.0.0.1";
@@ -18,8 +18,7 @@ const KARA_MODEL = process.env.KARA_MODEL || "ag/gemini-3.8-flash-medium";
 
 const PUBLIC_DIR = path.join(__dirname, "public");
 const HTML_PATH = path.join(PUBLIC_DIR, "financial-dashboard.html");
-const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, "uploads", "receipts");
-try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch (e) {}
+const { saveReceipt, readReceipt, deleteReceipt } = require("./storage");
 
 // ---------- CORS whitelist ----------
 const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -180,6 +179,7 @@ function corsHeaders(origin) {
 }
 
 function json(res, code, obj) {
+  if (res._deferJSON) { res._pendingJSON = [code, obj]; return; }
   const body = JSON.stringify(obj);
   const origin = res._sipeka_origin || "";
   res.writeHead(code, {
@@ -229,11 +229,11 @@ function readBody(req) {
   });
 }
 
-function auth(req) {
+async function auth(req) {
   const h = req.headers.authorization || "";
   const token = h.startsWith("Bearer ") ? h.slice(7) : null;
   if (!token) return null;
-  try { return getValidSession(token) || null; } catch { return null; }
+  try { return (await getValidSession(token)) || null; } catch { return null; }
 }
 
 // ---------- Widya AI ----------
@@ -250,8 +250,8 @@ ${context}`;
 }
 
 async function callWidya(messages) {
-  const txs = q.txAll.all().slice(0, 40);
-  const perf = q.staffPerf.all();
+  const txs = (await q.txAll.all()).slice(0, 40);
+  const perf = (await q.staffPerf.all());
   const lines = txs.map((t) =>
     `${t.created_at} | ${t.branch_name} | ${t.user_name} | ${t.tx_type} | ${t.account_name} | ${t.memo || "-"} | Rp ${Number(t.amount).toLocaleString("id-ID")} | ${t.payment_method} | ${t.status} | [${t.tx_intent || "SETOR_NOTA"}]`
   );
@@ -336,6 +336,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if ((p === "/api/ready" || p === "/api/readiness") && req.method === "GET") {
+    try {
+      await ready;
+      await db.prepare("SELECT 1 AS ok").get();
+      return json(res, 200, { ok: true, database: process.env.DATABASE_URL ? "postgresql" : "sqlite" });
+    } catch {
+      return json(res, 503, { ok: false, error: "Database belum siap" });
+    }
+  }
+
   if (p === "/api/health" && req.method === "GET") {
     res.writeHead(200, { "Content-Type": "application/json", ...SECURITY_HEADERS });
     res.end(JSON.stringify({ ok: true, ts: new Date().toISOString() }));
@@ -343,12 +353,20 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    await handleRequest(req, res, url, p);
+    const mutation = req.method === "POST" && ["/api/login", "/api/logout", "/api/change-password", "/api/users", "/api/users/reset-password", "/api/units", "/api/transactions", "/api/approvals", "/api/closing"].includes(p);
+    if (process.env.DATABASE_URL && mutation) {
+      // Do not report success until PostgreSQL has committed the entire request.
+      res._deferJSON = true;
+      await withRequestTransaction(() => handleRequest(req, res, url, p));
+      res._deferJSON = false;
+      if (res._pendingJSON) json(res, ...res._pendingJSON);
+    } else await handleRequest(req, res, url, p);
   } catch (err) {
     if (res.headersSent) return;
-    const code = err.code === 413 ? 413 : err.code === 400 ? 400 : 500;
+    const status = err.statusCode ?? err.code;
+    const code = Number.isInteger(status) && status >= 400 && status < 600 ? status : 500;
     const msg = code === 500 ? "Terjadi kesalahan server" : err.message;
-    if (code === 500) console.error("[sipeka] unhandled error:", err.message, err.stack);
+    if (code === 500) console.error("[sipeka] request failed");
     res.writeHead(code, { "Content-Type": "application/json", ...SECURITY_HEADERS });
     res.end(JSON.stringify({ error: msg }));
   }
@@ -367,11 +385,11 @@ async function handleRequest(req, res, url, p) {
       return json(res, 429, { error: "Terlalu banyak percobaan login. Coba lagi nanti." });
     }
     const b = await readBody(req);
-    const user = q.userByUsername.get(String(b.username || "").toLowerCase());
+    const user = (await q.userByUsername.get(String(b.username || "").toLowerCase()));
     if (!user || !verifyPassword(String(b.password || ""), user.password_hash))
       return json(res, 401, { error: "Username atau password salah" });
     const token = uid();
-    createSession(token, user.id);
+    await createSession(token, user.id);
     return json(res, 200, {
       token,
       user: { id: user.id, username: user.username, full_name: user.full_name, role: user.role, branch_id: user.assigned_branch_id },
@@ -381,11 +399,11 @@ async function handleRequest(req, res, url, p) {
   if (p === "/api/logout" && req.method === "POST") {
     const h = req.headers.authorization || "";
     const token = h.startsWith("Bearer ") ? h.slice(7) : null;
-    if (token) q.dropSession.run(token);
+    if (token) (await q.dropSession.run(token));
     return json(res, 200, { ok: true });
   }
 
-  const me = auth(req);
+  const me = await auth(req);
   if (p.startsWith("/api/") && !me) return json(res, 401, { error: "unauthorized" });
 
   if (p === "/api/me" && req.method === "GET") {
@@ -397,17 +415,17 @@ async function handleRequest(req, res, url, p) {
     const { old_password, new_password } = await readBody(req);
     if (!old_password || !new_password) return json(res, 400, { error: "Password lama dan baru wajib diisi" });
     if (String(new_password).length < 6) return json(res, 400, { error: "Password baru minimal 6 karakter" });
-    const user = q.userById.get(me.id);
+    const user = (await q.userById.get(me.id));
     if (!user || !verifyPassword(String(old_password), user.password_hash))
       return json(res, 400, { error: "Password lama tidak sesuai" });
-    q.updateUserPassword.run(hashPassword(String(new_password)), me.id);
-    revokeUserSessions(me.id);
+    (await q.updateUserPassword.run(hashPassword(String(new_password)), me.id));
+    await revokeUserSessions(me.id);
     return json(res, 200, { ok: true, message: "Password berhasil diperbarui", logout_required: true });
   }
 
   if (p === "/api/users" && req.method === "GET") {
     if (me.role !== "OWNER") return json(res, 403, { error: "Khusus Owner" });
-    return json(res, 200, q.allUsers.all());
+    return json(res, 200, (await q.allUsers.all()));
   }
 
   if (p === "/api/users" && req.method === "POST") {
@@ -416,18 +434,19 @@ async function handleRequest(req, res, url, p) {
     if (!username || !full_name || !password) return json(res, 400, { error: "Username, nama lengkap, dan password wajib diisi" });
     const cleanUser = String(username).trim().toLowerCase();
     if (!cleanUser || cleanUser.length < 3) return json(res, 400, { error: "Username minimal 3 karakter tanpa spasi" });
-    if (q.userByUsername.get(cleanUser)) return json(res, 400, { error: `Username @${cleanUser} sudah digunakan` });
+    if ((await q.userByUsername.get(cleanUser))) return json(res, 400, { error: `Username @${cleanUser} sudah digunakan` });
     if (String(password).length < 6) return json(res, 400, { error: "Password minimal 6 karakter" });
     const userRole = role === "OWNER" ? "OWNER" : "STAFF";
+    if (userRole === "STAFF" && !branch_id) return json(res, 400, { error: "Staff wajib terikat unit bisnis aktif" });
     const newId = "U_" + uid();
     try {
       if (branch_id) {
-        if (!q.unitById.get(branch_id)) return json(res, 400, { error: "Unit bisnis tidak ditemukan" });
+        if (typeof branch_id !== "string" || !(await q.unitByIdActive.get(branch_id))) return json(res, 400, { error: "Unit bisnis tidak ditemukan" });
       }
-      q.insertUser.run(newId, cleanUser, hashPassword(String(password)), String(full_name).trim(), userRole, branch_id || null);
+      (await q.insertUser.run(newId, cleanUser, hashPassword(String(password)), String(full_name).trim(), userRole, branch_id || null));
       return json(res, 201, { ok: true, id: newId, username: cleanUser });
     } catch (e) {
-      console.error("[users]", e.message);
+      console.error("[users] write failed");
       return json(res, 400, { error: "Gagal membuat pengguna" });
     }
   }
@@ -437,10 +456,10 @@ async function handleRequest(req, res, url, p) {
     const { user_id, new_password } = await readBody(req);
     if (!user_id || !new_password) return json(res, 400, { error: "user_id dan new_password wajib diisi" });
     if (String(new_password).length < 6) return json(res, 400, { error: "Password baru minimal 6 karakter" });
-    const targetUser = q.userById.get(user_id);
+    const targetUser = (await q.userById.get(user_id));
     if (!targetUser) return json(res, 404, { error: "Pengguna tidak ditemukan" });
-    q.resetUserPassword.run(hashPassword(String(new_password)), user_id);
-    revokeUserSessions(user_id);
+    (await q.resetUserPassword.run(hashPassword(String(new_password)), user_id));
+    await revokeUserSessions(user_id);
     return json(res, 200, { ok: true, message: `Password @${targetUser.username} berhasil direset`, sessions_revoked: true });
   }
 
@@ -452,33 +471,35 @@ async function handleRequest(req, res, url, p) {
     const cleanName = String(name).trim();
     const branchId = "UNIT_" + cleanCode.replace(/[^A-Z0-9]/g, "");
     try {
-      q.insertBranch.run(branchId, cleanCode, cleanName, category || "LAUNDRY");
+      (await q.insertBranch.run(branchId, cleanCode, cleanName, category || "LAUNDRY"));
       return json(res, 201, { ok: true, id: branchId, name: cleanName, code: cleanCode });
     } catch (e) {
-      console.error("[units]", e.message);
+      console.error("[units] write failed");
       return json(res, 400, { error: "Gagal menambah cabang (kode/nama mungkin sudah ada)" });
     }
   }
 
   if (p === "/api/units" && req.method === "GET") {
     if (me.role === "STAFF") {
-      const u = me.assigned_branch_id ? q.unitById.get(me.assigned_branch_id) : null;
+      const u = me.assigned_branch_id ? (await q.unitById.get(me.assigned_branch_id)) : null;
       return json(res, 200, u ? [u] : []);
     }
-    return json(res, 200, q.allUnits.all());
+    return json(res, 200, (await q.allUnits.all()));
   }
 
   if (p === "/api/transactions" && req.method === "GET") {
     if (me.role === "STAFF") {
-      return json(res, 200, { scope: "today-own", rows: q.txStaffToday.all(me.id, me.assigned_branch_id) });
+      return json(res, 200, { scope: "today-own", rows: (await q.txStaffToday.all(me.id, me.assigned_branch_id)) });
     }
-    return json(res, 200, { scope: "all", rows: q.txAll.all() });
+    return json(res, 200, { scope: "all", rows: (await q.txAll.all()) });
   }
 
   if (p === "/api/transactions" && req.method === "POST") {
     const b = await readBody(req);
     const amount = Number(b.amount);
-    if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount <= 0 || !Number.isSafeInteger(amount))
+    if ((typeof b.amount !== "number" && typeof b.amount !== "string") ||
+        (typeof b.amount === "string" && !/^[0-9]+$/.test(b.amount)) ||
+        !Number.isSafeInteger(amount) || amount <= 0)
       return json(res, 400, { error: "Nominal uang harus berupa angka positif rupiah" });
 
     const method = b.payment_method || "CASH_DRAWER";
@@ -499,11 +520,11 @@ async function handleRequest(req, res, url, p) {
       branchId = me.assigned_branch_id;
       if (!branchId) return json(res, 403, { error: "Anda tidak terikat unit bisnis manapun" });
     }
-    const unit = q.unitByIdActive.get(branchId);
+    const unit = (await q.unitByIdActive.get(branchId));
     if (!unit) return json(res, 400, { error: "Unit bisnis tidak ditemukan" });
 
     const coaId = b.coa_id || "5101";
-    const coaEntry = q.coaById.get(String(coaId));
+    const coaEntry = (await q.coaById.get(String(coaId)));
     if (!coaEntry) return json(res, 400, { error: "COA tidak ditemukan" });
     if (txType === "INCOME" && coaEntry.account_type !== "REVENUE")
       return json(res, 400, { error: "COA untuk transaksi INCOME harus bertipe REVENUE" });
@@ -515,27 +536,27 @@ async function handleRequest(req, res, url, p) {
     if (receiptKey !== null) {
       const filename = receiptFilename(receiptKey);
       if (!filename) return json(res, 400, { error: "receipt_key tidak valid" });
-      const asset = q.receiptByFilename.get(filename);
+      const asset = (await q.receiptByFilename.get(filename));
       if (!asset) return json(res, 400, { error: "Bukti transaksi tidak ditemukan" });
       if (!canAccessReceipt(me, asset)) return json(res, 403, { error: "Akses bukti transaksi ditolak" });
     }
     const idem = idempotencyKey(b.idempotency_key);
     const fingerprint = fingerprintOf({ amount, method, txType, txIntent, coaId: String(coaId), memo, receiptKey });
-    const idemCheck = checkIdempotency(idem, me.id, branchId, fingerprint);
+    const idemCheck = await checkIdempotency(idem, me.id, branchId, fingerprint);
     if (idemCheck.exists) {
       if (idemCheck.conflict) return json(res, 409, { error: idemCheck.reason });
       return json(res, 200, { ok: true, id: idemCheck.id, idempotent: true });
     }
 
     // Replay is checked first: a lost response remains safely retryable after close.
-    if (q.closingTodayByUser.get(me.id, branchId))
+    if ((await q.closingTodayByUser.get(me.id, branchId)))
       return json(res, 409, { error: "Shift Anda sudah ditutup hari ini; transaksi baru tidak diizinkan" });
 
     let status = "APPROVED";
     if (txIntent === "PENGAJUAN_DANA" || amount > 500000) status = "PENDING_APPROVAL";
 
     const id = (txIntent === "PENGAJUAN_DANA" ? "ADV-" : "TX-") + uid().slice(0, 10).toUpperCase();
-    q.insertTx.run(id, idem, branchId, me.id, coaId, txType, amount, method,
+    await q.insertTx.run(id, idem, branchId, me.id, coaId, txType, amount, method,
       memo, receiptKey, status, txIntent,
       me.id, branchId, fingerprint);
     return json(res, 201, { ok: true, id, status, tx_intent: txIntent });
@@ -548,15 +569,15 @@ async function handleRequest(req, res, url, p) {
     const action = String(b.action || "").toUpperCase();
     if (!id || !["APPROVED", "REJECTED"].includes(action))
       return json(res, 400, { error: "id dan action (APPROVED/REJECTED) wajib diisi" });
-    const tx = q.txById.get(id);
+    const tx = (await q.txById.get(id));
     if (!tx) return json(res, 404, { error: "Transaksi tidak ditemukan" });
     if (tx.status !== "PENDING_APPROVAL")
       return json(res, 409, { error: "Status transaksi sudah final", currentStatus: tx.status });
     if (action === "APPROVED" && tx.payment_method === "CASH_DRAWER" &&
         (tx.tx_intent || "SETOR_NOTA") === "SETOR_NOTA" &&
-        q.closingByUserDate.get(tx.user_id, tx.branch_id, dateWIB(tx.created_at)))
+        (await q.closingByUserDate.get(tx.user_id, tx.branch_id, dateWIB(tx.created_at))))
       return json(res, 409, { error: "Shift pembuat transaksi sudah ditutup untuk tanggal transaksi ini" });
-    const result = atomicApprove(id, action, me.id, String(b.notes || ""));
+    const result = await atomicApprove(id, action, me.id, String(b.notes || ""));
     if (!result.ok) return json(res, result.statusCode || 400, {
       error: result.statusCode >= 500 ? "Gagal memproses approval" : "Approval tidak dapat diproses",
       currentStatus: result.currentStatus });
@@ -567,10 +588,10 @@ async function handleRequest(req, res, url, p) {
     const branchId = me.role === "STAFF"
       ? me.assigned_branch_id
       : (url.searchParams.get("branch_id") || "UNIT_LP");
-    const sysBal = q.cashDrawerBalanceToday.get(branchId)?.balance || 0;
+    const sysBal = (await q.cashDrawerBalanceToday.get(branchId))?.balance || 0;
     const closings = me.role === "STAFF"
-      ? q.closingsByBranchToday.all(me.assigned_branch_id)
-      : q.allClosingsToday.all();
+      ? (await q.closingsByBranchToday.all(me.assigned_branch_id))
+      : (await q.allClosingsToday.all());
     return json(res, 200, { branch_id: branchId, system_balance: sysBal, closings });
   }
 
@@ -579,22 +600,32 @@ async function handleRequest(req, res, url, p) {
     const b = await readBody(req);
     const branchId = me.assigned_branch_id;
     if (!branchId) return json(res, 403, { error: "Anda tidak terikat unit bisnis manapun" });
-    if (!q.unitByIdActive.get(branchId)) return json(res, 400, { error: "Unit bisnis tidak ditemukan" });
+    if (!(await q.unitByIdActive.get(branchId))) return json(res, 400, { error: "Unit bisnis tidak ditemukan" });
 
     function safeInt(value, label) {
       const n = Number(value);
       if ((typeof value !== "number" && typeof value !== "string") ||
-          (typeof value === "string" && !value.trim()) || !Number.isSafeInteger(n) || n < 0)
+          (typeof value === "string" && !/^[0-9]+$/.test(value)) || !Number.isSafeInteger(n) || n < 0)
         throw Object.assign(new Error(`${label} harus bilangan bulat non-negatif yang aman`), { code: 400 });
       return n;
     }
     const payload = { physical_cash: safeInt(b.physical_cash, "physical_cash"), reason: String(b.reason || "") };
     const counts = ["total_nota", "kg_reguler", "kg_express", "kg_kilat", "income_cash", "income_qris", "income_transfer", "stock_detergent", "stock_perfume"];
-    for (const field of counts) payload[field] = safeInt(b[field] === undefined ? 0 : b[field], field);
+    const measured = new Set(["kg_reguler", "kg_express", "kg_kilat", "stock_detergent", "stock_perfume"]);
+    function safeMeasure(value, label) {
+      const lexical = typeof value === "number" ? String(value) : value;
+      const n = Number(value);
+      if ((typeof value !== "number" && typeof value !== "string") ||
+          !/^[0-9]+(?:\.[0-9]{1,3})?$/.test(lexical) || !Number.isFinite(n) || n < 0 ||
+          n > Number.MAX_SAFE_INTEGER / 1000)
+        throw Object.assign(new Error(`${label} harus angka non-negatif dengan maksimal 3 desimal`), { code: 400 });
+      return n;
+    }
+    for (const field of counts) payload[field] = (measured.has(field) ? safeMeasure : safeInt)(b[field] === undefined ? 0 : b[field], field);
     payload.operational_notes = String(b.operational_notes || "");
     const idem = idempotencyKey(b.idempotency_key);
     const fingerprint = fingerprintOf(payload);
-    const existing = q.closingTodayByUser.get(me.id, branchId);
+    const existing = (await q.closingTodayByUser.get(me.id, branchId));
     if (existing) {
       if (existing.idempotency_key !== idem || existing.fingerprint !== fingerprint)
         return json(res, 409, { error: "Shift Anda sudah ditutup hari ini; idempotency_key atau payload berbeda" });
@@ -602,28 +633,28 @@ async function handleRequest(req, res, url, p) {
         system_balance: existing.system_balance, physical_cash: existing.physical_cash, difference: existing.difference });
     }
 
-    const sysBal = q.cashDrawerBalanceToday.get(branchId)?.balance ?? 0;
+    const sysBal = (await q.cashDrawerBalanceToday.get(branchId))?.balance ?? 0;
     const phys = payload.physical_cash, diff = phys - sysBal;
     if (!Number.isSafeInteger(sysBal) || !Number.isSafeInteger(diff))
       return json(res, 400, { error: "Saldo atau selisih di luar batas rupiah yang aman" });
     if (diff !== 0 && !payload.reason.trim())
       return json(res, 400, { error: "Alasan selisih wajib diisi jika uang fisik laci tidak sama dengan sistem" });
     const id = "CLS-" + uid().slice(0, 8).toUpperCase();
-    q.insertClosing.run(id, branchId, me.id, sysBal, phys, diff, payload.reason,
+    await q.insertClosing.run(id, branchId, me.id, sysBal, phys, diff, payload.reason,
       ...counts.map(field => payload[field]), payload.operational_notes, idem, fingerprint);
     return json(res, 201, { ok: true, id, system_balance: sysBal, physical_cash: phys, difference: diff });
   }
 
   if (p === "/api/closings" && req.method === "GET") {
     const closings = me.role === "STAFF"
-      ? q.closingsByBranchToday.all(me.assigned_branch_id)
-      : q.allClosingsToday.all();
+      ? (await q.closingsByBranchToday.all(me.assigned_branch_id))
+      : (await q.allClosingsToday.all());
     return json(res, 200, closings);
   }
 
   if (p === "/api/staff-performance" && req.method === "GET") {
     if (me.role !== "OWNER") return json(res, 403, { error: "Hanya Owner yang boleh melihat kinerja staf" });
-    return json(res, 200, q.staffPerf.all());
+    return json(res, 200, (await q.staffPerf.all()));
   }
 
   if ((p === "/api/widya" || p === "/api/dewi") && req.method === "POST") {
@@ -634,17 +665,17 @@ async function handleRequest(req, res, url, p) {
     try {
       return json(res, 200, { reply: await callWidya(messages) });
     } catch (e) {
-      console.error("[widya]", e.message);
+      console.error("[widya] upstream failed");
       return json(res, 502, { error: "Widya tidak terjangkau" });
     }
   }
 
-  if ((p === "/api/widya/extract" || p === "/api/dewi/extract") && req.method === "POST") {
+  if (["/api/widya/extract", "/api/dewi/extract", "/api/receipts/upload"].includes(p) && req.method === "POST") {
     req._bodyLimit = BODY_LIMIT_IMAGE;
     const b = await readBody(req);
     const branchId = me.role === "STAFF" ? me.assigned_branch_id : (b.branch_id || null);
     if (me.role === "STAFF" && !branchId) return json(res, 403, { error: "Anda tidak terikat unit bisnis manapun" });
-    if (branchId !== null && (typeof branchId !== "string" || !q.unitByIdActive.get(branchId)))
+    if (branchId !== null && (typeof branchId !== "string" || !(await q.unitByIdActive.get(branchId))))
       return json(res, 400, { error: "Unit bisnis tidak ditemukan" });
     let img = typeof b.image === "string" ? b.image : "";
     if (!img) return json(res, 400, { error: "image (base64) required" });
@@ -669,19 +700,23 @@ async function handleRequest(req, res, url, p) {
     const ext = extMap[detectedMime] || ".jpg";
 
     const filename = `evidence-${Date.now()}-${uid().slice(0, 6)}${ext}`;
-    const receiptPath = path.join(UPLOADS_DIR, filename);
     const receiptUrl = `/api/receipts/${filename}`;
-    const relativePublic = path.relative(path.resolve(PUBLIC_DIR), path.resolve(UPLOADS_DIR));
-    if (!relativePublic || (relativePublic !== ".." && !relativePublic.startsWith(".." + path.sep) && !path.isAbsolute(relativePublic)))
-      throw new Error("Receipt directory must be outside public assets");
+    let stored;
     try {
-      fs.writeFileSync(receiptPath, imgBuf, { flag: "wx", mode: 0o600 });
-      try { q.insertReceipt.run(filename, me.id, branchId, detectedMime); }
-      catch (err) { fs.unlinkSync(receiptPath); throw err; }
-    } catch (err) {
-      console.error("[save-receipt]", err.message);
+      stored = await saveReceipt({ filename, buffer: imgBuf, mime: detectedMime, userId: me.id, branchId });
+      try { await q.insertReceipt.run(filename, me.id, branchId, detectedMime); }
+      catch (err) {
+        try { await deleteReceipt(stored); }
+        catch { console.error("[save-receipt] orphan cleanup failed"); }
+        throw err;
+      }
+    } catch {
+      console.error("[save-receipt] storage or metadata write failed");
       return json(res, 500, { error: "Gagal menyimpan bukti transaksi" });
     }
+    if (p === "/api/receipts/upload") return json(res, 201, { ok: true, receipt_key: receiptUrl, mime: detectedMime });
+    if (!process.env.KARA_BASE_URL || !KARA_KEY)
+      return json(res, 503, { error: "OCR belum dikonfigurasi; bukti tersimpan, isi transaksi secara manual", receipt_key: receiptUrl });
 
     const prompt = `Ekstrak data nota/kuitansi berikut menjadi JSON SAJA (tanpa teks lain).
 Format tepat:
@@ -705,8 +740,8 @@ Aturan:
         signal: AbortSignal.timeout(90_000),
       });
       if (!upstream.ok) {
-        const txt = await upstream.text().catch(() => "");
-        console.error("[extract] upstream", upstream.status, txt.slice(0, 300));
+        await upstream.body?.cancel();
+        console.error("[extract] upstream failed", upstream.status);
         return json(res, 502, { error: "OCR tidak terjangkau", receipt_key: receiptUrl });
       }
       const data = await upstream.json();
@@ -724,7 +759,7 @@ Aturan:
       parsed.receipt_key = receiptUrl;
       return json(res, 200, parsed);
     } catch (e) {
-      console.error("[extract]", e.message);
+      console.error("[extract] upstream failed");
       return json(res, 502, { error: "OCR tidak terjangkau", receipt_key: receiptUrl });
     }
   }
@@ -735,18 +770,20 @@ Aturan:
     if (req.method !== "GET") return json(res, 405, { error: "Metode tidak diizinkan" });
     const filename = receiptFilename(p);
     if (!filename) return json(res, 404, { error: "File tidak ditemukan" });
-    const asset = q.receiptByFilename.get(filename);
+    const asset = (await q.receiptByFilename.get(filename));
     if (!asset) return json(res, 404, { error: "File tidak ditemukan" });
     if (!canAccessReceipt(me, asset)) return json(res, 403, { error: "Akses bukti transaksi ditolak" });
-    const safePath = path.resolve(UPLOADS_DIR, filename);
-    if (path.dirname(safePath) !== path.resolve(UPLOADS_DIR)) return json(res, 403, { error: "Akses ditolak" });
-    if (!fs.existsSync(safePath)) return json(res, 404, { error: "File tidak ditemukan" });
-    const stats = fs.lstatSync(safePath);
-    if (!stats.isFile() || stats.isSymbolicLink()) return json(res, 403, { error: "Akses ditolak" });
-    res.writeHead(200, { "Content-Type": asset.mime, "Cache-Control": "private, no-store", ...corsHeaders(res._sipeka_origin), ...SECURITY_HEADERS });
-    const stream = fs.createReadStream(safePath);
-    stream.on("error", (e) => { if (!res.headersSent) res.writeHead(500); console.error("[receipt stream]", e.message); res.end(); });
-    return stream.pipe(res);
+    let buffer;
+    try { buffer = await readReceipt(asset); }
+    catch (err) {
+      if (err.code === "ENOENT" || err.name === "NoSuchKey" || err.$metadata?.httpStatusCode === 404)
+        return json(res, 404, { error: "File tidak ditemukan" });
+      if (err.code === "EACCES") return json(res, 403, { error: "Akses ditolak" });
+      throw err;
+    }
+    res.writeHead(200, { "Content-Type": asset.mime, "Content-Length": buffer.length,
+      "Cache-Control": "private, no-store", ...corsHeaders(res._sipeka_origin), ...SECURITY_HEADERS });
+    return res.end(buffer);
   }
 
   // ---- static files (non-upload assets) ----
@@ -776,7 +813,12 @@ Aturan:
   json(res, 404, { error: "not found" });
 }
 
-server.listen(PORT, HOST, () => {
-  console.log(`[sipeka] API + frontend di http://${HOST}:${PORT}`);
-  console.log(`[sipeka] Widya model: ${KARA_MODEL}`);
+Promise.resolve(ready).then(() => {
+  server.listen(PORT, HOST, () => {
+    console.log(`[sipeka] API + frontend di http://${HOST}:${PORT}`);
+    console.log(`[sipeka] Widya model: ${KARA_MODEL}`);
+  });
+}).catch(() => {
+  console.error("[sipeka] Database readiness failed; server not listening");
+  process.exit(1);
 });
