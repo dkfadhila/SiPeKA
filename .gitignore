@@ -5,6 +5,15 @@ sipeka.db
 sipeka.db-wal
 sipeka.db-shm
 public/uploads/receipts/
+uploads/
+backups/
+*.bak*
+*.dpapi
+*.db
+*.db-wal
+*.db-shm
+*.dump
+*.enc
 _scripts_archive/
 .vercel
 
