@@ -406,8 +406,7 @@ async function handleRequest(req, res, url, p) {
     if (!user || !checked.valid) return json(res, 401, { error: "Username atau password salah" });
     loginLimiter.reset(username, security.clientIP(req, authConfig));
     if (checked.rehash) await q.updateUserPassword.run(await security.hashVerifiedPassword(String(b.password)), user.id);
-    const purpose = user.role === 'OWNER' && (user.totp_cipher || authConfig.requireOwner2FA)
-      ? (user.totp_cipher ? 'mfa' : 'setup') : user.password_change_required ? 'setup' : 'full';
+    const purpose = user.password_change_required ? 'setup' : 'full';
     return json(res, 200, await issueSession(res, user, purpose));
   }
 
@@ -425,63 +424,11 @@ async function handleRequest(req, res, url, p) {
     return json(res, 200, publicUser(me, me.session_purpose));
   }
 
-  if (p.startsWith('/api/') && me && (
-    me.session_purpose === 'mfa' && !['/api/auth/totp/verify'].includes(p) ||
-    me.session_purpose === 'setup' && !['/api/change-password','/api/auth/totp/enroll','/api/auth/totp/confirm'].includes(p) ||
-    me.password_change_required && !['/api/change-password','/api/auth/totp/enroll','/api/auth/totp/confirm','/api/auth/totp/verify'].includes(p) ||
-    authConfig.requireOwner2FA && me.role === 'OWNER' && !me.totp_cipher && !['/api/change-password','/api/auth/totp/enroll','/api/auth/totp/confirm'].includes(p)
-  )) return json(res, 403, { error: "Selesaikan pengamanan akun", setup_required: true });
+  if (p.startsWith('/api/') && me && (me.session_purpose !== 'full' || me.password_change_required) && p !== '/api/change-password')
+    return json(res, 403, { error: 'Ganti password untuk mengamankan akun', setup_required: true });
 
-  if (p.startsWith('/api/auth/totp/') && req.method === 'POST') {
-    if (me.role !== 'OWNER') return json(res, 403, { error: "Khusus Owner" });
-    if (!process.env.DATABASE_URL) return json(res, 503, { error: "TOTP membutuhkan PostgreSQL" });
-    if (mfaLimiter.blocked(me.id, security.clientIP(req, authConfig))) return json(res, 429, { error: "Terlalu banyak percobaan verifikasi" });
-    const b = await readBody(req);
-    const user = await q.userById.get(me.id);
-    if (p === '/api/auth/totp/enroll') {
-      if (user.totp_cipher) return json(res, 409, { error: "TOTP sudah aktif" });
-      if (!(await security.checkPassword(String(b.password || ''), user.password_hash)).valid)
-        return json(res, 401, { error: "Password saat ini tidak sesuai" });
-      if (!TOTP_KEY) return json(res, 503, { error: "Konfigurasi TOTP belum tersedia" });
-      const enrollment = security.newEnrollment(user.username, TOTP_KEY);
-      await db.prepare("UPDATE app_users SET totp_pending_cipher=$1,totp_pending_until=(clock_timestamp() AT TIME ZONE 'UTC')+interval '10 minutes' WHERE id=$2", { write: true }).run(enrollment.cipher, me.id);
-      return json(res, 200, { uri: enrollment.uri, secret: enrollment.secret, expires_in: 600 });
-    }
-    if (p === '/api/auth/totp/confirm') {
-      if (user.totp_cipher || !user.totp_pending_cipher || Date.parse(user.totp_pending_until.replace(' ', 'T') + 'Z') <= Date.now())
-        return json(res, 400, { error: "Pendaftaran TOTP tidak aktif atau kedaluwarsa" });
-      const counter = security.verifyTotp(user.totp_pending_cipher, TOTP_KEY, b.code, -1);
-      if (counter === null) return json(res, 401, { error: "Kode TOTP tidak valid" });
-      mfaLimiter.reset(me.id, security.clientIP(req, authConfig));
-      const recovery = security.newRecoveryCodes();
-      await db.prepare("UPDATE app_users SET totp_cipher=totp_pending_cipher,totp_pending_cipher=NULL,totp_pending_until=NULL,totp_last_counter=$1,recovery_hashes=$2 WHERE id=$3", { write: true }).run(counter, JSON.stringify(recovery.hashes), me.id);
-      await revokeUserSessions(me.id);
-      res.setHeader('Set-Cookie', security.cookie('', authConfig));
-      return json(res, 200, { ok: true, recovery_codes: recovery.codes, logout_required: true });
-    }
-    if (p === '/api/auth/totp/verify') {
-      if (me.session_purpose !== 'mfa' || !user.totp_cipher) return json(res, 403, { error: "Sesi verifikasi diperlukan" });
-      let valid = false;
-      if (typeof b.recovery_code === 'string' && /^[a-f0-9]{32}$/.test(b.recovery_code)) {
-        const hashes = JSON.parse(user.recovery_hashes), wanted = security.recoveryHash(b.recovery_code), index = hashes.indexOf(wanted);
-        if (index >= 0) {
-          hashes.splice(index, 1);
-          await db.prepare("UPDATE app_users SET recovery_hashes=$1 WHERE id=$2", { write: true }).run(JSON.stringify(hashes), me.id);
-          valid = true;
-        }
-      } else {
-        const counter = security.verifyTotp(user.totp_cipher, TOTP_KEY, b.code, user.totp_last_counter);
-        if (counter !== null) {
-          await db.prepare("UPDATE app_users SET totp_last_counter=$1 WHERE id=$2", { write: true }).run(counter, me.id);
-          valid = true;
-        }
-      }
-      if (!valid) return json(res, 401, { error: "Kode TOTP atau pemulihan tidak valid" });
-      mfaLimiter.reset(me.id, security.clientIP(req, authConfig));
-      await q.dropSession.run(security.sessionToken(req, authConfig));
-      return json(res, 200, await issueSession(res, user, user.password_change_required ? 'setup' : 'full'));
-    }
-  }
+  // TOTP_REMOVED: enrollment and verification endpoints removed.
+  if (p.startsWith('/api/auth/totp/')) return json(res, 404, { error: 'not found' });
 
   // CONTRACT: returns { ok, message, logout_required: true } — frontend WAJIB logout setelah ini
   if (p === "/api/change-password" && req.method === "POST") {

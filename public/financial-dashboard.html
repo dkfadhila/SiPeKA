@@ -1731,11 +1731,7 @@ function settingsPage() {
     + '<div class="settings-session-row"><dt>Zona Waktu</dt><dd>Asia/Jakarta (WIB)</dd></div>'
     + '</dl></article>' + (roleCode==='OWNER'?ownerSecurityPanel(user):'') + '</div></section>';
 }
-function ownerSecurityPanel(user){
-  if(user.session_purpose==='mfa')return '<article class="settings-panel"><h2>Verifikasi TOTP Owner</h2><form id="totpVerifyForm"><label for="totpCode">Kode autentikator</label><input class="settings-input" id="totpCode" inputmode="numeric" autocomplete="one-time-code"><label for="totpRecovery">Atau kode pemulihan sekali pakai</label><input class="settings-input" id="totpRecovery" autocomplete="off"><button class="btn primary">Verifikasi</button></form><p id="totpMsg" role="status"></p><button class="btn" onclick="window.doLogout()">Keluar</button></article>';
-  if(user.totp_enabled)return '<article class="settings-panel"><h2>TOTP Owner aktif</h2><p>Simpan kode pemulihan secara offline. Setiap kode hanya dapat digunakan sekali.</p></article>';
-  return '<article class="settings-panel"><h2>2FA Owner (opsional)</h2><p>Tidak wajib untuk menggunakan dashboard. Konfirmasi password saat ini. Tambahkan secret ke aplikasi autentikator lokal. Tidak ada layanan QR eksternal.</p><form id="totpEnrollForm"><label for="totpPassword">Password saat ini</label><input class="settings-input" id="totpPassword" type="password" autocomplete="current-password" required><button class="btn primary">Mulai pendaftaran</button></form><pre id="totpEnrollment"></pre><form id="totpConfirmForm" hidden><label for="totpConfirmCode">Kode autentikator</label><input class="settings-input" id="totpConfirmCode" inputmode="numeric" autocomplete="one-time-code" required><button class="btn primary">Konfirmasi TOTP</button></form><pre id="totpRecoveryCodes"></pre><p id="totpMsg" role="status"></p><button class="btn" onclick="window.doLogout()">Selesai / Keluar</button></article>';
-}
+function ownerSecurityPanel(){return '';}
 function payslipPage(){return pageHead('Organization','Slip Gaji','','')+'<article class="card empty-view"><h2>Coming soon</h2></article>'}
 function organizationPage(){return pageHead('System','Organization','Branches, access roles, and financial control settings in one workspace.','')+'<section class="grid feature-grid"><article class="card feature">'+icon('branch')+'<strong>Branches</strong><p>Maintain branch codes, operating status, and access scope.</p><button class="btn" data-view="branchesSys">Manage branches</button></article><article class="card feature">'+icon('users')+'<strong>Users &amp; Roles</strong><p>Review role permissions and branch assignments.</p><button class="btn" data-view="users">Manage access</button></article><article class="card feature">'+icon('settings')+'<strong>Financial Settings</strong><p>Set approval thresholds and reconciliation rules.</p><button class="btn" data-view="settings">Open settings</button></article></section>'}
 function render(){
@@ -2036,30 +2032,6 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
     if(user.session_purpose==='mfa'){const form=document.getElementById('settingsPwdForm');if(form)form.hidden=true;}
     return true;
   }
-  document.addEventListener('submit',async event=>{
-    const id=event.target&&event.target.id;
-    if(!['totpEnrollForm','totpConfirmForm','totpVerifyForm'].includes(id))return;
-    event.preventDefault();const msg=document.getElementById('totpMsg'),button=event.target.querySelector('button');button.disabled=true;
-    try{
-      if(id==='totpEnrollForm'){
-        const input=document.getElementById('totpPassword');
-        const result=await api('/api/auth/totp/enroll',{method:'POST',body:{password:input.value}});input.value='';
-        document.getElementById('totpEnrollment').textContent='Secret: '+result.secret+'\nURI: '+result.uri+'\nBerlaku 10 menit.';
-        document.getElementById('totpConfirmForm').hidden=false;
-      }else if(id==='totpConfirmForm'){
-        const result=await api('/api/auth/totp/confirm',{method:'POST',body:{code:document.getElementById('totpConfirmCode').value.trim()}});
-        document.getElementById('totpEnrollment').textContent='';document.getElementById('totpConfirmCode').value='';
-        document.getElementById('totpRecoveryCodes').textContent='Simpan kode ini secara offline. Ditampilkan sekali:\n'+result.recovery_codes.join('\n');
-        event.target.hidden=true;document.getElementById('totpEnrollForm').hidden=true;
-        msg.textContent='TOTP aktif. Setelah menyimpan kode pemulihan, keluar lalu login ulang.';
-      }else{
-        const recovery=document.getElementById('totpRecovery').value.trim();
-        const result=await api('/api/auth/totp/verify',{method:'POST',body:recovery?{recovery_code:recovery}:{code:document.getElementById('totpCode').value.trim()}});
-        if(!showSecurity(result.user))await bootstrap(result.user);
-      }
-    }catch(error){if(msg)msg.textContent=error.message;}finally{button.disabled=false;}
-  });
-
   async function submitTx(payload){
     const d = await api('/api/transactions', { method: 'POST', body: payload });
     if (typeof window.__showToast === 'function') window.__showToast(d.status === 'PENDING_APPROVAL' ? 'Tersimpan — menunggu approval Owner (> Rp 500.000)' : 'Transaksi tersimpan');

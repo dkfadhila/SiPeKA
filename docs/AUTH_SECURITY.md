@@ -1,7 +1,7 @@
 # SiPeKA authentication security
 
 ## Kebijakan terbaru Tirta
-Owner 2FA opsional dengan `REQUIRE_OWNER_2FA=0` eksplisit; jangan melemahkan cookie Secure/HttpOnly, CSRF, hash Argon2 atau password kuat. Owner yang sudah enroll tetap memiliki verifikasi faktor; menonaktifkan faktor existing memerlukan prosedur terpisah. Owner mafucan belum enroll saat perubahan; jangan reset password atau menghapus data. Cabut sesi setup lama agar login berikutnya memperoleh full access setelah password change selesai.
+Fitur 2FA Owner dihapus: panel/enrollment/confirmation/verification tidak tersedia; endpoint TOTP mengembalikan404. Login memakai password dan cookie aman tanpa MFA. `REQUIRE_OWNER_2FA=0` dipertahankan di konfigurasi. Cookie Secure/HttpOnly, CSRF, Argon2, idle expiry, pembatasanlogin dan passwordkuat tetap berlaku. Kolom migration002 lama dipertahankan supaya sejarah/schema/data tidak dirusak, tetapi tidak menentukan login. Jangan reset password Owner. Tes TOTP lama merupakan historis, bukan acceptance fitursekarang.
 
 ## Release prerequisites (historis, kewajiban 2FA diganti kebijakan di atas)
 

@@ -1,0 +1,3 @@
+const{test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');
+test('Settings has no Owner 2FA enrollment or verification panel',()=>{const src=fs.readFileSync(require('path').join(__dirname,'../public/financial-dashboard.html'),'utf8');assert.ok(!src.includes('2FA Owner (opsional)'));assert.ok(!src.includes('id="totpEnrollForm"'));assert.ok(!src.includes('id="totpVerifyForm"'));});
+test('disabled MFA endpoint gate precedes handlers',()=>{const src=fs.readFileSync(require('path').join(__dirname,'../server.js'),'utf8');assert.ok(src.includes('TOTP_REMOVED'));assert.equal(require('../auth-security').config({NODE_ENV:'production',PUBLIC_ORIGIN:'https://example.test',REQUIRE_OWNER_2FA:'0'}).requireOwner2FA,false);});
