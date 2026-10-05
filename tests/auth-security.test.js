@@ -5,6 +5,9 @@ const crypto = require('node:crypto');
 test('cookies, strict origin, five-attempt account/client limits, trusted proxy only', () => {
   const s = require('../auth-security');
   assert.throws(() => s.config({ NODE_ENV: 'production', PUBLIC_ORIGIN: 'https://sipeka.example' }), /REQUIRE_OWNER_2FA/);
+  const optional = s.config({ NODE_ENV: 'production', PUBLIC_ORIGIN: 'https://sipeka.example', REQUIRE_OWNER_2FA: '0' });
+  assert.equal(optional.requireOwner2FA, false);
+  assert.match(s.cookie('abc', optional), /HttpOnly; SameSite=Strict; Secure/);
   const cfg = s.config({ NODE_ENV: 'production', PUBLIC_ORIGIN: 'https://sipeka.example', REQUIRE_OWNER_2FA: '1', TRUSTED_PROXY_IPS: '127.0.0.1', ALLOW_PRIVATE_QA_BEARER: '1' });
   assert.equal(s.validOrigin({ headers: { host: 'evil.example', origin: 'https://sipeka.example', 'x-forwarded-host': 'sipeka.example' } }, cfg), false);
   const privateQA = s.config({ NODE_ENV: 'test', ALLOW_PRIVATE_QA_BEARER: '1' });

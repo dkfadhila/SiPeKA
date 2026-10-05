@@ -21,7 +21,7 @@ async function checkPassword(password, stored) {
 }
 function config(env = process.env) {
   const production = env.NODE_ENV === 'production';
-  if (production && env.REQUIRE_OWNER_2FA !== '1') throw new Error('REQUIRE_OWNER_2FA=1 wajib untuk production');
+  if (production && !['0','1'].includes(env.REQUIRE_OWNER_2FA)) throw new Error('REQUIRE_OWNER_2FA harus eksplisit 0 atau 1 untuk production');
   const origin = env.PUBLIC_ORIGIN ? new URL(env.PUBLIC_ORIGIN).origin : null;
   if (production && (!origin || !origin.startsWith('https://'))) throw new Error('PUBLIC_ORIGIN HTTPS wajib untuk production');
   const idleMinutes = Number(env.SESSION_IDLE_MINUTES || 30);

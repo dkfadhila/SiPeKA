@@ -1,6 +1,9 @@
 # SiPeKA authentication security
 
-## Release prerequisites (no production changes performed by this task)
+## Kebijakan terbaru Tirta
+Owner 2FA opsional dengan `REQUIRE_OWNER_2FA=0` eksplisit; jangan melemahkan cookie Secure/HttpOnly, CSRF, hash Argon2 atau password kuat. Owner yang sudah enroll tetap memiliki verifikasi faktor; menonaktifkan faktor existing memerlukan prosedur terpisah. Owner mafucan belum enroll saat perubahan; jangan reset password atau menghapus data. Cabut sesi setup lama agar login berikutnya memperoleh full access setelah password change selesai.
+
+## Release prerequisites (historis, kewajiban 2FA diganti kebijakan di atas)
 
 1. Install locked dependencies (`npm ci`): `@node-rs/argon2`, `otpauth`, existing `pg`.
 2. Backup database and encryption keys. Apply `node migrations/runner.js` explicitly against the intended database through the established secret-safe deployment mechanism. Migration `001` is unchanged. New `002_auth_security.sql` adds authentication columns, marks existing Owner accounts for an interactive password change, deletes existing sessions. It never changes existing password hashes. Apply after data import, not before an import that replaces users or sessions. Owner onboarding must remain behind maintenance/private access until completed.
