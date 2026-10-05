@@ -1334,7 +1334,7 @@ function branchPage(){return pageHead('Control','Branch Performance','Compare ma
 function approvals(){const approveIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>',revisionIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h11a5 5 0 0 1 0 10H9"/><path d="m8 3-4 4 4 4"/></svg>',rejectIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg>',items=visibleApprovals();return pageHead('Control queue','Approval Center',items.length+' transaksi menunggu otorisasi finansial · '+scopeName()+'.','<span class="scope-pill">'+scopeName()+'</span>')+'<div class="card approval-summary"><div class="approval-summary-copy"><strong>'+items.length+'</strong><span>pending approvals</span></div><div class="approval-summary-meta"><span class="tag red">'+items.filter(r=>r[5]==='WIDYA FLAG').length+' WIDYA FLAGS</span><span class="tag warn">'+items.filter(r=>r[6]==='warn').length+' PRIORITY</span></div></div>'+(items.length?'<section class="approval-list" role="list" aria-label="Daftar approval pending">'+items.map((r,i)=>'<article class="card approval-card" role="listitem"><div class="approval-card-head"><div class="approval-main"><strong>'+r[1]+'</strong><small>'+r[0]+' · '+escHtml(r[8]||'Date unavailable')+'</small></div><span class="tag approval-status '+r[6]+'">'+r[5]+'</span></div><div class="approval-card-body"><div class="approval-branch">'+r[2]+'</div><div class="approval-reason">'+r[4]+'</div><div class="approval-amount">'+r[3]+'</div></div><div class="approval-card-foot"><span>Decision</span><div class="approval-actions"><button class="approval-action primary" data-approval="Approve" data-approval-id="'+r[0]+'" data-approval-txid="'+(r[7]||r[0])+'" aria-label="Approve '+r[0]+'" title="Approve">'+approveIcon+'</button><button class="approval-action danger" data-approval="Reject" data-approval-id="'+r[0]+'" data-approval-txid="'+(r[7]||r[0])+'" aria-label="Reject '+r[0]+'" title="Reject">'+rejectIcon+'</button></div></div></article>').join('')+'</section>':'<article class="card empty-view"><h2>Tidak ada approval pending</h2><p>Antrean '+scopeName()+' sudah bersih untuk periode ini.</p></article>')}
 function dewiPage(){let scope=role==='owner'?scopeName():'Transaksi milik sendiri',access=role==='owner'?'Owner / CEO · full access':'Staff · transaksi milik sendiri',history=(role==='staff')?'<button class="history-item">Ringkas transaksi saya hari ini</button><button class="history-item">Cek bukti transaksi saya</button><button class="history-item">Jelaskan selisih cash closing</button>':'<button class="history-item">Ringkas pengeluaran pada scope ini</button><button class="history-item">Ringkas cash flow minggu ini</button><button class="history-item">Cari transaksi anomali</button><button class="history-item">Bandingkan semua cabang</button>',quick=(role==='staff')?'<button data-prompt="Ringkas transaksi saya">My transactions</button><button data-prompt="Cek bukti transaksi saya">Check receipts</button><button data-prompt="Jelaskan cash closing">Explain closing</button>':'<button data-prompt="Analyze expenses">Analyze expenses</button><button data-prompt="Find anomalies">Find anomalies</button><button data-prompt="Explain cash flow">Explain cash flow</button><button data-prompt="Compare branches">Compare branches</button><button data-prompt="Check budget">Check budget</button>';return '<section class="chat-workspace"><aside class="chat-history"><button class="btn primary" data-new-analysis>+ New Analysis</button><div class="eyebrow">Suggested questions</div>'+history+'</aside><div class="chat-main"><div class="chat-main-head"><div><div class="eyebrow">Financial Intelligence</div><h1>Widya</h1><p>Ask questions about your business finances.</p></div><span class="monitor">Loaded ledger snapshot</span></div><div class="context-bar"><span>Context: <b>'+scope+'</b> · <b>'+realDataPeriod()+'</b> · '+access+'</span></div><div class="conversation" id="conversation"><div class="bubble"><strong>Widya · Financial Intelligence</strong><br>Halo! Saya Widya. Tanyakan tentang keuangan bisnis Anda — transaksi, arus kas, persetujuan, atau anomali. Analisis saya berdasarkan data ledger aktual.</div></div><div class="chat-compose"><div class="quick-row">'+quick+'</div><form class="input-wrap" id="dewiForm"><button type="button" data-view="scan">＋</button><input id="dewiInput" placeholder="Tanya Widya about your finances…" autocomplete="off"><button class="send" type="submit">→</button></form></div></div></section>'}
 function scanPage(){
-  const curUser = (window.SipekaAuth && window.SipekaAuth.currentUser) || JSON.parse(localStorage.getItem('sipeka_user') || '{}');
+  const curUser = (window.SipekaAuth && window.SipekaAuth.currentUser) || window.SipekaCurrentUser||{};
   const staffName = curUser.full_name ? (curUser.full_name + ' (@' + curUser.username + ')') : 'Staff Aktif';
   const unitName = (typeof scopeName === 'function') ? scopeName() : 'Unit Operasional';
 
@@ -1506,7 +1506,7 @@ function closingPage(){
   + '</div>';
 }
 function manualPage(){
-  const curUser = (window.SipekaAuth && window.SipekaAuth.currentUser) || JSON.parse(localStorage.getItem('sipeka_user') || '{}');
+  const curUser = (window.SipekaAuth && window.SipekaAuth.currentUser) || window.SipekaCurrentUser||{};
   const staffName = curUser.full_name ? (curUser.full_name + ' (@' + curUser.username + ')') : 'Staff Aktif';
   const unitName = (typeof scopeName === 'function') ? scopeName() : 'Unit Operasional';
 
@@ -1601,7 +1601,7 @@ function usersPage(){
   + "      <div class=\"field\"><span>Username</span><input type=\"text\" id=\"nuUsername\" class=\"control\" placeholder=\"misal: rani\" style=\"width:100%;\" required></div>"
   + "      <div class=\"field\"><span>Nama Lengkap</span><input type=\"text\" id=\"nuFullName\" class=\"control\" placeholder=\"misal: Rani Wijaya\" style=\"width:100%;\" required></div>"
   + "      <div class=\"field\"><span>Cabang Penugasan</span><select id=\"nuBranch\" class=\"control\" style=\"width:100%;\">" + branchOptions + "</select></div>"
-  + "      <div class=\"field\"><span>Password Awal</span><input type=\"password\" id=\"nuPassword\" class=\"control\" placeholder=\"Minimal 6 karakter\" minlength=\"6\" style=\"width:100%;\" required></div>"
+  + "      <div class=\"field\"><span>Password Awal</span><input type=\"password\" id=\"nuPassword\" class=\"control\" placeholder=\"Minimal 12 karakter\" minlength=\"12\" style=\"width:100%;\" required></div>"
   + "    </div>"
   + "    <div id=\"nuMsg\" style=\"font-size:12px;min-height:16px;margin-top:2px;\"></div>"
   + "    <div style=\"display:flex;justify-content:flex-end;margin-top:4px;\">"
@@ -1658,7 +1658,7 @@ function settingsPage() {
   const escapeHtml = value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   let storedUser = {};
   try {
-    const parsed = JSON.parse(localStorage.getItem('sipeka_user') || '{}');
+    const parsed = window.SipekaCurrentUser||{};
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) storedUser = parsed;
   } catch (_) { /* Unavailable or malformed storage must not break the view. */ }
   const activeUser = window.SipekaCurrentUser || (window.SipekaAuth && window.SipekaAuth.currentUser);
@@ -1681,8 +1681,8 @@ function settingsPage() {
     + '<form class="settings-password-form" id="settingsPwdForm" onsubmit="event.preventDefault(); if(window.SipekaSubmitPassword) window.SipekaSubmitPassword();">'
     + '<div class="settings-account-summary"><span>Akun aktif</span><strong>' + fullName + '</strong><small>' + username + '</small></div>'
     + '<div class="settings-input-group"><label for="setPwdOld">Password Saat Ini</label><input class="settings-input" type="password" id="setPwdOld" autocomplete="current-password" placeholder="Masukkan password lama" required></div>'
-    + '<div class="settings-input-group"><label for="setPwdNew">Password Baru</label><input class="settings-input" type="password" id="setPwdNew" autocomplete="new-password" placeholder="Minimal 6 karakter" minlength="6" aria-describedby="settingsPasswordHint" required><p class="settings-hint" id="settingsPasswordHint">Password baru minimal 6 karakter.</p></div>'
-    + '<div class="settings-input-group"><label for="setPwdConfirm">Konfirmasi Password Baru</label><input class="settings-input" type="password" id="setPwdConfirm" autocomplete="new-password" placeholder="Ulangi password baru" minlength="6" required></div>'
+    + '<div class="settings-input-group"><label for="setPwdNew">Password Baru</label><input class="settings-input" type="password" id="setPwdNew" autocomplete="new-password" placeholder="Minimal 12 karakter" minlength="12" aria-describedby="settingsPasswordHint" required><p class="settings-hint" id="settingsPasswordHint">Password baru minimal 12 karakter.</p></div>'
+    + '<div class="settings-input-group"><label for="setPwdConfirm">Konfirmasi Password Baru</label><input class="settings-input" type="password" id="setPwdConfirm" autocomplete="new-password" placeholder="Ulangi password baru" minlength="12" required></div>'
     + '<div class="settings-message" id="setPwdMsg" role="status" aria-live="polite" aria-atomic="true"></div>'
     + '<div class="settings-form-actions"><button type="submit" id="setPwdSubmitBtn" class="btn primary settings-submit">Simpan Perubahan Password</button></div>'
     + '</form></article>'
@@ -1695,7 +1695,12 @@ function settingsPage() {
     + '<div class="settings-session-row"><dt>Cakupan Cabang</dt><dd>' + escapeHtml(branchName) + '</dd></div>'
     + '<div class="settings-session-row"><dt>Mata Uang Basis</dt><dd>IDR · Rupiah</dd></div>'
     + '<div class="settings-session-row"><dt>Zona Waktu</dt><dd>Asia/Jakarta (WIB)</dd></div>'
-    + '</dl></article></div></section>';
+    + '</dl></article>' + (roleCode==='OWNER'?ownerSecurityPanel(user):'') + '</div></section>';
+}
+function ownerSecurityPanel(user){
+  if(user.session_purpose==='mfa')return '<article class="settings-panel"><h2>Verifikasi TOTP Owner</h2><form id="totpVerifyForm"><label for="totpCode">Kode autentikator</label><input class="settings-input" id="totpCode" inputmode="numeric" autocomplete="one-time-code"><label for="totpRecovery">Atau kode pemulihan sekali pakai</label><input class="settings-input" id="totpRecovery" autocomplete="off"><button class="btn primary">Verifikasi</button></form><p id="totpMsg" role="status"></p><button class="btn" onclick="window.doLogout()">Keluar</button></article>';
+  if(user.totp_enabled)return '<article class="settings-panel"><h2>TOTP Owner aktif</h2><p>Simpan kode pemulihan secara offline. Setiap kode hanya dapat digunakan sekali.</p></article>';
+  return '<article class="settings-panel"><h2>Aktifkan TOTP Owner</h2><p>Konfirmasi password saat ini. Tambahkan secret ke aplikasi autentikator lokal. Tidak ada layanan QR eksternal.</p><form id="totpEnrollForm"><label for="totpPassword">Password saat ini</label><input class="settings-input" id="totpPassword" type="password" autocomplete="current-password" required><button class="btn primary">Mulai pendaftaran</button></form><pre id="totpEnrollment"></pre><form id="totpConfirmForm" hidden><label for="totpConfirmCode">Kode autentikator</label><input class="settings-input" id="totpConfirmCode" inputmode="numeric" autocomplete="one-time-code" required><button class="btn primary">Konfirmasi TOTP</button></form><pre id="totpRecoveryCodes"></pre><p id="totpMsg" role="status"></p><button class="btn" onclick="window.doLogout()">Selesai / Keluar</button></article>';
 }
 function payslipPage(){return pageHead('Organization','Slip Gaji','','')+'<article class="card empty-view"><h2>Coming soon</h2></article>'}
 function organizationPage(){return pageHead('System','Organization','Branches, access roles, and financial control settings in one workspace.','')+'<section class="grid feature-grid"><article class="card feature">'+icon('branch')+'<strong>Branches</strong><p>Maintain branch codes, operating status, and access scope.</p><button class="btn" data-view="branchesSys">Manage branches</button></article><article class="card feature">'+icon('users')+'<strong>Users &amp; Roles</strong><p>Review role permissions and branch assignments.</p><button class="btn" data-view="users">Manage access</button></article><article class="card feature">'+icon('settings')+'<strong>Financial Settings</strong><p>Set approval thresholds and reconciliation rules.</p><button class="btn" data-view="settings">Open settings</button></article></section>'}
@@ -1707,17 +1712,18 @@ function render(){
 }
 // F10-fix: expose render global agar bootstrap/closing/users dapat memanggil
 window.render=function(){render();}
+window.SipekaShowSecurity=function(user){window.SipekaCurrentUser=user;role=user.role==='OWNER'?'owner':'staff';view='settings';renderNav();render();};
 function bindDynamic(){content.querySelectorAll('[data-view]').forEach(bindView);content.querySelectorAll('[data-toast]').forEach(b=>b.onclick=()=>showToast(b.dataset.toast));content.querySelectorAll('[data-download]').forEach(b=>b.onclick=downloadCSV);content.querySelectorAll('[data-transaction]').forEach(r=>r.onclick=()=>openTransaction(+r.dataset.transaction));content.querySelectorAll('[data-approval]').forEach(b=>b.onclick=()=>confirmAction(b.dataset.approval,b.dataset.approvalId,b.dataset.approvalTxid));content.querySelectorAll('.tabs button').forEach(b=>{b.classList.toggle('active',b.textContent.trim()===selectedChartPeriod);b.onclick=()=>{selectedChartPeriod=b.textContent.trim();render();};});content.querySelectorAll('.legend-btn').forEach(b=>b.onclick=()=>{let visible=b.getAttribute('aria-pressed')==='true';b.setAttribute('aria-pressed',String(!visible));let series=content.querySelector('.chart-series.'+b.dataset.series);if(series)series.classList.toggle('is-hidden',visible)});let form=document.getElementById('dewiForm');if(form)form.onsubmit=e=>{e.preventDefault();let i=document.getElementById('dewiInput');sendDewi(i.value);i.value=''};content.querySelectorAll('[data-prompt]').forEach(b=>b.onclick=()=>sendDewi(b.dataset.prompt));content.querySelectorAll('.history-item').forEach(b=>b.onclick=()=>sendDewi(b.textContent));let newAnalysis=content.querySelector('[data-new-analysis]');if(newAnalysis)newAnalysis.onclick=()=>{let c=document.getElementById('conversation');if(c)c.innerHTML='<div class="bubble"><strong>Widya · Financial Intelligence</strong><br>Analisis baru siap. Tanyakan tentang pengeluaran, arus kas, budget, approval, atau anomali.</div>';document.getElementById('dewiInput')?.focus()};content.querySelectorAll('[data-calendar-date]').forEach(b=>b.onclick=()=>{selectedCalendarDate=b.dataset.calendarDate;let d=new Date(selectedCalendarDate+'T00:00:00Z');calendarYear=d.getUTCFullYear();calendarMonth=d.getUTCMonth();render()});// F01-fix: event delegation untuk .sipeka-reset-pwd (ganti inline onclick)
 content.querySelectorAll('.sipeka-reset-pwd').forEach(b=>{b.onclick=function(){const uid=this.getAttribute('data-uid');const uname=this.getAttribute('data-uname');if(window.SipekaPromptResetStaffPassword)window.SipekaPromptResetStaffPassword(uid,uname);};});
 content.querySelectorAll('[data-calendar-nav]').forEach(b=>b.onclick=()=>{calendarMonth+=Number(b.dataset.calendarNav);if(calendarMonth<0){calendarMonth=11;calendarYear--}if(calendarMonth>11){calendarMonth=0;calendarYear++}selectedCalendarDate=calendarYear+'-'+String(calendarMonth+1).padStart(2,'0')+'-01';render()});let todayButton=content.querySelector('[data-calendar-today]');
 // F13-fix: today button gunakan tanggal aktual WIB, bukan hardcode 2026-09-29
 if(todayButton)todayButton.onclick=()=>{const t=getTodayWIB();const d=new Date(t+'T00:00:00Z');calendarYear=d.getUTCFullYear();calendarMonth=d.getUTCMonth();selectedCalendarDate=t;render()};let noteForm=document.getElementById('calendarNoteForm');if(noteForm)noteForm.onsubmit=e=>{e.preventDefault();let field=document.getElementById('calendarNote'),text=field.value.trim();if(!text)return;(calendarNotes[role][selectedCalendarDate]||(calendarNotes[role][selectedCalendarDate]=[])).push({text:text,time:'Baru saja'});render();showToast('Catatan ditambahkan untuk '+selectedCalendarDate)};content.querySelectorAll('[data-delete-note]').forEach(b=>b.onclick=()=>{calendarNotes[role][selectedCalendarDate].splice(Number(b.dataset.deleteNote),1);render();showToast('Catatan dihapus')});let scan=document.getElementById('scanBtn');if(scan)scan.onclick=()=>{let z=document.getElementById('uploadZone');z.innerHTML='<div style="width:100%"><div class="scan-line"></div><strong>Scanning receipt…</strong><p>Extracting merchant · Reading amount · Detecting date · Mapping category</p></div>';setTimeout(()=>{showToast('Receipt extraction complete');render()},1600)}}
-function bindView(b){b.onclick=e=>{e.preventDefault();const target=b.dataset.view;if(!canAccess(target)){showToast(role==='staff'?'Akses dibatasi ke transaksi Anda sendiri':'Fitur ini hanya tersedia untuk Owner');view='dashboard'}else view=target;renderNav();render();closeAll()}}
+function bindView(b){b.onclick=e=>{e.preventDefault();const target=b.dataset.view;if(window.SipekaCurrentUser&&window.SipekaCurrentUser.session_purpose!=='full'){view='settings';render();return;}if(!canAccess(target)){showToast(role==='staff'?'Akses dibatasi ke transaksi Anda sendiri':'Fitur ini hanya tersedia untuk Owner');view='dashboard'}else view=target;renderNav();render();closeAll()}}
 document.querySelectorAll('.sidebar > [data-view],.rail-content [data-view],.rail-compose [data-view],.search-results [data-view]').forEach(bindView);
 // Private evidence never appears as an unauthenticated image URL.
 window.SipekaPrivateReceipts=(function(){
   const groups=new Map();
-  function identity(){const u=window.SipekaCurrentUser;return JSON.stringify([localStorage.getItem('sipeka_token'),u&&u.id,u&&u.role,u&&u.branch_id,window.__sipekaRole]);}
+  function identity(){const u=window.SipekaCurrentUser;return JSON.stringify([window.SipekaAuth&&window.SipekaAuth.generation(),u&&u.id,u&&u.role,u&&u.branch_id,window.__sipekaRole]);}
   function safeReceipt(path){return typeof path==='string'&&/^\/api\/receipts\/evidence-[0-9]+-[a-f0-9]{6}\.(?:jpg|png|webp|gif)$/.test(path)?path:null;}
   function clear(group){const s=groups.get(group);if(!s)return;s.controller.abort();s.urls.forEach(URL.revokeObjectURL);s.nodes.forEach(n=>n.removeAttribute('src'));groups.delete(group);}
   function begin(group){clear(group);const s={identity:identity(),controller:new AbortController(),urls:[],nodes:[]};groups.set(group,s);return s;}
@@ -1728,10 +1734,10 @@ window.SipekaPrivateReceipts=(function(){
   window.addEventListener('pagehide',clearAll);
   async function load(path,node,button,status){
     const s=begin('drawer'),safe=safeReceipt(path),auth=window.SipekaAuth;
-    const token=auth&&typeof auth.token==='function'?auth.token():localStorage.getItem('sipeka_token');
-    if(!safe||!token){status.textContent='Bukti tidak tersedia';return;}
+    const signedIn=auth&&auth.currentUser;
+    if(!safe||!signedIn){status.textContent='Bukti tidak tersedia';return;}
     try{
-      const res=await fetch(safe,{method:'GET',headers:{Authorization:'Bearer '+token},credentials:'same-origin',cache:'no-store',redirect:'error',signal:s.controller.signal});
+      const res=await fetch(safe,{method:'GET',credentials:'same-origin',cache:'no-store',redirect:'error',signal:s.controller.signal});
       if(!res.ok)throw new Error('HTTP '+res.status);
       const blob=await res.blob();
       if(!/^image\/(?:jpeg|png|webp|gif)$/.test(blob.type))throw new Error('Format bukti tidak didukung');
@@ -1772,7 +1778,7 @@ modalConfirm.onclick=async()=>{
     try{
       await window.SipekaAuth.api('/api/approvals',{method:'POST',body:{id:pendingTxId,action:act,notes:'Diproses oleh Owner'}});
       showToast('Transaksi '+pendingTxId+' berhasil di-'+(act==='APPROVED'?'setujui':'tolak'));
-      const me=JSON.parse(localStorage.getItem('sipeka_user')||'{}');
+      const me=window.SipekaCurrentUser;
       await window.SipekaAuth.bootstrap(me);
     }catch(e){showToast('Gagal approval: '+e.message);}
   }else{showToast(pendingAction+' dicatat');}
@@ -1846,9 +1852,9 @@ async function doLogout(){
   content.innerHTML='';loginGate.classList.remove('is-hidden');
   document.getElementById('appShell').setAttribute('inert','');document.getElementById('appShell').setAttribute('aria-hidden','true');
   localStorage.removeItem('sipeka_user');
-  const logoutToken=localStorage.getItem('sipeka_token');localStorage.removeItem('sipeka_token');
+  localStorage.removeItem('sipeka_token');
   // revoke server session
-  try{await fetch('/api/logout',{method:'POST',headers:{Authorization:'Bearer '+(logoutToken||'')}});}catch(e){}
+  try{await fetch('/api/logout',{method:'POST',credentials:'same-origin'});}catch(e){}
   // F07/F08-fix: bersihkan semua state dan cache
   if(window.SipekaReports)window.SipekaReports.setSnapshot({});
   window.SipekaCurrentUser=null;window.SipekaRawRows=[];window.SipekaUnits=[];
@@ -1880,11 +1886,12 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
 <script>
 /* ===== SiPeKA API bridge (production-style, tanpa data dummy) ===== */
 (function(){
-  const TOK='sipeka_token', USR='sipeka_user';
+  // Remove legacy credentials once; browser sessions now use HttpOnly cookies only.
+  localStorage.removeItem('sipeka_token');localStorage.removeItem('sipeka_user');
   let perfCache=[];
   let bootVersion=0;
   function invalidate(){bootVersion++;perfCache=[];}
-  function token(){return localStorage.getItem(TOK)}
+  function generation(){return bootVersion}
   function fmtMoney(n){n=Number(n)||0;return n>=1e6?('Rp '+(n/1e6).toFixed(2).replace('.',',')+'M'):('Rp '+n.toLocaleString('id-ID'))}
   // F14-fix: fmtWhen konversi UTC SQLite timestamps ke WIB (tambah Z untuk UTC parsing)
   function fmtWhen(iso){
@@ -1900,7 +1907,7 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
 
   async function api(path,opts){
     opts=opts||{};
-    const r=await fetch(path,{method:opts.method||'GET',headers:Object.assign({'Content-Type':'application/json'},token()?{Authorization:'Bearer '+token()}:{},opts.headers||{}),body:opts.body?JSON.stringify(opts.body):undefined});
+    const r=await fetch(path,{method:opts.method||'GET',credentials:'same-origin',headers:Object.assign({'Content-Type':'application/json'},opts.headers||{}),body:opts.body?JSON.stringify(opts.body):undefined});
     const d=await r.json().catch(()=>({}));
     if(!r.ok){const error=new Error(d.error||('HTTP '+r.status));error.status=r.status;error.receipt_key=d.receipt_key||null;throw error;}
     return d;
@@ -1918,8 +1925,8 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
   }
 
   async function bootstrap(user){
-    const version=++bootVersion,session=token();
-    const alive=()=>version===bootVersion&&session===token();
+    const version=++bootVersion;
+    const alive=()=>version===bootVersion;
     window.SipekaPrivateReceipts.clearAll();
     if(window.SipekaReports)window.SipekaReports.setSnapshot({});
     window.SipekaCurrentUser=null;window.SipekaRawRows=[];window.SipekaUnits=[];window.SipekaClosingData=null;
@@ -1987,10 +1994,42 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
     return true;
   }
 
+  function showSecurity(user){
+    if(!user||user.session_purpose==='full'&&!user.password_change_required)return false;
+    invalidate();window.SipekaPrivateReceipts.clearAll();window.SipekaShowSecurity(user);
+    const gate=document.getElementById('loginGate'),shell=document.getElementById('appShell');
+    gate.classList.add('is-hidden');shell.removeAttribute('inert');shell.removeAttribute('aria-hidden');
+    if(user.session_purpose==='mfa'){const form=document.getElementById('settingsPwdForm');if(form)form.hidden=true;}
+    return true;
+  }
+  document.addEventListener('submit',async event=>{
+    const id=event.target&&event.target.id;
+    if(!['totpEnrollForm','totpConfirmForm','totpVerifyForm'].includes(id))return;
+    event.preventDefault();const msg=document.getElementById('totpMsg'),button=event.target.querySelector('button');button.disabled=true;
+    try{
+      if(id==='totpEnrollForm'){
+        const input=document.getElementById('totpPassword');
+        const result=await api('/api/auth/totp/enroll',{method:'POST',body:{password:input.value}});input.value='';
+        document.getElementById('totpEnrollment').textContent='Secret: '+result.secret+'\nURI: '+result.uri+'\nBerlaku 10 menit.';
+        document.getElementById('totpConfirmForm').hidden=false;
+      }else if(id==='totpConfirmForm'){
+        const result=await api('/api/auth/totp/confirm',{method:'POST',body:{code:document.getElementById('totpConfirmCode').value.trim()}});
+        document.getElementById('totpEnrollment').textContent='';document.getElementById('totpConfirmCode').value='';
+        document.getElementById('totpRecoveryCodes').textContent='Simpan kode ini secara offline. Ditampilkan sekali:\n'+result.recovery_codes.join('\n');
+        event.target.hidden=true;document.getElementById('totpEnrollForm').hidden=true;
+        msg.textContent='TOTP aktif. Setelah menyimpan kode pemulihan, keluar lalu login ulang.';
+      }else{
+        const recovery=document.getElementById('totpRecovery').value.trim();
+        const result=await api('/api/auth/totp/verify',{method:'POST',body:recovery?{recovery_code:recovery}:{code:document.getElementById('totpCode').value.trim()}});
+        if(!showSecurity(result.user))await bootstrap(result.user);
+      }
+    }catch(error){if(msg)msg.textContent=error.message;}finally{button.disabled=false;}
+  });
+
   async function submitTx(payload){
     const d = await api('/api/transactions', { method: 'POST', body: payload });
     if (typeof window.__showToast === 'function') window.__showToast(d.status === 'PENDING_APPROVAL' ? 'Tersimpan — menunggu approval Owner (> Rp 500.000)' : 'Transaksi tersimpan');
-    try { await bootstrap(JSON.parse(localStorage.getItem(USR) || '{}')); } catch (e) {}
+    try { await bootstrap(window.SipekaCurrentUser); } catch (e) {}
     return d;
   }
   
@@ -2006,8 +2045,8 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
       if (msg) { msg.style.color = "var(--red)"; msg.textContent = "Semua field wajib diisi"; }
       return;
     }
-    if (newP.length < 6) {
-      if (msg) { msg.style.color = "var(--red)"; msg.textContent = "Password baru minimal 6 karakter"; }
+    if (newP.length < 12) {
+      if (msg) { msg.style.color = "var(--red)"; msg.textContent = "Password baru minimal 12 karakter"; }
       return;
     }
     if (newP !== confP) {
@@ -2072,10 +2111,10 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
   };
 
   window.SipekaPromptResetStaffPassword = async function(userId, username) {
-    const newPass = prompt("Masukkan password baru untuk @" + username + " (minimal 6 karakter):");
+    const newPass = prompt("Masukkan password baru untuk @" + username + " (minimal 12 karakter):");
     if (!newPass) return;
-    if (newPass.length < 6) {
-      alert("Password baru minimal 6 karakter");
+    if (newPass.length < 12) {
+      alert("Password baru minimal 12 karakter");
       return;
     }
     try {
@@ -2106,7 +2145,7 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
       if (msg) { msg.style.color = "var(--green)"; msg.textContent = "Cabang " + name + " (" + code + ") berhasil dibuat ✓"; }
       document.getElementById("newBranchForm")?.reset();
       if (typeof showToast === "function") showToast("Cabang " + name + " berhasil dibuat");
-      const me = JSON.parse(localStorage.getItem(USR) || "{}");
+      const me = window.SipekaCurrentUser;
       await bootstrap(me);
     } catch (err) {
       if (msg) { msg.style.color = "var(--red)"; msg.textContent = err.message || "Gagal menambah cabang"; }
@@ -2116,7 +2155,7 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
   };
 
 window.SipekaAuth={
-    token,invalidate,
+    generation,invalidate,
     get perf(){return perfCache},
     get currentUser(){return window.SipekaCurrentUser||null},
     syncBranchLabel,
@@ -2125,7 +2164,8 @@ window.SipekaAuth={
       const u=document.getElementById('loginUsername'), pw=document.getElementById('loginPassword'), err=document.getElementById('loginError');
       try{
         const d=await api('/api/login',{method:'POST',body:{username:(u&&u.value||'').trim(),password:(pw&&pw.value||'')}});
-        localStorage.setItem(TOK,d.token); localStorage.setItem(USR,JSON.stringify(d.user));
+        if(pw)pw.value='';
+        if(showSecurity(d.user))return;
         if(!await bootstrap(d.user))return;
         if(err)err.textContent='';
         const g=document.getElementById('loginGate'); if(g)g.classList.add('is-hidden');
@@ -2133,8 +2173,7 @@ window.SipekaAuth={
       }catch(e){ if(err)err.textContent=e.message||'Login gagal'; }
     },
     async restore(){
-      if(!token())return false;
-      try{const session=token();const me=await api('/api/me');if(session!==token()||!await bootstrap(me))return false;
+      try{const version=bootVersion;const me=await api('/api/me');if(version!==bootVersion)return false;if(showSecurity(me))return true;if(!await bootstrap(me))return false;
         const g=document.getElementById('loginGate'); if(g)g.classList.add('is-hidden');
         const a=document.getElementById('appShell'); if(a){a.removeAttribute('inert');a.removeAttribute('aria-hidden')}
         return true;

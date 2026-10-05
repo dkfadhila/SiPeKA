@@ -7,9 +7,22 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { q, verifyPassword, hashPassword, uid, atomicApprove, createSession, getValidSession,
+const { q, uid, atomicApprove, createSession, getValidSession,
   revokeUserSessions, checkIdempotency, ready, withRequestTransaction, db } = require(process.env.DATABASE_URL ? "./db-postgres" : "./db");
 
+const security = require("./auth-security");
+const authConfig = security.config();
+const authReady = Promise.resolve(ready).then(async () => {
+  if (process.env.DATABASE_URL) {
+    await db.prepare("SELECT password_change_required,totp_cipher,totp_pending_cipher,totp_pending_until,totp_last_counter,recovery_hashes FROM app_users LIMIT 0").all();
+    await db.prepare("SELECT last_seen_at,purpose FROM sessions LIMIT 0").all();
+  } else if (authConfig.requireOwner2FA || authConfig.production) throw new Error("Public auth requires PostgreSQL migration 002");
+});
+authReady.catch(() => {});
+const loginLimiter = security.createLimiter();
+const mfaLimiter = security.createLimiter();
+const TOTP_KEY = process.env.AUTH_TOTP_KEY || '';
+if (authConfig.requireOwner2FA) security.encryptionKey(TOTP_KEY);
 const PORT = process.env.PORT || 4321;
 const HOST = process.env.HOST || "127.0.0.1";
 const KARA_BASE = process.env.KARA_BASE_URL || "http://localhost:20128/v1";
@@ -23,26 +36,7 @@ const { saveReceipt, readReceipt, deleteReceipt } = require("./storage");
 // ---------- CORS whitelist ----------
 const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
 
-// ---------- login rate limiter ----------
-const loginAttempts = new Map();
-const LOGIN_MAX = 10;
-const LOGIN_WINDOW_MS = 60_000;
 
-function loginThrottle(ip) {
-  const now = Date.now();
-  let entry = loginAttempts.get(ip);
-  if (!entry || now > entry.resetAt) {
-    entry = { count: 0, resetAt: now + LOGIN_WINDOW_MS };
-    loginAttempts.set(ip, entry);
-  }
-  entry.count++;
-  return entry.count > LOGIN_MAX;
-}
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of loginAttempts) { if (now > v.resetAt) loginAttempts.delete(k); }
-}, 300_000).unref();
 
 // ---------- security headers ----------
 const SECURITY_HEADERS = {
@@ -230,10 +224,29 @@ function readBody(req) {
 }
 
 async function auth(req) {
-  const h = req.headers.authorization || "";
-  const token = h.startsWith("Bearer ") ? h.slice(7) : null;
+  const token = security.sessionToken(req, authConfig);
   if (!token) return null;
-  try { return (await getValidSession(token)) || null; } catch { return null; }
+  const me = await getValidSession(token);
+  if (!me) return null;
+  if (process.env.DATABASE_URL) {
+    const session = await db.prepare("SELECT last_seen_at,purpose FROM sessions WHERE token=$1").get(token);
+    const seen = session && Date.parse(session.last_seen_at.replace(' ', 'T') + 'Z');
+    if (!Number.isFinite(seen) || seen + authConfig.idleMS <= Date.now()) { await q.dropSession.run(token); return null; }
+    me.session_purpose = session.purpose;
+    await db.prepare("UPDATE sessions SET last_seen_at=(clock_timestamp() AT TIME ZONE 'UTC') WHERE token=$1", { write: true }).run(token);
+  }
+  return me;
+}
+function publicUser(user, purpose = 'full') {
+  return { id: user.id, username: user.username, full_name: user.full_name, role: user.role, branch_id: user.assigned_branch_id,
+    password_change_required: !!user.password_change_required, totp_enabled: !!user.totp_cipher, session_purpose: purpose };
+}
+async function issueSession(res, user, purpose) {
+  const token = crypto.randomBytes(32).toString('hex');
+  await createSession(token, user.id);
+  if (process.env.DATABASE_URL) await db.prepare("UPDATE sessions SET purpose=$1 WHERE token=$2", { write: true }).run(purpose, token);
+  res.setHeader('Set-Cookie', security.cookie(token, authConfig));
+  return { ...(authConfig.bearer ? { token } : {}), user: publicUser(user, purpose) };
 }
 
 // ---------- Widya AI ----------
@@ -353,7 +366,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    const mutation = req.method === "POST" && ["/api/login", "/api/logout", "/api/change-password", "/api/users", "/api/users/reset-password", "/api/units", "/api/transactions", "/api/approvals", "/api/closing"].includes(p);
+    await authReady;
+    if (p.startsWith('/api/') && !['GET','HEAD','OPTIONS'].includes(req.method) && !security.validOrigin(req, authConfig))
+      return json(res, 403, { error: "Origin tidak diizinkan" });
+    const mutation = req.method === "POST" && (["/api/login", "/api/logout", "/api/change-password", "/api/users", "/api/users/reset-password", "/api/units", "/api/transactions", "/api/approvals", "/api/closing"].includes(p) || p.startsWith('/api/auth/'));
     if (process.env.DATABASE_URL && mutation) {
       // Do not report success until PostgreSQL has committed the entire request.
       res._deferJSON = true;
@@ -363,6 +379,7 @@ const server = http.createServer(async (req, res) => {
     } else await handleRequest(req, res, url, p);
   } catch (err) {
     if (res.headersSent) return;
+    res.removeHeader('Set-Cookie'); // Never send a session cookie from a rolled-back request.
     const status = err.statusCode ?? err.code;
     const code = Number.isInteger(status) && status >= 400 && status < 600 ? status : 500;
     const msg = code === 500 ? "Terjadi kesalahan server" : err.message;
@@ -380,26 +397,24 @@ async function handleRequest(req, res, url, p) {
   if (/^\/+uploads(?:\/|$)/i.test(decodedPath.replace(/\\/g, "/")))
     return json(res, 404, { error: "not found" });
   if (p === "/api/login" && req.method === "POST") {
-    const ip = req.socket?.remoteAddress || "unknown";
-    if (loginThrottle(ip)) {
-      return json(res, 429, { error: "Terlalu banyak percobaan login. Coba lagi nanti." });
-    }
     const b = await readBody(req);
-    const user = (await q.userByUsername.get(String(b.username || "").toLowerCase()));
-    if (!user || !verifyPassword(String(b.password || ""), user.password_hash))
-      return json(res, 401, { error: "Username atau password salah" });
-    const token = uid();
-    await createSession(token, user.id);
-    return json(res, 200, {
-      token,
-      user: { id: user.id, username: user.username, full_name: user.full_name, role: user.role, branch_id: user.assigned_branch_id },
-    });
+    const username = String(b.username || "").trim().toLowerCase().slice(0, 200);
+    if (loginLimiter.blocked(username, security.clientIP(req, authConfig)))
+      return json(res, 429, { error: "Terlalu banyak percobaan login. Coba lagi nanti." });
+    const user = await q.userByUsername.get(username);
+    const checked = await security.checkPassword(String(b.password || ""), user?.password_hash);
+    if (!user || !checked.valid) return json(res, 401, { error: "Username atau password salah" });
+    loginLimiter.reset(username, security.clientIP(req, authConfig));
+    if (checked.rehash) await q.updateUserPassword.run(await security.hashVerifiedPassword(String(b.password)), user.id);
+    const purpose = user.role === 'OWNER' && (user.totp_cipher || authConfig.requireOwner2FA)
+      ? (user.totp_cipher ? 'mfa' : 'setup') : user.password_change_required ? 'setup' : 'full';
+    return json(res, 200, await issueSession(res, user, purpose));
   }
 
   if (p === "/api/logout" && req.method === "POST") {
-    const h = req.headers.authorization || "";
-    const token = h.startsWith("Bearer ") ? h.slice(7) : null;
-    if (token) (await q.dropSession.run(token));
+    const token = security.sessionToken(req, authConfig);
+    if (token) await q.dropSession.run(token);
+    res.setHeader('Set-Cookie', security.cookie('', authConfig));
     return json(res, 200, { ok: true });
   }
 
@@ -407,19 +422,79 @@ async function handleRequest(req, res, url, p) {
   if (p.startsWith("/api/") && !me) return json(res, 401, { error: "unauthorized" });
 
   if (p === "/api/me" && req.method === "GET") {
-    return json(res, 200, { id: me.id, username: me.username, full_name: me.full_name, role: me.role, branch_id: me.assigned_branch_id });
+    return json(res, 200, publicUser(me, me.session_purpose));
+  }
+
+  if (p.startsWith('/api/') && me && (
+    me.session_purpose === 'mfa' && !['/api/auth/totp/verify'].includes(p) ||
+    me.session_purpose === 'setup' && !['/api/change-password','/api/auth/totp/enroll','/api/auth/totp/confirm'].includes(p) ||
+    me.password_change_required && !['/api/change-password','/api/auth/totp/enroll','/api/auth/totp/confirm','/api/auth/totp/verify'].includes(p) ||
+    authConfig.requireOwner2FA && me.role === 'OWNER' && !me.totp_cipher && !['/api/change-password','/api/auth/totp/enroll','/api/auth/totp/confirm'].includes(p)
+  )) return json(res, 403, { error: "Selesaikan pengamanan akun", setup_required: true });
+
+  if (p.startsWith('/api/auth/totp/') && req.method === 'POST') {
+    if (me.role !== 'OWNER') return json(res, 403, { error: "Khusus Owner" });
+    if (!process.env.DATABASE_URL) return json(res, 503, { error: "TOTP membutuhkan PostgreSQL" });
+    if (mfaLimiter.blocked(me.id, security.clientIP(req, authConfig))) return json(res, 429, { error: "Terlalu banyak percobaan verifikasi" });
+    const b = await readBody(req);
+    const user = await q.userById.get(me.id);
+    if (p === '/api/auth/totp/enroll') {
+      if (user.totp_cipher) return json(res, 409, { error: "TOTP sudah aktif" });
+      if (!(await security.checkPassword(String(b.password || ''), user.password_hash)).valid)
+        return json(res, 401, { error: "Password saat ini tidak sesuai" });
+      if (!TOTP_KEY) return json(res, 503, { error: "Konfigurasi TOTP belum tersedia" });
+      const enrollment = security.newEnrollment(user.username, TOTP_KEY);
+      await db.prepare("UPDATE app_users SET totp_pending_cipher=$1,totp_pending_until=(clock_timestamp() AT TIME ZONE 'UTC')+interval '10 minutes' WHERE id=$2", { write: true }).run(enrollment.cipher, me.id);
+      return json(res, 200, { uri: enrollment.uri, secret: enrollment.secret, expires_in: 600 });
+    }
+    if (p === '/api/auth/totp/confirm') {
+      if (user.totp_cipher || !user.totp_pending_cipher || Date.parse(user.totp_pending_until.replace(' ', 'T') + 'Z') <= Date.now())
+        return json(res, 400, { error: "Pendaftaran TOTP tidak aktif atau kedaluwarsa" });
+      const counter = security.verifyTotp(user.totp_pending_cipher, TOTP_KEY, b.code, -1);
+      if (counter === null) return json(res, 401, { error: "Kode TOTP tidak valid" });
+      mfaLimiter.reset(me.id, security.clientIP(req, authConfig));
+      const recovery = security.newRecoveryCodes();
+      await db.prepare("UPDATE app_users SET totp_cipher=totp_pending_cipher,totp_pending_cipher=NULL,totp_pending_until=NULL,totp_last_counter=$1,recovery_hashes=$2 WHERE id=$3", { write: true }).run(counter, JSON.stringify(recovery.hashes), me.id);
+      await revokeUserSessions(me.id);
+      res.setHeader('Set-Cookie', security.cookie('', authConfig));
+      return json(res, 200, { ok: true, recovery_codes: recovery.codes, logout_required: true });
+    }
+    if (p === '/api/auth/totp/verify') {
+      if (me.session_purpose !== 'mfa' || !user.totp_cipher) return json(res, 403, { error: "Sesi verifikasi diperlukan" });
+      let valid = false;
+      if (typeof b.recovery_code === 'string' && /^[a-f0-9]{32}$/.test(b.recovery_code)) {
+        const hashes = JSON.parse(user.recovery_hashes), wanted = security.recoveryHash(b.recovery_code), index = hashes.indexOf(wanted);
+        if (index >= 0) {
+          hashes.splice(index, 1);
+          await db.prepare("UPDATE app_users SET recovery_hashes=$1 WHERE id=$2", { write: true }).run(JSON.stringify(hashes), me.id);
+          valid = true;
+        }
+      } else {
+        const counter = security.verifyTotp(user.totp_cipher, TOTP_KEY, b.code, user.totp_last_counter);
+        if (counter !== null) {
+          await db.prepare("UPDATE app_users SET totp_last_counter=$1 WHERE id=$2", { write: true }).run(counter, me.id);
+          valid = true;
+        }
+      }
+      if (!valid) return json(res, 401, { error: "Kode TOTP atau pemulihan tidak valid" });
+      mfaLimiter.reset(me.id, security.clientIP(req, authConfig));
+      await q.dropSession.run(security.sessionToken(req, authConfig));
+      return json(res, 200, await issueSession(res, user, user.password_change_required ? 'setup' : 'full'));
+    }
   }
 
   // CONTRACT: returns { ok, message, logout_required: true } — frontend WAJIB logout setelah ini
   if (p === "/api/change-password" && req.method === "POST") {
     const { old_password, new_password } = await readBody(req);
     if (!old_password || !new_password) return json(res, 400, { error: "Password lama dan baru wajib diisi" });
-    if (String(new_password).length < 6) return json(res, 400, { error: "Password baru minimal 6 karakter" });
+    if (String(new_password).length < 12) return json(res, 400, { error: "Password baru minimal 12 karakter" });
     const user = (await q.userById.get(me.id));
-    if (!user || !verifyPassword(String(old_password), user.password_hash))
+    if (!user || !(await security.checkPassword(String(old_password), user.password_hash)).valid)
       return json(res, 400, { error: "Password lama tidak sesuai" });
-    (await q.updateUserPassword.run(hashPassword(String(new_password)), me.id));
+    (await q.updateUserPassword.run(await security.hashNewPassword(String(new_password)), me.id));
+    if (process.env.DATABASE_URL) await db.prepare("UPDATE app_users SET password_change_required=false WHERE id=$1", { write: true }).run(me.id);
     await revokeUserSessions(me.id);
+    res.setHeader('Set-Cookie', security.cookie('', authConfig));
     return json(res, 200, { ok: true, message: "Password berhasil diperbarui", logout_required: true });
   }
 
@@ -435,7 +510,7 @@ async function handleRequest(req, res, url, p) {
     const cleanUser = String(username).trim().toLowerCase();
     if (!cleanUser || cleanUser.length < 3) return json(res, 400, { error: "Username minimal 3 karakter tanpa spasi" });
     if ((await q.userByUsername.get(cleanUser))) return json(res, 400, { error: `Username @${cleanUser} sudah digunakan` });
-    if (String(password).length < 6) return json(res, 400, { error: "Password minimal 6 karakter" });
+    if (String(password).length < 12) return json(res, 400, { error: "Password minimal 12 karakter" });
     const userRole = role === "OWNER" ? "OWNER" : "STAFF";
     if (userRole === "STAFF" && !branch_id) return json(res, 400, { error: "Staff wajib terikat unit bisnis aktif" });
     const newId = "U_" + uid();
@@ -443,7 +518,7 @@ async function handleRequest(req, res, url, p) {
       if (branch_id) {
         if (typeof branch_id !== "string" || !(await q.unitByIdActive.get(branch_id))) return json(res, 400, { error: "Unit bisnis tidak ditemukan" });
       }
-      (await q.insertUser.run(newId, cleanUser, hashPassword(String(password)), String(full_name).trim(), userRole, branch_id || null));
+      (await q.insertUser.run(newId, cleanUser, await security.hashNewPassword(String(password)), String(full_name).trim(), userRole, branch_id || null));
       return json(res, 201, { ok: true, id: newId, username: cleanUser });
     } catch (e) {
       console.error("[users] write failed");
@@ -455,10 +530,10 @@ async function handleRequest(req, res, url, p) {
     if (me.role !== "OWNER") return json(res, 403, { error: "Khusus Owner" });
     const { user_id, new_password } = await readBody(req);
     if (!user_id || !new_password) return json(res, 400, { error: "user_id dan new_password wajib diisi" });
-    if (String(new_password).length < 6) return json(res, 400, { error: "Password baru minimal 6 karakter" });
+    if (String(new_password).length < 12) return json(res, 400, { error: "Password baru minimal 12 karakter" });
     const targetUser = (await q.userById.get(user_id));
     if (!targetUser) return json(res, 404, { error: "Pengguna tidak ditemukan" });
-    (await q.resetUserPassword.run(hashPassword(String(new_password)), user_id));
+    (await q.resetUserPassword.run(await security.hashNewPassword(String(new_password)), user_id));
     await revokeUserSessions(user_id);
     return json(res, 200, { ok: true, message: `Password @${targetUser.username} berhasil direset`, sessions_revoked: true });
   }
@@ -813,7 +888,7 @@ Aturan:
   json(res, 404, { error: "not found" });
 }
 
-Promise.resolve(ready).then(() => {
+Promise.resolve(authReady).then(() => {
   server.listen(PORT, HOST, () => {
     console.log(`[sipeka] API + frontend di http://${HOST}:${PORT}`);
     console.log(`[sipeka] Widya model: ${KARA_MODEL}`);
