@@ -172,6 +172,34 @@ const q = {
   resetUserPassword: statement('UPDATE app_users SET password_hash=$1 WHERE id=$2', { write: true }),
   insertBranch: statement('INSERT INTO business_units(id,code,name,category,is_active) VALUES($1,$2,$3,$4,1)', { write: true }),
 };
+// Branch retirement always archives. A referenced unit is never physically deleted.
+q.allUnitsIncludingArchived = statement('SELECT * FROM business_units ORDER BY name');
+q.branchAuditLogs = statement('SELECT * FROM branch_audit_logs WHERE branch_id=$1 ORDER BY created_at,id');
+q.archiveBranch = { run: archiveBranch };
+q.deleteBranch = q.archiveBranch;
+async function archiveBranch(branchId, actorId, reassignTo = null, reason = '') {
+  const fail = (statusCode, error) => ({ ok: false, statusCode, error });
+  return withRequestTransaction(async () => {
+    const actor = await q.userById.get(actorId);
+    if (actor?.role !== 'OWNER') return fail(403, 'Khusus Owner');
+    const unit = (await read('SELECT * FROM business_units WHERE id=$1 FOR UPDATE', [branchId])).rows[0];
+    if (!unit) return fail(404, 'Unit bisnis tidak ditemukan');
+    if (unit.is_active !== 1) return { ok: true, action: 'already_archived', id: branchId, reassigned_users: 0 };
+    if ((await q.allUnits.all()).length <= 1) return fail(409, 'Unit aktif terakhir tidak dapat diarsipkan');
+    if (reassignTo !== null && (reassignTo === branchId || !(await q.unitByIdActive.get(reassignTo))))
+      return fail(400, 'Unit pengganti harus aktif dan berbeda');
+    const users = (await read('SELECT id FROM app_users WHERE assigned_branch_id=$1 ORDER BY id FOR UPDATE', [branchId])).rows;
+    if (users.length && !reassignTo) return fail(409, 'Pindahkan staf ke unit aktif sebelum mengarsipkan');
+    if (typeof reason !== 'string' || reason.length > 1000) return fail(400, 'Alasan maksimal 1000 karakter');
+    for (const user of users) {
+      await write('UPDATE app_users SET assigned_branch_id=$1 WHERE id=$2', [reassignTo, user.id]);
+      await q.dropUserSessions.run(user.id);
+    }
+    await write("UPDATE business_units SET is_active=0,archived_at=date_trunc('second',clock_timestamp() AT TIME ZONE 'UTC'),archived_by=$1,archive_reason=$2 WHERE id=$3", [actorId, reason.trim(), branchId]);
+    await write("INSERT INTO branch_audit_logs(id,branch_id,actor_id,action,reason,reassigned_to,reassigned_users) VALUES($1,$2,$3,'ARCHIVED',$4,$5,$6)", [uid(), branchId, actorId, reason.trim(), reassignTo, users.length]);
+    return { ok: true, action: 'archived', id: branchId, reassigned_users: users.length };
+  });
+}
 function hashPassword(pw, salt = randomBytes(16).toString('hex')) {
   return salt + ':' + scryptSync(pw, salt, 64).toString('hex');
 }
@@ -245,4 +273,4 @@ const db = {
   async close() { if (pool) { const current = pool; pool = null; await current.end(); } },
 };
 module.exports = { db, q, verifyPassword, hashPassword, uid, atomicApprove, createSession,
-  getValidSession, revokeUserSessions, checkIdempotency, ready, withRequestTransaction };
+  getValidSession, revokeUserSessions, checkIdempotency, ready, withRequestTransaction, getPool };

@@ -13,6 +13,9 @@ if (process.env.SIPEKA_ASYNC_HARNESS === '1') {
       if (!facade) {
         const real = original.call(this, path.resolve(__dirname, '../db.js'), parent, main);
         const synchronous = process.env.SIPEKA_SYNC_HARNESS === "1";
+        // PostgreSQL-only auth columns belong to this contract fixture, not production SQLite.
+        for (const sql of ["ALTER TABLE app_users ADD COLUMN password_change_required INTEGER DEFAULT 0", "ALTER TABLE app_users ADD COLUMN totp_cipher TEXT", "ALTER TABLE app_users ADD COLUMN totp_pending_cipher TEXT", "ALTER TABLE app_users ADD COLUMN totp_pending_until TEXT", "ALTER TABLE app_users ADD COLUMN totp_last_counter INTEGER", "ALTER TABLE app_users ADD COLUMN recovery_hashes TEXT", "ALTER TABLE sessions ADD COLUMN last_seen_at TEXT", "ALTER TABLE sessions ADD COLUMN purpose TEXT DEFAULT 'full'"]) real.db.exec(sql);
+        real.db.prepare("INSERT INTO business_units(id,code,name,category) VALUES('UNIT_LC','LC','Inactive Fixture','LAUNDRY')").run();
         if (process.env.SIPEKA_INACTIVE_BRANCH === '1') real.db.prepare("UPDATE business_units SET is_active=0 WHERE id='UNIT_LC'").run();
         const delay = fn => synchronous ? fn : async (...args) => { await new Promise(r => setTimeout(r, 2)); return fn(...args); };
         const q = Object.fromEntries(Object.entries(real.q).map(([name, stmt]) => [name,
@@ -24,7 +27,7 @@ if (process.env.SIPEKA_ASYNC_HARNESS === '1') {
             return stmt[method](...args);
           })]))]));
         facade = { ...real, q,
-          db: { prepare(sql) { const stmt = real.db.prepare(sql); return { get: delay(() => { if (process.env.SIPEKA_FAIL_READY === '1') throw new Error('fixture unavailable'); return stmt.get(); }) }; } },
+          db: { prepare(sql) { sql=sql.replace(/\(clock_timestamp\(\) AT TIME ZONE 'UTC'\)/g,"datetime('now')").replace(/\$\d+/g,'?').replace(/\bfalse\b/g,'0'); const stmt = real.db.prepare(sql); return Object.fromEntries(['get','all','run'].map(method=>[method,delay((...args)=>{if(process.env.SIPEKA_FAIL_READY==='1' && sql==='SELECT 1 AS ok')throw new Error('fixture unavailable');return stmt[method](...args);})])); } },
           ready: new Promise((resolve, reject) => setTimeout(() => process.env.SIPEKA_FAIL_STARTUP === '1' ? reject(new Error('fixture startup unavailable')) : resolve(), 30)),
           withRequestTransaction: async callback => {
             const result = await scope.run(true, callback);
@@ -33,6 +36,8 @@ if (process.env.SIPEKA_ASYNC_HARNESS === '1') {
           } };
         facade.ready.catch(() => {});
         for (const name of ['createSession', 'getValidSession', 'revokeUserSessions', 'checkIdempotency', 'atomicApprove']) facade[name] = delay(real[name]);
+        facade.createSession=delay((...args)=>{real.createSession(...args);real.db.prepare("UPDATE sessions SET last_seen_at=datetime('now') WHERE token=?").run(args[0]);});
+        if(synchronous)facade.getValidSession=(...args)=>{const user=real.getValidSession(...args);return user?{...user,session_purpose:'full'}:user;};
       }
       return facade;
     }
@@ -61,27 +66,27 @@ if (process.env.SIPEKA_ASYNC_HARNESS === '1') {
     const child = spawn(process.execPath, ['--require', __filename, path.join(root, 'server.js')], {
       cwd: root, env: { ...process.env, DATABASE_URL: synchronous ? '' : 'contract-harness', SIPEKA_SYNC_HARNESS: synchronous ? '1' : '0', SIPEKA_ASYNC_HARNESS: '1', SIPEKA_STORAGE_FIXTURE: process.env.SIPEKA_TEST_REAL_STORAGE === '1' ? '0' : '1', STORAGE_BACKEND: 'filesystem',
         DB_PATH: path.join(scratch, 'app.db'), UPLOADS_DIR: uploads, SIPEKA_SEED: '1', SIPEKA_OWNER_PASSWORD: password,
-        SIPEKA_OWNER_USERNAME: 'testowner', PORT: String(port), HOST: '127.0.0.1', KARA_BASE_URL: '', KARA_API_KEY: '', ...options }
+        SIPEKA_OWNER_USERNAME: 'testowner', PORT: String(port), HOST: '127.0.0.1', KARA_BASE_URL: '', KARA_API_KEY: '', PUBLIC_ORIGIN: `http://127.0.0.1:${port}`, NODE_ENV:'test', REQUIRE_OWNER_2FA:'0', ...options }
     });
     let logs = ''; child.stdout.on('data', b => logs += b); child.stderr.on('data', b => logs += b);
     t.after(async () => { if (child.exitCode === null) { child.kill(); await new Promise(r => child.once('exit', r)); } fs.rmSync(scratch, { recursive: true, force: true }); });
     const base = `http://127.0.0.1:${port}`;
     for (let i = 0; i < 100; i++) { try { if ((await fetch(base + '/api/health')).ok) break; } catch {} if (child.exitCode !== null) throw new Error(logs); await new Promise(r => setTimeout(r, 30)); }
     async function request(route, token, body) {
-      const res = await fetch(base + route, { method: body === undefined ? 'GET' : 'POST', headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      const res = await fetch(base + route, { method: body === undefined ? 'GET' : 'POST', headers: { ...(token ? { Cookie: token } : {}), Origin:base, 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
       const type = res.headers.get('content-type') || '';
-      return { status: res.status, body: type.includes('json') ? await res.json() : Buffer.from(await res.arrayBuffer()), headers: res.headers };
+      return { status: res.status, body: type.includes('json') ? await res.json() : Buffer.from(await res.arrayBuffer()), headers: res.headers, cookie:res.headers.get('set-cookie')?.split(';')[0] };
     }
     const login = await request('/api/login', null, { username: 'testowner', password });
     assert.equal(login.status, 200, JSON.stringify(login.body));
-    return { request, owner: login.body.token, uploads, password, logs: () => logs };
+    return { request, owner: login.cookie, uploads, password, logs: () => logs };
   }
   async function staff(request, owner, suffix = 'one') {
     const password = crypto.randomBytes(16).toString('hex');
     const created = await request('/api/users', owner, { username: 'staff' + suffix, full_name: 'Fixture Staff', role: 'STAFF', branch_id: 'UNIT_LP', password });
     assert.equal(created.status, 201, JSON.stringify(created.body));
     const login = await request('/api/login', null, { username: 'staff' + suffix, password });
-    assert.equal(login.status, 200); return login.body.token;
+    assert.equal(login.status, 200); return login.cookie;
   }
   test('staff creation rejects missing or inactive branch; transaction money rejects coercion', async t => {
     const { request, owner, password } = await start(t);
@@ -118,8 +123,8 @@ if (process.env.SIPEKA_ASYNC_HARNESS === '1') {
     assert.equal((await request('/api/users/reset-password', owner, { user_id: user.id, new_password: password })).status, 200);
     assert.equal((await request('/api/me', token)).status, 401);
     const login = await request('/api/login', null, { username: 'staffone', password }); assert.equal(login.status, 200);
-    assert.equal((await request('/api/change-password', login.body.token, { old_password: password, new_password: crypto.randomBytes(16).toString('hex') })).status, 200);
-    assert.equal((await request('/api/me', login.body.token)).status, 401);
+    assert.equal((await request('/api/change-password', login.cookie, { old_password: password, new_password: crypto.randomBytes(16).toString('hex') })).status, 200);
+    assert.equal((await request('/api/me', login.cookie)).status, 401);
   });
   test('startup database readiness rejection prevents the server from listening', async t => {
     await assert.rejects(start(t, { SIPEKA_FAIL_STARTUP: '1' }), /Database readiness failed; server not listening/);
@@ -143,7 +148,7 @@ if (process.env.SIPEKA_ASYNC_HARNESS === '1') {
   const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lZkAAAAASUVORK5CYII=';
   test('manual upload stores private evidence; authenticated read enforces actor scope', async t => {
     const { request, owner, uploads } = await start(t); const token = await staff(request, owner); const other = await staff(request, owner, 'two');
-    const upload = await request('/api/receipts/upload', token, { image, branch_id: 'UNIT_LC' });
+    const upload = await request('/api/receipts/upload', token, { image, branch_id: 'UNIT_LP' });
     assert.equal(upload.status, 201, JSON.stringify(upload.body)); assert.match(upload.body.receipt_key, /^\/api\/receipts\/evidence-/);
     assert.equal(fs.readdirSync(uploads).length, 1);
     assert.equal((await request(upload.body.receipt_key)).status, 401);
@@ -166,7 +171,7 @@ if (process.env.SIPEKA_ASYNC_HARNESS === '1') {
   test('async DB login waits for user lookup and session writes; GET arrays resolve', async t => {
     const { request, owner } = await start(t);
     assert.equal((await request('/api/me', owner)).body.role, 'OWNER');
-    const units = await request('/api/units', owner); assert.ok(Array.isArray(units.body)); assert.equal(units.body.length, 6);
+    const units = await request('/api/units', owner); assert.ok(Array.isArray(units.body)); assert.equal(units.body.length, 2);
     const users = await request('/api/users', owner); assert.ok(Array.isArray(users.body)); assert.equal(users.body.length, 1);
     assert.deepEqual((await request('/api/transactions', owner)).body.rows, []);
     assert.deepEqual((await request('/api/closing/summary', owner)).body.closings, []);

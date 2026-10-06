@@ -143,6 +143,28 @@ db.exec(`CREATE TABLE IF NOT EXISTS receipt_assets (
  branch_id TEXT REFERENCES business_units(id),mime TEXT NOT NULL,created_at TEXT DEFAULT (datetime('now'))
 );`);
 
+tryMigrate('ALTER TABLE business_units ADD COLUMN archived_at TEXT;', 'branch.archived_at');
+tryMigrate('ALTER TABLE business_units ADD COLUMN archived_by TEXT REFERENCES app_users(id);', 'branch.archived_by');
+tryMigrate('ALTER TABLE business_units ADD COLUMN archive_reason TEXT;', 'branch.archive_reason');
+db.exec(`CREATE TABLE IF NOT EXISTS branch_audit_logs (
+ id TEXT PRIMARY KEY, branch_id TEXT NOT NULL REFERENCES business_units(id),
+ actor_id TEXT NOT NULL REFERENCES app_users(id), action TEXT NOT NULL CHECK(action='ARCHIVED'),
+ reason TEXT NOT NULL, reassigned_to TEXT REFERENCES business_units(id), reassigned_users INTEGER NOT NULL,
+ created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TRIGGER IF NOT EXISTS branch_audit_no_update BEFORE UPDATE ON branch_audit_logs BEGIN SELECT RAISE(ABORT,'APPEND_ONLY_BRANCH_AUDIT'); END;
+CREATE TRIGGER IF NOT EXISTS branch_audit_no_delete BEFORE DELETE ON branch_audit_logs BEGIN SELECT RAISE(ABORT,'APPEND_ONLY_BRANCH_AUDIT'); END;
+`);
+for (const table of ['ledger_transactions','cash_closings','receipt_assets','app_users']) {
+  const column = table === 'app_users' ? 'assigned_branch_id' : 'branch_id';
+  db.exec(`CREATE TRIGGER IF NOT EXISTS ${table}_active_branch_insert BEFORE INSERT ON ${table}
+    WHEN NEW.${column} IS NOT NULL AND NOT EXISTS(SELECT 1 FROM business_units WHERE id=NEW.${column} AND is_active=1)
+    BEGIN SELECT RAISE(ABORT,'BRANCH_INACTIVE'); END;`);
+}
+db.exec(`CREATE TRIGGER IF NOT EXISTS app_users_active_branch_update BEFORE UPDATE OF assigned_branch_id ON app_users
+ WHEN NEW.assigned_branch_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM business_units WHERE id=NEW.assigned_branch_id AND is_active=1)
+ BEGIN SELECT RAISE(ABORT,'BRANCH_INACTIVE'); END;`);
+
 // ============ TRIGGERS ============
 db.exec(`
 DROP TRIGGER IF EXISTS ledger_no_update;
@@ -232,14 +254,8 @@ function seed() {
     return;
   }
 
-  const units = [
-    ["UNIT_LP", "LP", "Laundry Pusat", "LAUNDRY"],
-    ["UNIT_LC", "LC", "Laundry Cabang", "LAUNDRY"],
-    ["UNIT_KOS", "KOS", "Kos RedDoorz", "KOS"],
-    ["UNIT_CFE", "CFE", "Cafe Dummy", "FNB"],
-    ["UNIT_VIL", "VIL", "Villa", "VILLA"],
-    ["UNIT_CWS", "CWS", "Car Wash Dummy", "JASA"],
-  ];
+  // Operational default supersedes the six-unit demonstration seed. Existing DBs are unchanged.
+  const units = [["UNIT_LP", "LP", "Laundry", "LAUNDRY"]];
   const insUnit = db.prepare("INSERT OR IGNORE INTO business_units (id, code, name, category) VALUES (?,?,?,?)");
   for (const [id, code, name, cat] of units) {
     insUnit.run(id, code, name, cat);
@@ -483,6 +499,41 @@ const q = {
     VALUES (?,?,?,?,1)
   `),
 };
+
+q.allUnitsIncludingArchived = db.prepare('SELECT * FROM business_units ORDER BY name');
+q.branchAuditLogs = db.prepare('SELECT * FROM branch_audit_logs WHERE branch_id=? ORDER BY created_at,id');
+q.archiveBranch = { run: archiveBranch };
+q.deleteBranch = q.archiveBranch;
+function archiveBranch(branchId, actorId, reassignTo = null, reason = '') {
+  const fail = (statusCode, error) => ({ ok: false, statusCode, error });
+  const savepoint = 'branch_' + uid();
+  db.exec(`SAVEPOINT ${savepoint}`);
+  try {
+    const result = (() => {
+      if (q.userById.get(actorId)?.role !== 'OWNER') return fail(403, 'Khusus Owner');
+      const unit = q.unitById.get(branchId);
+      if (!unit) return fail(404, 'Unit bisnis tidak ditemukan');
+      if (unit.is_active !== 1) return { ok: true, action: 'already_archived', id: branchId, reassigned_users: 0 };
+      if (q.allUnits.all().length <= 1) return fail(409, 'Unit aktif terakhir tidak dapat diarsipkan');
+      if (reassignTo !== null && (reassignTo === branchId || !q.unitByIdActive.get(reassignTo))) return fail(400, 'Unit pengganti harus aktif dan berbeda');
+      const users = db.prepare('SELECT id FROM app_users WHERE assigned_branch_id=? ORDER BY id').all(branchId);
+      if (users.length && !reassignTo) return fail(409, 'Pindahkan staf ke unit aktif sebelum mengarsipkan');
+      if (typeof reason !== 'string' || reason.length > 1000) return fail(400, 'Alasan maksimal 1000 karakter');
+      for (const user of users) {
+        db.prepare('UPDATE app_users SET assigned_branch_id=? WHERE id=?').run(reassignTo, user.id);
+        q.dropUserSessions.run(user.id);
+      }
+      db.prepare("UPDATE business_units SET is_active=0,archived_at=datetime('now'),archived_by=?,archive_reason=? WHERE id=?").run(actorId, reason.trim(), branchId);
+      db.prepare("INSERT INTO branch_audit_logs(id,branch_id,actor_id,action,reason,reassigned_to,reassigned_users) VALUES(?,?,?,'ARCHIVED',?,?,?)").run(uid(), branchId, actorId, reason.trim(), reassignTo, users.length);
+      return { ok: true, action: 'archived', id: branchId, reassigned_users: users.length };
+    })();
+    db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+    return result;
+  } catch (error) {
+    db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}; RELEASE SAVEPOINT ${savepoint}`);
+    throw error;
+  }
+}
 
 module.exports = {
   db,

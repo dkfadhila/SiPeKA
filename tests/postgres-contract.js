@@ -15,7 +15,8 @@ test('PostgreSQL adapter supplies every existing SQLite query and helper without
   delete process.env.DATABASE_URL;
   const adapter = require('../db-postgres');
   await assert.rejects(adapter.ready, /DATABASE_URL/);
-  assert.deepEqual(Object.keys(adapter.q).sort(), names);
+  assert.deepEqual(Object.keys(adapter.q).sort(), [...names,'allUnitsIncludingArchived','branchAuditLogs','archiveBranch','deleteBranch'].sort());
+  for(const name of ['archiveBranch','deleteBranch'])assert.equal(typeof adapter.q[name].run,'function');
   for (const name of names) for (const op of ['get', 'all', 'run']) assert.equal(typeof adapter.q[name][op], 'function');
   for (const name of ['verifyPassword', 'hashPassword', 'uid', 'atomicApprove', 'createSession', 'getValidSession', 'revokeUserSessions', 'checkIdempotency', 'withRequestTransaction']) assert.equal(typeof adapter[name], 'function', name);
   assert.equal(adapter.verifyPassword('fixture-password', adapter.hashPassword('fixture-password', 'fixture-salt')), true);

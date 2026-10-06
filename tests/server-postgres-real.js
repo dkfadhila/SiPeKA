@@ -42,17 +42,19 @@ test('real PostgreSQL HTTP: isolated schema, sessions, private receipt, atomic i
   for (let i = 0; i < 200; i++) { try { if ((await fetch(base + '/api/health')).ok) { healthy = true; break; } } catch {} if (child.exitCode !== null) throw new Error('server exited before ready: ' + logs); await new Promise(r => setTimeout(r, 50)); }
   assert.ok(healthy, 'server became healthy');
   async function request(route, token, body) {
-    const res = await fetch(base + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    return { status: res.status, body: res.headers.get('content-type')?.includes('json') ? await res.json() : Buffer.from(await res.arrayBuffer()) };
+    const res = await fetch(base + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', Origin:base,...(token ? { Cookie:token } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    return { status: res.status, cookie:res.headers.get('set-cookie')?.split(';')[0], body: res.headers.get('content-type')?.includes('json') ? await res.json() : Buffer.from(await res.arrayBuffer()) };
   }
   const ready = await request('/api/ready'); assert.equal(ready.status, 200); assert.equal(ready.body.database, 'postgresql');
-  const login = await request('/api/login', null, { username: 'httpowner', password }); assert.equal(login.status, 200, JSON.stringify(login.body)); const owner = login.body.token;
+  const login = await request('/api/login', null, { username: 'httpowner', password }); assert.equal(login.status, 200, JSON.stringify(login.body)); const owner = login.cookie;
   const creation = await request('/api/users', owner, { username: 'httpstaff', full_name: 'HTTP Staff', role: 'STAFF', branch_id: 'HTTP_BRANCH', password }); assert.equal(creation.status, 201, JSON.stringify(creation.body));
-  const staffLogin = await request('/api/login', null, { username: 'httpstaff', password }); assert.equal(staffLogin.status, 200); const staff = staffLogin.body.token;
+  const staffLogin = await request('/api/login', null, { username: 'httpstaff', password }); assert.equal(staffLogin.status, 200); const staff = staffLogin.cookie;
   assert.equal((await request('/api/units', staff)).body.length, 1);
   const receipt = await request('/api/receipts/upload', staff, { image }); assert.equal(receipt.status, 201, JSON.stringify(receipt.body));
   assert.equal((await request(receipt.body.receipt_key)).status, 401);
   assert.deepEqual((await request(receipt.body.receipt_key, staff)).body, Buffer.from(image, 'base64'));
+  assert.equal((await request('/api/transactions',owner,{branch_id:'HTTP_OTHER',amount:1,tx_type:'INCOME',coa_id:'4101',receipt_key:receipt.body.receipt_key})).status,400);
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM ledger_transactions')).rows[0].n,0);
   const payload = { amount: 700000, tx_type: 'INCOME', coa_id: '4101', idempotency_key: 'http-parallel', receipt_key: receipt.body.receipt_key };
   const parallel = await Promise.all([request('/api/transactions', staff, payload), request('/api/transactions', staff, payload)]);
   assert.deepEqual(parallel.map(x => x.status).sort(), [200, 201]); assert.equal(parallel[0].body.id, parallel[1].body.id);

@@ -10,6 +10,51 @@ const crypto = require("node:crypto");
 const { q, uid, atomicApprove, createSession, getValidSession,
   revokeUserSessions, checkIdempotency, ready, withRequestTransaction, db } = require(process.env.DATABASE_URL ? "./db-postgres" : "./db");
 
+const { createPayrollService } = require('./payroll');
+const { createNotificationAdapter, createPayrollDeliveryWorker } = require('./payroll-delivery');
+let payrollService, payrollWorker, payrollRunning = false, payrollScheduled = false;
+function payrollPool() {
+  if (!process.env.DATABASE_URL) throw Object.assign(new Error('PAYROLL_PG_POOL_REQUIRED'), {status:503,code:'PAYROLL_PG_POOL_REQUIRED'});
+  return require('./db-postgres').getPool();
+}
+function payroll() {
+  // Missing keys block sensitive operations, not template access or application startup.
+  require('./payroll').createCipher(process.env.PAYROLL_ENCRYPTION_KEY);
+  return payrollService ||= createPayrollService({pool:payrollPool()});
+}
+function deliveryWorker() {
+  if (payrollWorker) return payrollWorker;
+  let emailTransport;
+  const port=Number(process.env.PAYROLL_SMTP_PORT || 587);
+  if (process.env.PAYROLL_SMTP_HOST && Number.isInteger(port) && port>0 && port<=65535) {
+    emailTransport=require('nodemailer').createTransport({host:process.env.PAYROLL_SMTP_HOST,port,
+      secure:port===465,requireTLS:port!==465,connectionTimeout:10000,greetingTimeout:10000,socketTimeout:20000,
+      ...(process.env.PAYROLL_SMTP_USER && process.env.PAYROLL_SMTP_PASSWORD ? {auth:{user:process.env.PAYROLL_SMTP_USER,pass:process.env.PAYROLL_SMTP_PASSWORD}} : {})});
+  }
+  const base=createNotificationAdapter({emailTransport,emailFrom:process.env.PAYROLL_EMAIL_FROM,
+    telegramToken:process.env.TELEGRAM_BOT_TOKEN,companyName:process.env.PAYROLL_COMPANY_NAME || 'SiPeKA'});
+  const pool=payrollPool();
+  // Verification is an Owner attestation, never inferred from syntactic validity.
+  const adapter={check:base.check};
+  for(const channel of ['email','telegram']) adapter[channel]=async args=>{
+    const col=channel==='email'?'email':'telegram_user_id';
+    const contact=(await pool.query('SELECT id FROM app_users WHERE role=$1 AND '+col+'=$2 AND '+(channel==='email'?'email_verified':'telegram_verified')+'=true',['STAFF',args.to])).rows;
+    if(contact.length!==1)throw new Error('PAYROLL_CONTACT_CHANGED');
+    return base[channel](args);
+  };
+  return payrollWorker=createPayrollDeliveryWorker({pool,adapter});
+}
+function schedulePayroll() {
+  if (process.env.PAYROLL_DELIVERY_ENABLED !== '1') return;
+  if (payrollScheduled || payrollRunning) return;
+  payrollScheduled=true;
+  setImmediate(async()=>{
+    payrollScheduled=false;if(payrollRunning)return;payrollRunning=true;
+    try{const worker=deliveryWorker();await worker.recoverStale();for(let i=0;i<20;i++)if(!await worker.runOnce())break;}
+    catch{console.error('[payroll] worker blocked; check configuration');}
+    finally{payrollRunning=false;}
+  });
+}
 const security = require("./auth-security");
 const authConfig = security.config();
 const authReady = Promise.resolve(ready).then(async () => {
@@ -338,7 +383,7 @@ const server = http.createServer(async (req, res) => {
     const h = {
       ...SECURITY_HEADERS,
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     };
     if (ALLOWED_ORIGINS.length > 0 && ALLOWED_ORIGINS.includes(origin)) {
       h["Access-Control-Allow-Origin"] = origin;
@@ -369,7 +414,7 @@ const server = http.createServer(async (req, res) => {
     await authReady;
     if (p.startsWith('/api/') && !['GET','HEAD','OPTIONS'].includes(req.method) && !security.validOrigin(req, authConfig))
       return json(res, 403, { error: "Origin tidak diizinkan" });
-    const mutation = req.method === "POST" && (["/api/login", "/api/logout", "/api/change-password", "/api/users", "/api/users/reset-password", "/api/units", "/api/transactions", "/api/approvals", "/api/closing"].includes(p) || p.startsWith('/api/auth/'));
+    const mutation = req.method === "POST" && (["/api/login", "/api/logout", "/api/change-password", "/api/users", "/api/users/reset-password", "/api/units", "/api/units/archive", "/api/transactions", "/api/approvals", "/api/closing"].includes(p) || p.startsWith('/api/auth/'));
     if (process.env.DATABASE_URL && mutation) {
       // Do not report success until PostgreSQL has committed the entire request.
       res._deferJSON = true;
@@ -427,6 +472,49 @@ async function handleRequest(req, res, url, p) {
   if (p.startsWith('/api/') && me && (me.session_purpose !== 'full' || me.password_change_required) && p !== '/api/change-password')
     return json(res, 403, { error: 'Ganti password untuk mengamankan akun', setup_required: true });
 
+  if (p.startsWith('/api/payroll')) {
+    if(me.role!=='OWNER'){console.warn('[security] payroll access denied');return json(res,403,{error:'PAYROLL_OWNER_ONLY'});}
+    try {
+      if(p==='/api/payroll/template' && req.method==='GET'){
+        const csv=await createPayrollService({pool:payrollPool()}).template(me);
+        res.writeHead(200,{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="SiPeKA-template-slip-gaji.csv"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end(csv);
+      }
+      if(p==='/api/payroll/contacts'){
+        const pool=payrollPool();
+        if(req.method==='GET')return json(res,200,(await pool.query("SELECT id,username,full_name,email,telegram_user_id,email_verified,telegram_verified FROM app_users WHERE role='STAFF' ORDER BY full_name")).rows);
+        if(req.method==='POST'){
+          const b=await readBody(req),email=b.email||null,tg=b.telegram_user_id||null;
+          if(typeof b.user_id!=='string'||(email!==null&&(typeof email!=='string'||email.length>254||! /^[^\s@<>;,]+@[^\s@<>;,]+\.[^\s@<>;,]+$/.test(email)))||(tg!==null&&(typeof tg!=='string'||!/^[1-9]\d{0,15}$/.test(tg)))||b.verified!==true)return json(res,400,{error:'PAYROLL_VERIFIED_PRIVATE_CONTACT_REQUIRED'});
+          const result=await require('./payroll').transaction(pool,async c=>{
+            const u=(await c.query("SELECT id FROM app_users WHERE id=$1 AND role='STAFF' FOR UPDATE",[b.user_id])).rows[0];if(!u)return false;
+            const duplicate=(await c.query("SELECT id FROM app_users WHERE id<>$1 AND (($2::text IS NOT NULL AND email=$2) OR ($3::text IS NOT NULL AND telegram_user_id=$3))",[b.user_id,email,tg])).rows;if(duplicate.length)throw Object.assign(new Error('PAYROLL_CONTACT_ALREADY_ASSIGNED'),{status:409,code:'PAYROLL_CONTACT_ALREADY_ASSIGNED'});
+            await c.query('UPDATE app_users SET email=$2,telegram_user_id=$3,email_verified=$4,telegram_verified=$5 WHERE id=$1',[b.user_id,email,tg,!!email,!!tg]);
+            await c.query("INSERT INTO payroll_access_audit(id,actor_id,action) VALUES($1,$2,'CONTACT_VERIFIED')",[crypto.randomUUID(),me.id]);return true;
+          });return json(res,result?200:404,result?{ok:true}:{error:'PAYROLL_STAFF_NOT_FOUND'});
+        }
+      }
+      if(p==='/api/payroll/batches' && req.method==='GET'){
+        const pool=payrollPool();await pool.query("INSERT INTO payroll_access_audit(id,actor_id,action) VALUES($1,$2,'BATCH_LIST')",[crypto.randomUUID(),me.id]);
+        return json(res,200,(await pool.query('SELECT id,period,status,created_at FROM payroll_batches ORDER BY created_at DESC LIMIT 100')).rows);
+      }
+      if(p==='/api/payroll/import' && req.method==='POST'){const svc=payroll();req._bodyLimit=2*BODY_LIMIT_JSON;const b=await readBody(req);return json(res,201,await svc.importCsv(me,b.csv));}
+      const batch=p.match(/^\/api\/payroll\/([a-f0-9-]{36})\/(preview|publish|delivery)$/);
+      if(batch){const svc=payroll(),id=batch[1],action=batch[2];
+        if(action==='preview'&&req.method==='GET')return json(res,200,await svc.preview(me,id));
+        if(action==='delivery'&&req.method==='GET'){const rows=await svc.deliveryStatus(me,id);return json(res,200,rows.map(row=>({...row,delivery_enabled:process.env.PAYROLL_DELIVERY_ENABLED==='1'})));}
+        if(action==='publish'&&req.method==='POST'){const b=await readBody(req),result=await svc.publish(me,id,b.preview_token);schedulePayroll();return json(res,200,result);}
+      }
+      const retry=p.match(/^\/api\/payroll\/delivery\/([a-f0-9-]{36})\/retry$/);
+      if(retry&&req.method==='POST'){const result=await payroll().retryDelivery(me,retry[1]);schedulePayroll();return json(res,200,result);}
+      return json(res,404,{error:'not found'});
+    }catch(e){const safe=/^PAYROLL_[A-Z0-9_]+$/.test(e.code||'');return json(res,safe&&Number.isInteger(e.status)?e.status:503,{error:safe?e.code:'PAYROLL_UNAVAILABLE'});}
+  }
+  if ((p==='/api/units/archive' && req.method==='POST') || (/^\/api\/units\/[^/]+$/.test(p) && req.method==='DELETE')) {
+    if(me.role!=='OWNER')return json(res,403,{error:'Khusus Owner'});
+    const b=await readBody(req),id=req.method==='DELETE'?decodeURIComponent(p.slice('/api/units/'.length)):b.branch_id;
+    if(typeof id!=='string'||!id.trim()||id.length>200||(b.reassign_to!=null&&(typeof b.reassign_to!=='string'||!b.reassign_to.trim()))||(b.reason!==undefined&&(typeof b.reason!=='string'||b.reason.length>1000)))return json(res,400,{error:'Data arsip cabang tidak valid'});
+    const result=await q.archiveBranch.run(id,me.id,b.reassign_to??null,b.reason??'');return json(res,result.ok?200:result.statusCode,result);
+  }
   // TOTP_REMOVED: enrollment and verification endpoints removed.
   if (p.startsWith('/api/auth/totp/')) return json(res, 404, { error: 'not found' });
 
@@ -491,7 +579,8 @@ async function handleRequest(req, res, url, p) {
     if (!name || !code) return json(res, 400, { error: "Nama cabang dan kode cabang wajib diisi" });
     const cleanCode = String(code).trim().toUpperCase();
     const cleanName = String(name).trim();
-    const branchId = "UNIT_" + cleanCode.replace(/[^A-Z0-9]/g, "");
+    if (typeof name !== 'string' || typeof code !== 'string' || !cleanName || cleanName.length>120 || !/^[A-Z0-9_-]{1,32}$/.test(cleanCode) || (category!==undefined && (typeof category!=='string' || !category.trim() || category.length>64))) return json(res,400,{error:'Data cabang tidak valid'});
+    const branchId = "UNIT_" + uid();
     try {
       (await q.insertBranch.run(branchId, cleanCode, cleanName, category || "LAUNDRY"));
       return json(res, 201, { ok: true, id: branchId, name: cleanName, code: cleanCode });
@@ -502,10 +591,12 @@ async function handleRequest(req, res, url, p) {
   }
 
   if (p === "/api/units" && req.method === "GET") {
+    if(url.searchParams.get('include_archived')==='1' && me.role!=='OWNER')return json(res,403,{error:'Khusus Owner'});
     if (me.role === "STAFF") {
-      const u = me.assigned_branch_id ? (await q.unitById.get(me.assigned_branch_id)) : null;
+      const u = me.assigned_branch_id ? (await q.unitByIdActive.get(me.assigned_branch_id)) : null;
       return json(res, 200, u ? [u] : []);
     }
+    if(url.searchParams.get('include_archived')==='1'){if(me.role!=='OWNER')return json(res,403,{error:'Khusus Owner'});return json(res,200,await q.allUnitsIncludingArchived.all());}
     return json(res, 200, (await q.allUnits.all()));
   }
 
@@ -561,6 +652,7 @@ async function handleRequest(req, res, url, p) {
       const asset = (await q.receiptByFilename.get(filename));
       if (!asset) return json(res, 400, { error: "Bukti transaksi tidak ditemukan" });
       if (!canAccessReceipt(me, asset)) return json(res, 403, { error: "Akses bukti transaksi ditolak" });
+      if (asset.branch_id !== branchId) return json(res, 400, { error: "Bukti transaksi harus berasal dari cabang yang sama" });
     }
     const idem = idempotencyKey(b.idempotency_key);
     const fingerprint = fingerprintOf({ amount, method, txType, txIntent, coaId: String(coaId), memo, receiptKey });
@@ -836,6 +928,7 @@ Aturan:
 }
 
 Promise.resolve(authReady).then(() => {
+  if(process.env.DATABASE_URL && process.env.PAYROLL_DELIVERY_ENABLED==='1'){const timer=setInterval(schedulePayroll,30000);timer.unref();schedulePayroll();}
   server.listen(PORT, HOST, () => {
     console.log(`[sipeka] API + frontend di http://${HOST}:${PORT}`);
     console.log(`[sipeka] Widya model: ${KARA_MODEL}`);
