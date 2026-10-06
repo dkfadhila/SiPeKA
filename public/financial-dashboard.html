@@ -1844,50 +1844,40 @@ let toastTimer;function showToast(t){toast.textContent=t;toast.classList.add('sh
   }catch(err){showToast(err.message);}
 }
 function dewiAnswer(q){let s=q.toLowerCase(),p=scopeProfile();if(role==='owner'&&selectedBranch!=='all'&&(s.includes('branch')||s.includes('cabang')||s.includes('cash')||s.includes('pengeluaran')||s.includes('expense')||s.includes('biaya')))return'<b>'+scopeName()+'</b> mencatat revenue <span class="money">'+fmtM(p.revenue)+'</span>, pengeluaran <span class="money">'+fmtM(p.expense)+'</span>, dan arus kas bersih <span class="money">'+fmtM(p.net)+'</span>. Expense ratio saat ini <span class="mono">'+realDataRatio(p)+'</span> dengan status <b>'+p.status+'</b>.';if(role==='staff'&&(s.includes('cabang')||s.includes('branch')||s.includes('approval')||s.includes('semua')))return'Akses Staff dibatasi ke transaksi Anda sendiri dan operasional <b>'+escHtml(scopeName())+'</b>. Data cabang lain, laporan konsolidasi, dan approval tidak tersedia dalam peran ini.';if(s.includes('anomali')||s.includes('mencurigakan'))return'Analisis anomali memerlukan data ledger aktual. Buka halaman Widya Audit untuk melihat transaksi yang memerlukan perhatian.';if(s.includes('branch')||s.includes('cabang')||s.includes('banding'))return'Perbandingan cabang tersedia di halaman Branch Performance berdasarkan data transaksi aktual.';if(s.includes('budget')||s.includes('anggaran'))return'Data budget belum terhubung ke sistem. Hubungi Owner untuk mengatur anggaran per kategori.';if(s.includes('approval'))return'Cek halaman Approval Center untuk daftar transaksi pending dengan jumlah dan status aktual.';if(s.includes('pengeluaran')||s.includes('expense')||s.includes('biaya'))return'Detail pengeluaran tersedia di halaman Expenses berdasarkan data transaksi aktual periode ini.';return'Mohon tanyakan pertanyaan yang lebih spesifik tentang transaksi atau data keuangan Anda. Saya menganalisis dari ledger aktual, bukan estimasi.'}function cleanDewiText(q){return q.replace(/[<>&]/g,x=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[x]))}let dewiChatHistory=[];
-async function sendDewi(q){
-  if(!q||!q.trim())return;
-  let c=document.getElementById('conversation');if(!c)return;
-  c.insertAdjacentHTML('beforeend','<div class="bubble user">'+cleanDewiText(q)+'</div>');
-  c.scrollTop=c.scrollHeight;
-  dewiChatHistory.push({role:'user',content:q});
-  const bubbleId='dewi-resp-'+Date.now();
-  c.insertAdjacentHTML('beforeend','<div class="bubble" id="'+bubbleId+'"><strong>Widya · Head of Accounting</strong><br><em>Sedang menganalisis ledger keuangan…</em></div>');
-  c.scrollTop=c.scrollHeight;
-  try{
-    const res=await window.SipekaAuth.api('/api/dewi',{method:'POST',body:{messages:dewiChatHistory.slice(-10)}});
-    const reply=res.reply||'Tidak ada respons dari Widya.';
-    dewiChatHistory.push({role:'assistant',content:reply});
-    const b=document.getElementById(bubbleId);
-    if(b)b.innerHTML='<strong>Widya · Head of Accounting</strong><br>'+reply.replace(/\n/g,'<br>');
-  }catch(err){
-    const b=document.getElementById(bubbleId);
-    if(b)b.innerHTML='<strong>Widya</strong><br><span style="color:var(--red);">Gagal: '+cleanDewiText(err.message)+'</span>';
-  }
-  c.scrollTop=c.scrollHeight;
+let widyaConversation=crypto.randomUUID(),widyaPending=null,widyaIdentity=null;
+function resetWidyaChat(){if(widyaPending)widyaPending.abort();widyaPending=null;widyaConversation=crypto.randomUUID();dewiChatHistory=[];widyaIdentity=null;document.querySelectorAll('#conversation,#miniConversation').forEach(c=>c.replaceChildren());}
+window.SipekaResetWidyaChat=resetWidyaChat;
+async function sendWidyaChat(q,containerId){
+ if(!q||!q.trim())return;
+ const user=window.SipekaCurrentUser,auth=window.SipekaAuth;
+ if(!user||user.role!=='OWNER'){showToast('Chat Widya hanya untuk Owner');return;}
+ if(widyaPending){showToast('Widya masih memproses. Batalkan atau tunggu.');return;}
+ const identity=JSON.stringify([auth.generation(),user.id]);
+ if(widyaIdentity!==identity){resetWidyaChat();widyaIdentity=identity;}
+ const c=document.getElementById(containerId);if(!c)return;
+ const controller=new AbortController();widyaPending=controller;
+ const bubble=document.createElement('div');bubble.className='bubble';
+ const userBubble=document.createElement('div');userBubble.className='bubble user';userBubble.textContent=q;c.append(userBubble,bubble);
+ bubble.textContent='Menghubungkan Hermes · profil widya…';
+ const cancel=document.createElement('button');cancel.type='button';cancel.className='btn';cancel.textContent='Batalkan';cancel.onclick=()=>controller.abort();bubble.append(document.createElement('br'),cancel);
+ const current=()=>widyaPending===controller&&widyaIdentity===identity&&JSON.stringify([auth.generation(),window.SipekaCurrentUser&&window.SipekaCurrentUser.id])===identity&&bubble.isConnected;
+ try{
+  const status=await auth.api('/api/widya/status',{signal:controller.signal});
+  if(!current())return;
+  if(!status.connected)throw new Error(status.error||'Hermes belum terhubung');
+  bubble.firstChild.textContent='Hermes Widya sedang memproses; tool berjalan bila diperlukan…';
+  const result=await auth.api('/api/widya',{method:'POST',signal:controller.signal,body:{message:q,conversation_id:widyaConversation}});
+  if(!current())return;
+  if(!result.reply)throw new Error('WIDYA_EMPTY_RESPONSE');
+  bubble.style.whiteSpace='pre-wrap';bubble.textContent='Widya · Hermes agent\n'+result.reply;
+ }catch(error){if(current())bubble.textContent=controller.signal.aborted?'Permintaan dibatalkan.':'Widya tidak menjawab: '+error.message;}
+ finally{if(widyaPending===controller)widyaPending=null;if(c.isConnected)c.scrollTop=c.scrollHeight;}
 }
-async function sendMiniDewi(q){
-  if(!q||!q.trim())return;
-  let c=document.getElementById('miniConversation');if(!c)return;
-  c.insertAdjacentHTML('beforeend','<div class="bubble user">'+cleanDewiText(q)+'</div>');
-  c.scrollTop=c.scrollHeight;
-  dewiChatHistory.push({role:'user',content:q});
-  const bubbleId='mini-resp-'+Date.now();
-  c.insertAdjacentHTML('beforeend','<div class="bubble" id="'+bubbleId+'"><strong>Widya</strong><br><em>Menganalisis…</em></div>');
-  c.scrollTop=c.scrollHeight;
-  try{
-    const res=await window.SipekaAuth.api('/api/dewi',{method:'POST',body:{messages:dewiChatHistory.slice(-10)}});
-    const reply=res.reply||'Tidak ada respons.';
-    dewiChatHistory.push({role:'assistant',content:reply});
-    const b=document.getElementById(bubbleId);
-    if(b)b.innerHTML='<strong>Widya</strong><br>'+reply.replace(/\n/g,'<br>');
-  }catch(err){
-    const b=document.getElementById(bubbleId);
-    if(b)b.innerHTML='<strong>Widya</strong><br><span style="color:var(--red);">'+cleanDewiText(err.message)+'</span>';
-  }
-  c.scrollTop=c.scrollHeight;
-}
+async function sendDewi(q){return sendWidyaChat(q,'conversation');}
+async function sendMiniDewi(q){return sendWidyaChat(q,'miniConversation');}
 // F09-fix: fungsi logout terpusat - panggil /api/logout, bersihkan DOM/state/cache, gunakan querySelector bukan getElementById (hanya ambil pertama)
 async function doLogout(){
+  resetWidyaChat();
   window.SipekaPrivateReceipts.clearAll();
   if(window.SipekaAuth)window.SipekaAuth.invalidate();
   if(window.SipekaReports)window.SipekaReports.setSnapshot({});
@@ -1951,9 +1941,9 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
 
   async function api(path,opts){
     opts=opts||{};const requestGeneration=bootVersion;
-    const r=await fetch(path,{method:opts.method||'GET',credentials:'same-origin',headers:Object.assign({'Content-Type':'application/json'},opts.headers||{}),body:opts.body?JSON.stringify(opts.body):undefined});
+    const r=await fetch(path,{method:opts.method||'GET',credentials:'same-origin',headers:Object.assign({'Content-Type':'application/json'},opts.headers||{}),body:opts.body?JSON.stringify(opts.body):undefined,signal:opts.signal});
     const d=await r.json().catch(()=>({}));
-    if(path.startsWith('/api/payroll') && requestGeneration!==bootVersion)throw new Error('Sesi berubah; buka ulang Slip Gaji');
+    if((path.startsWith('/api/payroll')||path.startsWith('/api/widya')) && requestGeneration!==bootVersion)throw new Error('Sesi berubah; buka ulang Slip Gaji');
     if(!r.ok){const error=new Error(d.error||('HTTP '+r.status));error.status=r.status;error.receipt_key=d.receipt_key||null;throw error;}
     return d;
   }
@@ -1970,6 +1960,7 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
   }
 
   async function bootstrap(user){
+    if(window.SipekaResetWidyaChat)window.SipekaResetWidyaChat();
     const version=++bootVersion;
     const alive=()=>version===bootVersion;
     window.SipekaPrivateReceipts.clearAll();

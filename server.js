@@ -70,6 +70,7 @@ const TOTP_KEY = process.env.AUTH_TOTP_KEY || '';
 if (authConfig.requireOwner2FA) security.encryptionKey(TOTP_KEY);
 const PORT = process.env.PORT || 4321;
 const HOST = process.env.HOST || "127.0.0.1";
+// KARA is OCR-only; Owner chat must never fall back to direct inference.
 const KARA_BASE = process.env.KARA_BASE_URL || "http://localhost:20128/v1";
 const KARA_KEY = process.env.KARA_API_KEY || "";
 const KARA_MODEL = process.env.KARA_MODEL || "ag/gemini-3.8-flash-medium";
@@ -295,73 +296,10 @@ async function issueSession(res, user, purpose) {
 }
 
 // ---------- Widya AI ----------
-function widyaSystemPrompt(context) {
-  return `Kamu adalah Widya (panggilan: Widya) — Head of Accounting AI di sistem SiPeKA.
-Aturan:
-- Jawab Bahasa Indonesia, ringkas, format Rupiah id-ID (Rp 123.456).
-- Gunakan HANYA angka dari KONTEKS DATA. DILARANG mengarang angka.
-- Role owner memiliki akses penuh semua cabang.
-- Kamu tidak mengeksekusi aksi final: pengeluaran > Rp 500.000 tetap menunggu approval owner.
-
-=== KONTEKS DATA ===
-${context}`;
-}
-
-async function callWidya(messages) {
-  const txs = (await q.txAll.all()).slice(0, 40);
-  const perf = (await q.staffPerf.all());
-  const lines = txs.map((t) =>
-    `${t.created_at} | ${t.branch_name} | ${t.user_name} | ${t.tx_type} | ${t.account_name} | ${t.memo || "-"} | Rp ${Number(t.amount).toLocaleString("id-ID")} | ${t.payment_method} | ${t.status} | [${t.tx_intent || "SETOR_NOTA"}]`
-  );
-  const perfLines = perf.map((p) =>
-    `${p.full_name} (@${p.username}) @ ${p.branch_name}: ${p.tx_count} transaksi, income Rp ${Number(p.income).toLocaleString("id-ID")}, expense Rp ${Number(p.expense).toLocaleString("id-ID")}, hari ini ${p.today_count}`
-  );
-  const context = [
-    `Ledger saat ini (terbaru):`,
-    lines.length ? lines.join("\n") : "(ledger kosong — belum ada transaksi)",
-    ``,
-    `Kinerja staf:`,
-    perfLines.length ? perfLines.join("\n") : "(belum ada staf bertransaksi)",
-  ].join("\n");
-
-  const res = await fetch(`${KARA_BASE}/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${KARA_KEY}` },
-    body: JSON.stringify({
-      model: KARA_MODEL,
-      stream: true,
-      temperature: 0.3,
-      max_tokens: 1200,
-      messages: [
-        { role: "system", content: widyaSystemPrompt(context) },
-        ...messages.slice(-12),
-      ],
-    }),
-    signal: AbortSignal.timeout(90_000),
-  });
-  if (!res.ok || !res.body) throw new Error(`upstream ${res.status}`);
-  const decoder = new TextDecoder();
-  let buf = "";
-  let reply = "";
-  const reader = res.body.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines2 = buf.split("\n");
-    buf = lines2.pop() ?? "";
-    for (const line of lines2) {
-      const s = line.trim();
-      if (!s.startsWith("data:")) continue;
-      const payload = s.slice(5).trim();
-      if (payload === "[DONE]") continue;
-      try {
-        const j = JSON.parse(payload);
-        reply += j?.choices?.[0]?.delta?.content ?? j?.choices?.[0]?.message?.content ?? "";
-      } catch {}
-    }
-  }
-  return reply;
+const widyaBridge = require('./widya-bridge').createWidyaBridge();
+async function widyaLedgerContext() {
+ const txs = (await q.txAll.all()).slice(0,40);
+ return JSON.stringify({scope:'latest_40_only_not_complete_period',transactions:txs.map(t=>({id:t.id,date:t.created_at,branch:t.branch_name,type:t.tx_type,amount:t.amount,payment:t.payment_method,status:t.status,memo:t.memo}))});
 }
 
 // ---------- router ----------
@@ -771,17 +709,28 @@ async function handleRequest(req, res, url, p) {
     return json(res, 200, (await q.staffPerf.all()));
   }
 
+  if (p === '/api/widya/status' && req.method === 'GET') {
+    if (me.role !== 'OWNER') return json(res,403,{error:'Akses Widya hanya untuk Owner'});
+    return json(res,200,await widyaBridge.status());
+  }
   if ((p === "/api/widya" || p === "/api/dewi") && req.method === "POST") {
     if (me.role !== "OWNER") return json(res, 403, { error: "Akses Widya hanya untuk Owner" });
     const b = await readBody(req);
-    const messages = Array.isArray(b.messages) ? b.messages : [];
-    if (!messages.length) return json(res, 400, { error: "messages required" });
-    try {
-      return json(res, 200, { reply: await callWidya(messages) });
-    } catch (e) {
-      console.error("[widya] upstream failed");
-      return json(res, 502, { error: "Widya tidak terjangkau" });
-    }
+    const controller = new AbortController();
+        const disconnect = () => { if (!res.writableEnded) controller.abort(); };
+        res.once('close', disconnect);
+        try {
+          widyaBridge.validate(b);
+          const answer = await widyaBridge.chat({sessionToken:security.sessionToken(req,authConfig),userId:me.id,body:b,context:await widyaLedgerContext(),signal:controller.signal});
+          // Do not return financial context after a session was revoked while the agent worked.
+          const current = await auth(req);
+          if (!current || current.id !== me.id || current.role !== 'OWNER') return json(res,401,{error:'Sesi berakhir'});
+          return json(res, 200, answer);
+        } catch (e) {
+          if (res.destroyed) return;
+          const safe = /^WIDYA_[A-Z_]+$/.test(e.code||'');
+          return json(res, safe ? e.status : 502, {error:safe ? e.code : 'WIDYA_BRIDGE_UNAVAILABLE'});
+        } finally { res.removeListener('close',disconnect); }
   }
 
   if (["/api/widya/extract", "/api/dewi/extract", "/api/receipts/upload"].includes(p) && req.method === "POST") {
@@ -931,7 +880,7 @@ Promise.resolve(authReady).then(() => {
   if(process.env.DATABASE_URL && process.env.PAYROLL_DELIVERY_ENABLED==='1'){const timer=setInterval(schedulePayroll,30000);timer.unref();schedulePayroll();}
   server.listen(PORT, HOST, () => {
     console.log(`[sipeka] API + frontend di http://${HOST}:${PORT}`);
-    console.log(`[sipeka] Widya model: ${KARA_MODEL}`);
+    console.log('[sipeka] Widya: authenticated Hermes profile bridge (OCR configured separately)');
   });
 }).catch(() => {
   console.error("[sipeka] Database readiness failed; server not listening");

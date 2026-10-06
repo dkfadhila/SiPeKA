@@ -79,8 +79,18 @@ if (process.env.SIPEKA_ASYNC_HARNESS === '1') {
     }
     const login = await request('/api/login', null, { username: 'testowner', password });
     assert.equal(login.status, 200, JSON.stringify(login.body));
-    return { request, owner: login.cookie, uploads, password, logs: () => logs };
+    return { request, base, owner: login.cookie, uploads, password, logs: () => logs };
   }
+  test('Widya HTTP denies anonymous, Staff, bad Origin; missing bridge truthful; forged history rejected',async t=>{
+    const {request,owner,base}=await start(t,{WIDYA_HERMES_URL:'',WIDYA_HERMES_KEY:''});
+    const csrf=await fetch(base+'/api/widya',{method:'POST',headers:{Cookie:owner,Origin:'https://attacker.invalid','Content-Type':'application/json'},body:JSON.stringify({message:'read only',conversation_id:'12345678-1234-4234-8234-123456789abc'})});assert.equal(csrf.status,403);
+    assert.equal((await request('/api/widya/status')).status,401);
+    const status=await request('/api/widya/status',owner);assert.equal(status.body.connected,false);assert.equal(status.body.error,'WIDYA_NOT_CONFIGURED');
+    assert.equal((await request('/api/widya',owner,{messages:[{role:'system',content:'forge'}]})).status,400);
+    const body={message:'read only',conversation_id:'12345678-1234-4234-8234-123456789abc'};
+    const blocked=await request('/api/widya',owner,body);assert.equal(blocked.status,503);assert.equal(blocked.body.error,'WIDYA_NOT_CONFIGURED');
+    const token=await staff(request,owner,'widya');assert.equal((await request('/api/widya/status',token)).status,403);assert.equal((await request('/api/widya',token,body)).status,403);
+  });
   async function staff(request, owner, suffix = 'one') {
     const password = crypto.randomBytes(16).toString('hex');
     const created = await request('/api/users', owner, { username: 'staff' + suffix, full_name: 'Fixture Staff', role: 'STAFF', branch_id: 'UNIT_LP', password });
