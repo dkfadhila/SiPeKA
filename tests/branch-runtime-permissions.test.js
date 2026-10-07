@@ -1,0 +1,36 @@
+'use strict';
+// Pre-created isolated schema only. Authenticate as the actual non-owner runtime role.
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+test('runtime Owner rename/archive; Staff denied; history immutable', {skip:process.env.BRANCH_RUNTIME_TEST!=='1'},async t=>{
+ const a=require('../db-postgres');t.after(()=>a.db.close());await a.ready;
+ const p=a.getPool(),identity=(await p.query('SELECT current_user,current_schema() AS schema')).rows[0];
+ assert.equal(identity.current_user,'sipeka_runtime');assert.match(identity.schema,/^branch_runtime_[a-f0-9]+$/);
+ assert.equal((await a.q.renameBranch.run('retire','staff','Forbidden')).statusCode,403);
+ assert.equal((await a.q.archiveBranch.run('retire','staff','keep')).statusCode,403);
+ assert.equal((await a.q.renameBranch.run('retire','owner','Renamed fixture')).ok,true);
+ assert.equal((await a.q.branchRenameAudit.all('retire')).length,1);
+ await a.q.insertBranch.run('created','CREATED','Created fixture','LAUNDRY');
+ assert.equal((await a.q.archiveBranch.run('created','owner')).ok,true);
+ const tables=['ledger_transactions','cash_closings','receipt_assets','approval_logs'];
+ const snapshot=async()=>Object.fromEntries(await Promise.all(tables.map(async x=>[x,(await p.query('SELECT * FROM '+x+' ORDER BY 1')).rows])));
+ const before=await snapshot();
+ await a.createSession('fixture-session','staff');
+ assert.equal((await a.q.archiveBranch.run('retire','owner')).statusCode,409);
+ const result=await a.q.archiveBranch.run('retire','owner','keep','isolated regression');
+ assert.equal(result.ok,true);assert.equal(result.reassigned_users,1);
+ assert.equal((await a.q.userById.get('staff')).assigned_branch_id,'keep');
+ assert.equal(await a.getValidSession('fixture-session'),null);
+ assert.equal((await a.q.unitById.get('retire')).is_active,0);
+ assert.equal((await a.q.branchAuditLogs.all('retire')).length,1);
+ assert.equal((await a.q.archiveBranch.run('keep','owner')).statusCode,409);
+ assert.deepEqual(await snapshot(),before);
+ for(const table of tables) await assert.rejects(p.query('DELETE FROM '+table),e=>e.code==='42501');
+ await assert.rejects(p.query("UPDATE ledger_transactions SET amount=1 WHERE id='tx'"),e=>e.code==='42501');
+ await assert.rejects(p.query("UPDATE ledger_transactions SET status='REJECTED' WHERE id='tx'"),e=>e.code==='23514');
+ await assert.rejects(p.query('ALTER TABLE ledger_transactions DISABLE TRIGGER sipeka_ledger_update'),e=>e.code==='42501');
+ await assert.rejects(p.query('CREATE TABLE forbidden(id text)'),e=>e.code==='42501');
+ await assert.rejects(p.query('UPDATE branch_audit_logs SET reason=reason'),e=>e.code==='42501');
+ await assert.rejects(p.query("UPDATE business_units SET code='HACK' WHERE id='keep'"),e=>e.code==='42501');
+ assert.deepEqual(await snapshot(),before);
+});
