@@ -504,6 +504,20 @@ q.allUnitsIncludingArchived = db.prepare('SELECT * FROM business_units ORDER BY 
 q.branchAuditLogs = db.prepare('SELECT * FROM branch_audit_logs WHERE branch_id=? ORDER BY created_at,id');
 q.archiveBranch = { run: archiveBranch };
 q.deleteBranch = q.archiveBranch;
+db.exec(`CREATE TABLE IF NOT EXISTS branch_rename_audit (id TEXT PRIMARY KEY,branch_id TEXT NOT NULL REFERENCES business_units(id),actor_id TEXT NOT NULL REFERENCES app_users(id),old_name TEXT NOT NULL,new_name TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT (datetime('now')));
+CREATE TRIGGER IF NOT EXISTS branch_rename_no_update BEFORE UPDATE ON branch_rename_audit BEGIN SELECT RAISE(ABORT,'APPEND_ONLY_BRANCH_AUDIT'); END;
+CREATE TRIGGER IF NOT EXISTS branch_rename_no_delete BEFORE DELETE ON branch_rename_audit BEGIN SELECT RAISE(ABORT,'APPEND_ONLY_BRANCH_AUDIT'); END;`);
+q.branchRenameAudit=db.prepare('SELECT * FROM branch_rename_audit WHERE branch_id=? ORDER BY created_at,id');
+q.renameBranch={run(branchId,actorId,name){
+ if(q.userById.get(actorId)?.role!=='OWNER')return {ok:false,statusCode:403,error:'Khusus Owner'};
+ if(typeof name!=='string'||!name.trim()||name.trim().length>120||/[\u0000-\u001f\u007f]/.test(name))return {ok:false,statusCode:400,error:'Nama cabang tidak valid'};
+ const unit=q.unitById.get(branchId);if(!unit)return {ok:false,statusCode:404,error:'Unit bisnis tidak ditemukan'};
+ if(unit.is_active!==1)return {ok:false,statusCode:409,error:'Unit diarsipkan'};
+ name=name.trim();if(unit.name===name)return {ok:true,action:'unchanged',id:branchId};
+ const sp='rename_'+uid();db.exec(`SAVEPOINT ${sp}`);
+ try{db.prepare('UPDATE business_units SET name=? WHERE id=?').run(name,branchId);db.prepare('INSERT INTO branch_rename_audit(id,branch_id,actor_id,old_name,new_name) VALUES(?,?,?,?,?)').run(uid(),branchId,actorId,unit.name,name);db.exec(`RELEASE SAVEPOINT ${sp}`);return {ok:true,action:'renamed',id:branchId,name};}
+ catch(e){db.exec(`ROLLBACK TO SAVEPOINT ${sp}; RELEASE SAVEPOINT ${sp}`);throw e;}
+}};
 function archiveBranch(branchId, actorId, reassignTo = null, reason = '') {
   const fail = (statusCode, error) => ({ ok: false, statusCode, error });
   const savepoint = 'branch_' + uid();

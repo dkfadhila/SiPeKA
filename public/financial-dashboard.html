@@ -1691,7 +1691,7 @@ function branchesSystemPage(){
   + "</section>"
   + "<article class=\"card table-card\" style=\"margin-top:16px;\">"
   + '<div class="card-head"><div><h2>Cabang Aktif</h2><p>Hapus cabang dari operasional; riwayat transaksi tetap disimpan.</p></div></div><div class="table-wrap"><table><thead><tr><th>Nama</th><th>Kode</th><th>Tipe</th><th>Tindakan</th></tr></thead><tbody>'
-  + (window.SipekaUnits||[]).map(u=>'<tr><td>'+escapeHtml(u.name)+'</td><td>'+escapeHtml(u.code)+'</td><td>'+escapeHtml(u.category||'—')+'</td><td><label>Pindahkan staf ke <select data-replacement-unit="'+escapeHtml(u.id)+'"><option value="">Tanpa pengganti</option>'+(window.SipekaUnits||[]).filter(x=>x.id!==u.id).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join('')+'</select></label><button class="btn" data-remove-unit="'+escapeHtml(u.id)+'">Hapus Cabang</button></td></tr>').join('')
+  + (window.SipekaUnits||[]).map(u=>'<tr><td>'+escapeHtml(u.name)+'</td><td>'+escapeHtml(u.code)+'</td><td>'+escapeHtml(u.category||'—')+'</td><td><label>Pindahkan staf ke <select data-replacement-unit="'+escapeHtml(u.id)+'"><option value="">Tanpa pengganti</option>'+(window.SipekaUnits||[]).filter(x=>x.id!==u.id).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join('')+'</select></label><input aria-label="Nama baru cabang" maxlength="120" data-rename-name="'+escapeHtml(u.id)+'" value="'+escapeHtml(u.name)+'"><button class="btn" data-rename-unit="'+escapeHtml(u.id)+'">Ganti Nama</button><button class="btn" data-remove-unit="'+escapeHtml(u.id)+'">Arsipkan Cabang</button></td></tr>').join('')
   + '</tbody></table></div><p id="branchRemoveMsg" role="status"></p>'
   + "</article>";
 }
@@ -2142,6 +2142,8 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
   };
 
   document.addEventListener('click',async event=>{
+    const rename=event.target.closest('[data-rename-unit]');
+    if(rename){const id=rename.dataset.renameUnit,name=document.querySelector('[data-rename-name="'+CSS.escape(id)+'"]')?.value;rename.disabled=true;try{await api('/api/units/rename',{method:'POST',body:{branch_id:id,name}});await bootstrap(window.SipekaCurrentUser);}catch(e){const msg=document.getElementById('branchRemoveMsg');if(msg)msg.textContent=e.message;}finally{rename.disabled=false;}return;}
     const button=event.target.closest('[data-remove-unit]');if(!button)return;
     const id=button.dataset.removeUnit,unit=(window.SipekaUnits||[]).find(u=>u.id===id);
     if(!unit||!confirm('Hapus cabang '+unit.name+' dari operasional? Riwayat tetap disimpan. Staff di cabang ini perlu ditugaskan ulang.'))return;

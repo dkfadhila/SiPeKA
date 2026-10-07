@@ -177,6 +177,18 @@ q.allUnitsIncludingArchived = statement('SELECT * FROM business_units ORDER BY n
 q.branchAuditLogs = statement('SELECT * FROM branch_audit_logs WHERE branch_id=$1 ORDER BY created_at,id');
 q.archiveBranch = { run: archiveBranch };
 q.deleteBranch = q.archiveBranch;
+q.branchRenameAudit=statement('SELECT * FROM branch_rename_audit WHERE branch_id=$1 ORDER BY created_at,id');
+q.renameBranch={run:async(branchId,actorId,name)=>withRequestTransaction(async()=>{
+ const fail=(statusCode,error)=>({ok:false,statusCode,error});
+ if((await q.userById.get(actorId))?.role!=='OWNER')return fail(403,'Khusus Owner');
+ if(typeof name!=='string'||!name.trim()||name.trim().length>120||/[\u0000-\u001f\u007f]/.test(name))return fail(400,'Nama cabang tidak valid');
+ const unit=(await read('SELECT * FROM business_units WHERE id=$1 FOR UPDATE',[branchId])).rows[0];
+ if(!unit)return fail(404,'Unit bisnis tidak ditemukan');if(unit.is_active!==1)return fail(409,'Unit diarsipkan');
+ name=name.trim();if(unit.name===name)return {ok:true,action:'unchanged',id:branchId};
+ await write('UPDATE business_units SET name=$1 WHERE id=$2',[name,branchId]);
+ await write('INSERT INTO branch_rename_audit(id,branch_id,actor_id,old_name,new_name) VALUES($1,$2,$3,$4,$5)',[uid(),branchId,actorId,unit.name,name]);
+ return {ok:true,action:'renamed',id:branchId,name};
+})};
 async function archiveBranch(branchId, actorId, reassignTo = null, reason = '') {
   const fail = (statusCode, error) => ({ ok: false, statusCode, error });
   return withRequestTransaction(async () => {

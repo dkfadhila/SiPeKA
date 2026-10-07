@@ -453,6 +453,11 @@ async function handleRequest(req, res, url, p) {
     if(typeof id!=='string'||!id.trim()||id.length>200||(b.reassign_to!=null&&(typeof b.reassign_to!=='string'||!b.reassign_to.trim()))||(b.reason!==undefined&&(typeof b.reason!=='string'||b.reason.length>1000)))return json(res,400,{error:'Data arsip cabang tidak valid'});
     const result=await q.archiveBranch.run(id,me.id,b.reassign_to??null,b.reason??'');return json(res,result.ok?200:result.statusCode,result);
   }
+  if(p==='/api/units/rename' && req.method==='POST'){
+    if(me.role!=='OWNER')return json(res,403,{error:'Khusus Owner'});
+    const b=await readBody(req);if(typeof b.branch_id!=='string'||!b.branch_id.trim()||b.branch_id.length>200)return json(res,400,{error:'ID cabang tidak valid'});
+    const result=await q.renameBranch.run(b.branch_id,me.id,b.name);return json(res,result.ok?200:result.statusCode,result);
+  }
   // TOTP_REMOVED: enrollment and verification endpoints removed.
   if (p.startsWith('/api/auth/totp/')) return json(res, 404, { error: 'not found' });
 

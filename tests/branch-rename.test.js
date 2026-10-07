@@ -1,0 +1,21 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict');
+process.env.DB_PATH=':memory:';process.env.SIPEKA_SEED='0';
+const {q,db}=require('../db');
+test('Owner rename preserves IDs/history and immutable audit; Staff forbidden',async()=>{
+ await q.insertBranch.run('rename','RN','Before','LAUNDRY');
+ await q.insertUser.run('owner','owner','fixture','Owner','OWNER',null);
+ await q.insertUser.run('staff','staff','fixture','Staff','STAFF','rename');
+ assert.equal(typeof q.renameBranch?.run,'function');
+ assert.equal((await q.renameBranch.run('rename','staff','After')).statusCode,403);
+ assert.equal((await q.renameBranch.run('rename','owner','  ')).statusCode,400);
+ const original=await q.unitById.get('rename');
+ assert.equal((await q.renameBranch.run('rename','owner','After')).ok,true);
+ assert.deepEqual({...await q.unitById.get('rename')},{...original,name:'After'});
+ assert.equal((await q.userById.get('staff')).assigned_branch_id,'rename');
+ const rows=await q.branchRenameAudit.all('rename');assert.equal(rows.length,1);assert.equal(rows[0].old_name,'Before');assert.equal(rows[0].new_name,'After');assert.equal(rows[0].actor_id,'owner');
+ assert.equal((await q.renameBranch.run('rename','owner','After')).action,'unchanged');assert.equal((await q.branchRenameAudit.all('rename')).length,1);
+ assert.throws(()=>db.prepare('DELETE FROM branch_rename_audit').run(),/APPEND_ONLY/);
+ assert.equal((await q.renameBranch.run('missing','owner','After')).statusCode,404);
+ db.close();
+});

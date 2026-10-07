@@ -11,6 +11,13 @@ test('actual HTTP payroll and branch integration, isolated real PostgreSQL',{ski
  async function request(route,cookie,body,method){const r=await fetch(base+route,{method:method||(body===undefined?'GET':'POST'),headers:{Origin:base,'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});return {status:r.status,cookie:r.headers.get('set-cookie')?.split(';')[0],body:r.headers.get('content-type')?.includes('json')?await r.json():await r.text(),cache:r.headers.get('cache-control')};}
  await start();let owner=(await request('/api/login',null,{username:'owner',password:pw})).cookie;const template=await request('/api/payroll/template',owner);assert.equal(template.status,200);assert.match(template.body,/period,username,basic_salary/);assert.equal(template.cache,'no-store');assert.equal((await request('/api/payroll/import',owner,{csv:'x'})).status,503);
  child.kill();await new Promise(r=>child.once('exit',r));await start(crypto.randomBytes(32).toString('hex'));owner=(await request('/api/login',null,{username:'owner',password:pw})).cookie;const staff=(await request('/api/login',null,{username:'staff',password:pw})).cookie;
+ assert.equal((await request('/api/units/rename',staff,{branch_id:'b',name:'Changed'})).status,403);
+ assert.equal((await request('/api/units/rename',owner,{branch_id:'b',name:' '})).status,400);
+ assert.equal((await request('/api/units/rename',owner,{branch_id:'b',name:'Laundry Renamed'})).status,200);
+ assert.equal((await pool.query("SELECT name FROM business_units WHERE id='b'")).rows[0].name,'Laundry Renamed');
+ assert.equal((await pool.query("SELECT old_name,new_name FROM branch_rename_audit WHERE branch_id='b'")).rows[0].old_name,'Laundry B');
+ await assert.rejects(pool.query("DELETE FROM branch_rename_audit WHERE branch_id='b'"),/APPEND_ONLY/);
+ assert.equal((await request('/api/units/rename',owner,{branch_id:'b',name:'Laundry B'})).status,200);
  assert.equal((await request('/api/payroll/template',staff)).status,403);assert.equal((await request('/api/payroll/contacts',staff)).status,403);
  assert.equal((await request('/api/payroll/contacts',owner,{user_id:'s',email:'evil@example.com',telegram_user_id:'-123',verified:true})).status,400);
  assert.equal((await request('/api/payroll/contacts',owner,{user_id:'s',email:'staff@example.com',telegram_user_id:'123',verified:true})).status,200);
