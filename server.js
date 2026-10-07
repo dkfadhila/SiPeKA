@@ -55,12 +55,50 @@ function schedulePayroll() {
     finally{payrollRunning=false;}
   });
 }
+const accounting = require('./accounting');
+const accountingReviewKey = crypto.randomBytes(32); // Restart invalidates outstanding reviews; no persisted drafts.
+function accountingFailure(code,status=400){return Object.assign(new Error(code),{accountingCode:code,status});}
+async function accountingGuard(pool) {
+  const tables=['accounting_accounts','accounting_journals','accounting_lines','accounting_period_locks','accounting_category_maps','accounting_funds'];
+  const role=(await pool.query('SELECT current_user role,current_schema() schema')).rows[0];
+  if(role.role!=='sipeka_runtime')throw Error('ACCOUNTING_RUNTIME_ROLE_REQUIRED');
+  if((await pool.query("SELECT has_schema_privilege(current_user,current_schema(),'CREATE') allowed")).rows[0].allowed)throw Error('ACCOUNTING_SCHEMA_CREATE_DENIED');
+  for(const table of tables){
+    const row=(await pool.query("SELECT has_table_privilege(current_user,$1,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER') unsafe",[table])).rows[0];
+    if(row.unsafe)throw Error('ACCOUNTING_DML_DENIED');
+    const col=(await pool.query("SELECT 1 FROM information_schema.column_privileges WHERE table_schema=current_schema() AND table_name=$1 AND grantee IN(current_user,'PUBLIC') AND privilege_type IN('INSERT','UPDATE') LIMIT 1",[table])).rows;
+    if(col.length)throw Error('ACCOUNTING_COLUMN_DML_DENIED');
+  }
+  const required={accounting_journals:['accounting_header_balanced','accounting_header_immutable'],accounting_lines:['accounting_lines_balanced','accounting_lines_immutable'],accounting_accounts:['accounting_accounts_immutable'],accounting_category_maps:['accounting_maps_immutable'],accounting_funds:['accounting_funds_immutable']};
+  for(const [table,names] of Object.entries(required)){
+    const rows=(await pool.query('SELECT tgname,tgenabled,tgdeferrable,tginitdeferred,p.proname FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid WHERE t.tgrelid=$1::regclass AND NOT t.tgisinternal',[table])).rows;
+    for(const name of names){const r=rows.find(r=>r.tgname===name);if(!r||!['O','A'].includes(r.tgenabled)||r.proname!==(name.endsWith('balanced')?'accounting_balance_guard':'sipeka_immutable_guard')||(name.endsWith('balanced')&&(!r.tgdeferrable||!r.tginitdeferred)))throw Error('ACCOUNTING_GUARD_REQUIRED');}
+  }
+  const types=(await pool.query("SELECT column_name,data_type FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='accounting_lines' AND column_name IN('debit','credit')")).rows;
+  if(types.length!==2||types.some(r=>r.data_type!=='bigint'))throw Error('ACCOUNTING_EXACT_IDR_REQUIRED');
+  for(const signature of ['accounting_owner(text)','accounting_post(text,jsonb)','accounting_preview(text,jsonb)']){
+    const r=(await pool.query("SELECT p.prosecdef,p.proconfig,pg_get_userbyid(p.proowner) owner,has_function_privilege(current_user,p.oid,'EXECUTE') allowed,EXISTS(SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE') public FROM pg_proc p WHERE p.oid=$1::regprocedure",[signature])).rows[0];
+    if(!r||!r.prosecdef||r.owner===role.role||!r.allowed||r.public||!r.proconfig?.includes('search_path='+role.schema+', pg_temp'))throw Error('ACCOUNTING_FUNCTION_ACL_REQUIRED');
+  }
+}
+function accountingDraft(b){
+  const fields=['sourceType','sourceId','fundId','accountingDate','idempotencyKey','evidence'];
+  if(Object.keys(b).some(k=>!fields.includes(k))||!['CASH_TRANSACTION','REVERSAL'].includes(b.sourceType)||typeof b.sourceId!=='string'||!b.sourceId||b.sourceId.length>128||typeof b.idempotencyKey!=='string'||!b.idempotencyKey||b.idempotencyKey.length>128||typeof b.evidence!=='string'||b.evidence.trim().length<10||b.evidence.length>2000||typeof b.accountingDate!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(b.accountingDate)||!Number.isFinite(Date.parse(b.accountingDate+'T00:00:00Z'))||new Date(b.accountingDate+'T00:00:00Z').toISOString().slice(0,10)!==b.accountingDate)throw accountingFailure('ACCOUNTING_DRAFT_INVALID');
+  if(b.sourceType==='CASH_TRANSACTION'&&(typeof b.fundId!=='string'||!b.fundId||b.fundId.length>128))throw accountingFailure('NAMED_FUND_REQUIRED');
+  if(b.sourceType==='REVERSAL'&&Object.hasOwn(b,'fundId'))throw accountingFailure('ACCOUNTING_DRAFT_INVALID');
+  return {...b};
+}
+async function accountingSource(pool,draft,sessionToken){
+  return (await pool.query('SELECT accounting_preview($1,$2::jsonb) source',[sessionToken,JSON.stringify(draft)])).rows[0].source;
+}
+function accountingSign(value){return crypto.createHmac('sha256',accountingReviewKey).update(value).digest('base64url');}
 const security = require("./auth-security");
 const authConfig = security.config();
 const authReady = Promise.resolve(ready).then(async () => {
   if (process.env.DATABASE_URL) {
     await db.prepare("SELECT password_change_required,totp_cipher,totp_pending_cipher,totp_pending_until,totp_last_counter,recovery_hashes FROM app_users LIMIT 0").all();
     await db.prepare("SELECT last_seen_at,purpose FROM sessions LIMIT 0").all();
+    await accountingGuard(require('./db-postgres').getPool());
   } else if (authConfig.requireOwner2FA || authConfig.production) throw new Error("Public auth requires PostgreSQL migration 002");
 });
 authReady.catch(() => {});
@@ -409,6 +447,49 @@ async function handleRequest(req, res, url, p) {
 
   if (p.startsWith('/api/') && me && (me.session_purpose !== 'full' || me.password_change_required) && p !== '/api/change-password')
     return json(res, 403, { error: 'Ganti password untuk mengamankan akun', setup_required: true });
+
+  if (p.startsWith('/api/accounting')) {
+    if(me.role!=='OWNER')return json(res,403,{error:'ACCOUNTING_OWNER_ONLY'});
+    if(!process.env.DATABASE_URL)return json(res,503,{error:'ACCOUNTING_POSTGRES_REQUIRED'});
+    // Accounting never accepts the private QA bearer transport or AI tool identity.
+    const sessionToken=security.cookieToken(req);
+    if(!sessionToken)return json(res,401,{error:'ACCOUNTING_COOKIE_REQUIRED'});
+    try {
+      const pool=require('./db-postgres').getPool();
+      if(p==='/api/accounting/trial-balance'&&req.method==='GET'){
+        const branchId=url.searchParams.get('branchId');
+        if(branchId!==null&&!(await pool.query('SELECT id FROM business_units WHERE id=$1',[branchId])).rows.length)return json(res,404,{error:'ACCOUNTING_BRANCH_NOT_FOUND'});
+        return json(res,200,await accounting.trialBalance(pool,sessionToken,{start:url.searchParams.get('start'),end:url.searchParams.get('end'),branchId}));
+      }
+      if(p==='/api/accounting/review'&&req.method==='POST'){
+        const draft=accountingDraft(await readBody(req)),source=await accountingSource(pool,draft,sessionToken);
+        const value=Buffer.from(JSON.stringify({draft,source,actor:me.id,session:crypto.createHash('sha256').update(sessionToken).digest('hex'),expires:Date.now()+600000})).toString('base64url');
+        return json(res,200,{draft,source,reviewToken:value+'.'+accountingSign(value),expiresInSeconds:600,notice:'Review belum memposting. Pemetaan dana dan kategori telah divalidasi; persetujuan memvalidasi ulang. Draft sementara, kedaluwarsa 10 menit, hilang saat restart; bukan antrean tersimpan. Saldo awal belum tersedia; neraca belum lengkap.'});
+      }
+      if(p==='/api/accounting/approve'&&req.method==='POST'){
+        const b=await readBody(req);
+        if(Object.keys(b).some(k=>!['reviewToken','approved'].includes(k))||b.approved!==true||typeof b.reviewToken!=='string'||b.reviewToken.length>16000)throw accountingFailure('ACCOUNTING_EXPLICIT_APPROVAL_REQUIRED');
+        const [value,signature,...rest]=b.reviewToken.split('.');
+        const expected=accountingSign(value||'');
+        if(rest.length||!signature||signature.length!==expected.length||!crypto.timingSafeEqual(Buffer.from(signature),Buffer.from(expected)))throw accountingFailure('ACCOUNTING_REVIEW_INVALID');
+        const r=JSON.parse(Buffer.from(value,'base64url').toString('utf8'));
+        if(r.actor!==me.id||r.session!==crypto.createHash('sha256').update(sessionToken).digest('hex')||r.expires<Date.now())throw accountingFailure('ACCOUNTING_REVIEW_EXPIRED');
+        const draft=accountingDraft(r.draft),source=await accountingSource(pool,draft,sessionToken);
+        if(JSON.stringify(source)!==JSON.stringify(r.source))throw accountingFailure('ACCOUNTING_SOURCE_CHANGED',409);
+        const posted=await accounting.post(pool,sessionToken,draft);
+        // Read exact immutable target after committed function call before success.
+        const journal=(await pool.query('SELECT id,source_type,source_id,actor_id,accounting_date::text accounting_date FROM accounting_journals WHERE id=$1',[posted.id])).rows[0];
+        if(!journal||journal.actor_id!==me.id)throw accountingFailure('ACCOUNTING_READBACK_FAILED',503);
+        return json(res,200,{...posted,journal});
+      }
+      return json(res,404,{error:'not found'});
+    }catch(e){
+      const code=e.accountingCode||(/^[A-Z][A-Z_]+$/.test(e.message||'')?e.message:null);
+      const clientCodes=['ISO_DATE_REQUIRED','INVALID_DATE_RANGE','INVALID_BRANCH','APPROVAL_EVIDENCE_REQUIRED','ACCOUNTING_DATE_REQUIRED','APPROVED_REALIZED_SOURCE_REQUIRED','NAMED_FUND_REQUIRED','QRIS_OUTFLOW_UNSUPPORTED','QRIS_CLEARING_REQUIRED','REVIEWED_CATEGORY_REQUIRED','REVERSAL_ORIGINAL_REQUIRED','REVERSAL_DATE_BEFORE_ORIGINAL','SOURCE_TYPE_UNSUPPORTED'];
+      const status=e.accountingCode?e.status:code==='OWNER_REQUIRED'?403:['IDEMPOTENCY_CONFLICT','ACCOUNTING_PERIOD_LOCKED'].includes(code)||e.code==='23505'?409:clientCodes.includes(code)?400:503;
+      return json(res,status,{error:code|| (e.code==='23505'?'ACCOUNTING_SOURCE_ALREADY_POSTED':'ACCOUNTING_UNAVAILABLE')});
+    }
+  }
 
   if (p.startsWith('/api/payroll')) {
     if(me.role!=='OWNER'){console.warn('[security] payroll access denied');return json(res,403,{error:'PAYROLL_OWNER_ONLY'});}
