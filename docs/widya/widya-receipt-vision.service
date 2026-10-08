@@ -1,0 +1,45 @@
+[Unit]
+Description=Widya private receipt vision broker (review candidate)
+Requires=widya-receipt-vision.socket
+After=widya-receipt-vision.socket
+StartLimitIntervalSec=3600
+StartLimitBurst=2
+
+[Service]
+Type=simple
+User=ubuntu
+Group=sipeka
+ExecStart=/usr/bin/python3 -I /opt/sipeka/current/docs/widya/receipt_broker.py
+WorkingDirectory=/run/widya-receipt-vision
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+# Pre-create ubuntu-owned mode0600 mutex FILES; never allow the install directory.
+# Selected generations use pre-created root-owned mode0444 static read-only leases.
+# Dependency generations, activation inputs, selection state and profile remain read-only.
+ReadWritePaths=/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/.install.lock /home/ubuntu/.hermes/installs/5f0a1ff4045d044e/pm-runtime/.prepare.lock /home/ubuntu/.hermes/profiles/widya/cache/vision
+MemoryMax=768M
+MemorySwapMax=0
+CPUQuota=50%
+TasksMax=12
+LimitNOFILE=64
+LimitCORE=0
+RuntimeMaxSec=3600
+TimeoutStopSec=5
+KillMode=control-group
+Restart=no
+StandardOutput=null
+StandardError=null

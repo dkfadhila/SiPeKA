@@ -286,4 +286,4 @@ const db = {
   async close() { if (pool) { const current = pool; pool = null; await current.end(); } },
 };
 module.exports = { db, q, verifyPassword, hashPassword, uid, atomicApprove, createSession,
-  getValidSession, revokeUserSessions, checkIdempotency, ready, withRequestTransaction, getPool };
+  getValidSession, revokeUserSessions, checkIdempotency, ready, withRequestTransaction, getPool, query:read };

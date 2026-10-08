@@ -60,6 +60,10 @@ function createWidyaBridge({url=process.env.WIDYA_HERMES_URL,key=process.env.WID
       // Unknown admission outcome stays reserved: fail closed, never duplicate an agent turn.
     }
   }
-  return {chat,status,validate};
+  async function analyzeReceipt({bytes,mime,signal}={}) {
+    // Fixed private socket: SiPeKA never reads ubuntu's runtime/profile.
+    return require('./widya-vision-socket').analyzeReceipt({bytes,mime,signal});
+  }
+  return {chat,status,validate,analyzeReceipt};
 }
 module.exports={createWidyaBridge};

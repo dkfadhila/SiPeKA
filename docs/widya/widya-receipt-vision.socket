@@ -1,0 +1,16 @@
+[Unit]
+Description=Private SiPeKA to Widya vision socket (review candidate)
+
+[Socket]
+ListenStream=/run/widya-receipt-vision/vision.sock
+SocketUser=ubuntu
+SocketGroup=sipeka
+SocketMode=0660
+DirectoryMode=0755
+Backlog=1
+Accept=no
+RemoveOnStop=yes
+Service=widya-receipt-vision.service
+
+[Install]
+WantedBy=sockets.target

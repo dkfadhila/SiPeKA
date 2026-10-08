@@ -99,6 +99,7 @@ const authReady = Promise.resolve(ready).then(async () => {
     await db.prepare("SELECT password_change_required,totp_cipher,totp_pending_cipher,totp_pending_until,totp_last_counter,recovery_hashes FROM app_users LIMIT 0").all();
     await db.prepare("SELECT last_seen_at,purpose FROM sessions LIMIT 0").all();
     await accountingGuard(require('./db-postgres').getPool());
+    await require('./advance-service').guard(require('./db-postgres').getPool());
   } else if (authConfig.requireOwner2FA || authConfig.production) throw new Error("Public auth requires PostgreSQL migration 002");
 });
 authReady.catch(() => {});
@@ -108,10 +109,7 @@ const TOTP_KEY = process.env.AUTH_TOTP_KEY || '';
 if (authConfig.requireOwner2FA) security.encryptionKey(TOTP_KEY);
 const PORT = process.env.PORT || 4321;
 const HOST = process.env.HOST || "127.0.0.1";
-// KARA is OCR-only; Owner chat must never fall back to direct inference.
-const KARA_BASE = process.env.KARA_BASE_URL || "http://localhost:20128/v1";
-const KARA_KEY = process.env.KARA_API_KEY || "";
-const KARA_MODEL = process.env.KARA_MODEL || "ag/gemini-3.8-flash-medium";
+// Receipt analysis uses Widya's isolated supported vision-tool worker, never direct inference.
 
 const PUBLIC_DIR = path.join(__dirname, "public");
 const HTML_PATH = path.join(PUBLIC_DIR, "financial-dashboard.html");
@@ -335,6 +333,17 @@ async function issueSession(res, user, purpose) {
 
 // ---------- Widya AI ----------
 const widyaBridge = require('./widya-bridge').createWidyaBridge();
+const widyaReceiptRouter = require('./widya-receipt-analysis').createWidyaReceiptRouter({
+  authenticate:async(req,options)=>process.env.DATABASE_URL
+    ? require('./widya-receipt-db').createWidyaReceiptDB(require('./db-postgres').getPool(),{idleMS:authConfig.idleMS}).authenticate(security.sessionToken(req,authConfig),options)
+    : auth(req).then(actor=>actor?.session_purpose==='full'&&!actor.password_change_required?actor:null),
+  checkRequest:async req=>!!security.cookieToken(req)&&security.validOrigin(req,authConfig),
+  lookupReceipt:(filename,options)=>process.env.DATABASE_URL
+    ? require('./widya-receipt-db').createWidyaReceiptDB(require('./db-postgres').getPool(),{idleMS:authConfig.idleMS}).lookupReceipt(filename,options)
+    : q.receiptByFilename.get(filename),
+  readReceipt:require('./receipt-storage-bounded').createBoundedReceiptReader(),
+  bridge:widyaBridge,sendJSON:json,
+});
 async function widyaLedgerContext() {
  const txs = (await q.txAll.all()).slice(0,40);
  return JSON.stringify({scope:'latest_40_only_not_complete_period',transactions:txs.map(t=>({id:t.id,date:t.created_at,branch:t.branch_name,type:t.tx_type,amount:t.amount,payment:t.payment_method,status:t.status,memo:t.memo}))});
@@ -372,7 +381,7 @@ const server = http.createServer(async (req, res) => {
 
   if ((p === "/api/ready" || p === "/api/readiness") && req.method === "GET") {
     try {
-      await ready;
+      await authReady;
       await db.prepare("SELECT 1 AS ok").get();
       return json(res, 200, { ok: true, database: process.env.DATABASE_URL ? "postgresql" : "sqlite" });
     } catch {
@@ -401,6 +410,10 @@ const server = http.createServer(async (req, res) => {
   } catch (err) {
     if (res.headersSent) return;
     res.removeHeader('Set-Cookie'); // Never send a session cookie from a rolled-back request.
+    if (err.message === 'RECEIPT_RESERVED_FOR_ADVANCE') {
+      res._deferJSON = false;
+      return json(res, 409, { error: 'Nota sudah dicadangkan untuk settlement advance. Gunakan nota lain.' });
+    }
     const status = err.statusCode ?? err.code;
     const code = Number.isInteger(status) && status >= 400 && status < 600 ? status : 500;
     const msg = code === 500 ? "Terjadi kesalahan server" : err.message;
@@ -488,6 +501,35 @@ async function handleRequest(req, res, url, p) {
       const clientCodes=['ISO_DATE_REQUIRED','INVALID_DATE_RANGE','INVALID_BRANCH','APPROVAL_EVIDENCE_REQUIRED','ACCOUNTING_DATE_REQUIRED','APPROVED_REALIZED_SOURCE_REQUIRED','NAMED_FUND_REQUIRED','QRIS_OUTFLOW_UNSUPPORTED','QRIS_CLEARING_REQUIRED','REVIEWED_CATEGORY_REQUIRED','REVERSAL_ORIGINAL_REQUIRED','REVERSAL_DATE_BEFORE_ORIGINAL','SOURCE_TYPE_UNSUPPORTED'];
       const status=e.accountingCode?e.status:code==='OWNER_REQUIRED'?403:['IDEMPOTENCY_CONFLICT','ACCOUNTING_PERIOD_LOCKED'].includes(code)||e.code==='23505'?409:clientCodes.includes(code)?400:503;
       return json(res,status,{error:code|| (e.code==='23505'?'ACCOUNTING_SOURCE_ALREADY_POSTED':'ACCOUNTING_UNAVAILABLE')});
+    }
+  }
+
+  if(p==='/api/advance-categories'&&req.method==='GET')return json(res,200,(await q.allCoa.all()).filter(c=>c.account_type==='EXPENSE'));
+  if (p.startsWith('/api/advances') || p==='/api/reports/advance-movements') {
+    const match=p.match(/^\/api\/advances\/([^/]+)\/(disburse|return|settlements)(?:\/([^/]+)\/(approve|reject))?$/);
+    const staffRoute=p==='/api/advances/own-unresolved'||match&&match[2]==='settlements'&&!match[4];
+    if(me.role!==(staffRoute?'STAFF':'OWNER'))return json(res,403,{error:staffRoute?'STAFF_REQUIRED':'OWNER_REQUIRED'});
+    if(!process.env.DATABASE_URL)return json(res,503,{error:'ADVANCE_POSTGRES_REQUIRED'});
+    const svc=require('./advance-service'),pool=require('./db-postgres').getPool(),sessionToken=security.cookieToken(req);
+    if(!sessionToken)return json(res,401,{error:'ADVANCE_COOKIE_REQUIRED'});
+    try{
+      if(req.method==='GET'&&p==='/api/advances/own-unresolved')return json(res,200,await svc.listOwn(pool,sessionToken));
+      if(req.method==='GET'&&p==='/api/advances')return json(res,200,await svc.snapshot(pool,sessionToken));
+      if(req.method==='GET'&&p==='/api/reports/advance-movements')return json(res,200,await svc.report(pool,sessionToken,{start:url.searchParams.get('start'),end:url.searchParams.get('end'),branchId:url.searchParams.get('branchId')}));
+      if(req.method==='POST'&&match){
+        const b=await readBody(req),advanceId=decodeURIComponent(match[1]),settlementId=match[3]?decodeURIComponent(match[3]):undefined;
+        const fields=['idempotencyKey','evidence',...(match[2]==='return'?['amount']:match[2]==='settlements'&&!match[4]?['lines']:[]),...(['disburse','return'].includes(match[2])?['confirmed']:[])];
+        if(Object.keys(b).some(k=>!fields.includes(k)))return json(res,400,{error:'ADVANCE_PAYLOAD_INVALID'});
+        if(['disburse','return'].includes(match[2])&&b.confirmed!==true)return json(res,400,{error:'EXPLICIT_CASH_CONFIRMATION_REQUIRED'});
+        const request={...b,advanceId,...(settlementId?{settlementId}:{})};delete request.confirmed;
+        const method=match[4]==='approve'?'approveSettlement':match[4]==='reject'?'rejectSettlement':match[2]==='disburse'?'disburse':match[2]==='return'?'confirmReturn':'submitSettlement';
+        return json(res,200,await svc[method](pool,sessionToken,request));
+      }
+      return json(res,404,{error:'not found'});
+    }catch(e){
+      const code=/^[A-Z][A-Z_]+$/.test(e.message||'')?e.message:null;
+      const invalid=['EVIDENCE_AND_KEY_REQUIRED','EXACT_IDR_REQUIRED','FULL_SETTLEMENT_LINES_REQUIRED','EXPENSE_CATEGORY_REQUIRED','DATE_RANGE_REQUIRED'];
+      return json(res,e.code==='42501'?403:code?.endsWith('_NOT_FOUND')?404:invalid.includes(code)?400:code||e.code==='23505'?409:503,{error:code||'ADVANCE_UNAVAILABLE'});
     }
   }
 
@@ -722,15 +764,23 @@ async function handleRequest(req, res, url, p) {
     return json(res, 200, { ok: true, id, status: result.status });
   }
 
+  async function drawerBalance(branchId) {
+    // Preserve deployed recorded-day ordinary cash semantics; never infer an opening balance.
+    const ordinaryBalance=Number((await q.cashDrawerBalanceToday.get(branchId))?.balance||0);
+    const v=process.env.DATABASE_URL?await require('./advance-service').cash({query:require('./db-postgres').query},security.cookieToken(req),{branchId}):{cashDelta:'0'};
+    const advanceCashDelta=Number(v.cashDelta),balance=ordinaryBalance+advanceCashDelta;
+    if(![ordinaryBalance,advanceCashDelta,balance].every(Number.isSafeInteger))throw Object.assign(Error('Saldo di luar batas aman'),{code:400});
+    return {...v,balance,ordinaryBalance,advanceCashDelta,basis:'RECORDED_DAY_MOVEMENT',reconciliationComplete:false,endBalance:null};
+  }
   if (p === "/api/closing/summary" && req.method === "GET") {
     const branchId = me.role === "STAFF"
       ? me.assigned_branch_id
       : (url.searchParams.get("branch_id") || "UNIT_LP");
-    const sysBal = (await q.cashDrawerBalanceToday.get(branchId))?.balance || 0;
+    const cash=await drawerBalance(branchId),sysBal=cash.balance;
     const closings = me.role === "STAFF"
       ? (await q.closingsByUserBranchToday.all(me.id, me.assigned_branch_id))
       : (await q.allClosingsToday.all());
-    return json(res, 200, { branch_id: branchId, system_balance: sysBal, closings });
+    return json(res, 200, { branch_id: branchId, system_balance: sysBal, closings, basis:cash.basis, ordinaryDailyMovement:cash.ordinaryBalance, advanceCashDelta:cash.advanceCashDelta, openingBalances:'MISSING',carryforward:'UNVERIFIED',reconciliationComplete:false,endBalance:null,neracaComplete:false,notice:'Mutasi kas tercatat hari ini WIB, bukan saldo akhir. Saldo awal / carryforward belum diverifikasi; rekonsiliasi lengkap tidak tersedia. Closing lama tetap; bukan reset kas atau bukti setoran.' });
   }
 
   if (p === "/api/closing" && req.method === "POST") {
@@ -771,7 +821,7 @@ async function handleRequest(req, res, url, p) {
         system_balance: existing.system_balance, physical_cash: existing.physical_cash, difference: existing.difference });
     }
 
-    const sysBal = (await q.cashDrawerBalanceToday.get(branchId))?.balance ?? 0;
+    const sysBal = (await drawerBalance(branchId)).balance;
     const phys = payload.physical_cash, diff = phys - sysBal;
     if (!Number.isSafeInteger(sysBal) || !Number.isSafeInteger(diff))
       return json(res, 400, { error: "Saldo atau selisih di luar batas rupiah yang aman" });
@@ -792,7 +842,9 @@ async function handleRequest(req, res, url, p) {
 
   if (p === "/api/staff-performance" && req.method === "GET") {
     if (me.role !== "OWNER") return json(res, 403, { error: "Hanya Owner yang boleh melihat kinerja staf" });
-    return json(res, 200, (await q.staffPerf.all()));
+    const rows=await q.staffPerf.all();
+    if(process.env.DATABASE_URL){const advances=await require('./advance-service').snapshot(require('./db-postgres').getPool(),security.cookieToken(req));for(const row of rows){const extra=advances.rows.filter(a=>a.userId===row.id).flatMap(a=>a.events).filter(e=>e.action==='APPROVE').reduce((n,e)=>n+BigInt(e.amount),0n);const total=BigInt(row.expense)+extra;if(total>BigInt(Number.MAX_SAFE_INTEGER))return json(res,503,{error:'PERFORMANCE_SAFE_RANGE_EXCEEDED'});row.expense=Number(total);}}
+    return json(res,200,rows);
   }
 
   if (p === '/api/widya/status' && req.method === 'GET') {
@@ -819,7 +871,9 @@ async function handleRequest(req, res, url, p) {
         } finally { res.removeListener('close',disconnect); }
   }
 
-  if (["/api/widya/extract", "/api/dewi/extract", "/api/receipts/upload"].includes(p) && req.method === "POST") {
+  if(p==='/api/receipts/analyze' && await widyaReceiptRouter(req,res))return;
+  if(['/api/widya/extract','/api/dewi/extract'].includes(p))return json(res,410,{error:'WIDYA_RECEIPT_LEGACY_RETIRED',upload:'/api/receipts/upload',analyze:'/api/receipts/analyze'});
+  if (p === '/api/receipts/upload' && req.method === "POST") {
     req._bodyLimit = BODY_LIMIT_IMAGE;
     const b = await readBody(req);
     const branchId = me.role === "STAFF" ? me.assigned_branch_id : (b.branch_id || null);
@@ -863,54 +917,7 @@ async function handleRequest(req, res, url, p) {
       console.error("[save-receipt] storage or metadata write failed");
       return json(res, 500, { error: "Gagal menyimpan bukti transaksi" });
     }
-    if (p === "/api/receipts/upload") return json(res, 201, { ok: true, receipt_key: receiptUrl, mime: detectedMime });
-    if (!process.env.KARA_BASE_URL || !KARA_KEY)
-      return json(res, 503, { error: "OCR belum dikonfigurasi; bukti tersimpan, isi transaksi secara manual", receipt_key: receiptUrl });
-
-    const prompt = `Ekstrak data nota/kuitansi berikut menjadi JSON SAJA (tanpa teks lain).
-Format tepat:
-{"merchant":"nama toko","date":"YYYY-MM-DD","amount":angka_rupiah_tanpa_titik,"items":[{"name":"nama barang","qty":jumlah,"price":harga_satuan}],"payment_method":"CASH_DRAWER|QRIS|BANK_TRANSFER","account_id":"5101|5102|5310|5120|5400|4101"}
-Aturan:
-- amount = TOTAL belanja (integer rupiah).
-- payment_method: tebak dari bukti (BCA/transfer=BANK_TRANSFER, QRIS=QRIS, tunai/kas=CASH_DRAWER), default BANK_TRANSFER.
-- account_id: chemical/supplies/bahan=5101, listrik/air/utilitas=5102, servis/kerusakan/maintenance=5310, amenities/hotel=5120, operasional/lapangan=5400, pendapatan/setoran=4101.
-- Jika tidak terbaca, isi dengan nilai kosong/0 yang wajar. JANGAN mengarang total yang tidak ada di gambar.`;
-
-    try {
-      const upstream = await fetch(`${KARA_BASE}/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${KARA_KEY}` },
-        body: JSON.stringify({ model: KARA_MODEL, stream: false, temperature: 0, max_tokens: 800,
-          messages: [{ role: "user", content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: `data:${detectedMime};base64,${img}` } }
-          ] }]
-        }),
-        signal: AbortSignal.timeout(90_000),
-      });
-      if (!upstream.ok) {
-        await upstream.body?.cancel();
-        console.error("[extract] upstream failed", upstream.status);
-        return json(res, 502, { error: "OCR tidak terjangkau", receipt_key: receiptUrl });
-      }
-      const data = await upstream.json();
-      let content = data?.choices?.[0]?.message?.content || "";
-      const m = content.match(/\{[\s\S]*\}/);
-      if (!m) return json(res, 502, { error: "OCR tidak mengembalikan JSON", receipt_key: receiptUrl });
-      let parsed;
-      try { parsed = JSON.parse(m[0]); }
-      catch { return json(res, 502, { error: "JSON OCR tidak valid", receipt_key: receiptUrl }); }
-      const amount = Number(parsed.amount);
-      parsed.amount = Number.isSafeInteger(amount) && amount > 0 ? amount : 0;
-      if (!Array.isArray(parsed.items)) parsed.items = [];
-      if (!["CASH_DRAWER","QRIS","BANK_TRANSFER"].includes(parsed.payment_method)) parsed.payment_method = "BANK_TRANSFER";
-      if (!["5101","5102","5310","5120","5400","4101"].includes(String(parsed.account_id))) parsed.account_id = "5101";
-      parsed.receipt_key = receiptUrl;
-      return json(res, 200, parsed);
-    } catch (e) {
-      console.error("[extract] upstream failed");
-      return json(res, 502, { error: "OCR tidak terjangkau", receipt_key: receiptUrl });
-    }
+    return json(res, 201, { ok: true, receipt_key: receiptUrl, mime: detectedMime });
   }
 
   // ---- authenticated receipt access ----
