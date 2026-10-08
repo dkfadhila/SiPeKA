@@ -1184,6 +1184,65 @@ function downloadPdf(id) {
 })(typeof window!=='undefined'?window:globalThis);
 
 </script>
+<style id="sipeka-full-ui-local">
+/* Measured mobile subtab clipping; retain accepted navigation and colors. */
+body .section-nav{display:flex;flex-wrap:wrap;overflow:visible;gap:6px}
+body .section-nav button{max-width:100%;white-space:normal;text-align:left}
+/* Source forms used browser-default inline labels; stack the existing bindings. */
+body #accountingDraft,body #accountingTrial,body #payrollImportForm,body [data-payroll-contact-form],body [data-advance-form]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+body #accountingDraft label,body #accountingTrial label,body #payrollImportForm label,body [data-payroll-contact-form] label,body [data-advance-form]>label,body [data-advance-line]>label{display:grid;gap:7px;min-width:0;color:var(--sub);font-size:14px;font-weight:600;line-height:1.5}
+body #accountingDraft input,body #accountingDraft select,body #accountingDraft textarea,body #accountingTrial input,body [data-payroll-contact-form] input:not([type=checkbox]),body [data-advance-form] input:not([type=checkbox]):not([type=hidden]),body [data-advance-form] select{width:100%;min-width:0;min-height:48px;padding:10px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--surface);color:var(--ink);font-size:16px;line-height:1.5}
+body #accountingDraft textarea{min-height:100px;resize:vertical}
+body #accountingDraft label:has(textarea),body #accountingDraft>button,body #accountingTrial>button,body #payrollImportForm>button,body [data-advance-form]>button,body [data-advance-form]>p,body [data-advance-lines]{grid-column:1/-1}
+body #accountingDraft>button,body #accountingTrial>button,body #payrollImportForm>button{justify-self:start}
+body #payrollCsv{max-width:100%;font-size:14px;padding:10px 0}
+body #advancePanel{margin-top:18px;padding:22px}
+body #advancePanel>h2{margin:0 0 8px;font-size:19px}
+body #advancePanel>p{color:var(--sub);font-size:14px;line-height:1.65}
+body [data-advance-row]{min-width:0;padding:18px 0;border-top:1px solid var(--line);margin-top:18px;overflow-wrap:anywhere}
+body [data-advance-row] h3{font-size:16px;margin:0 0 8px}
+body [data-advance-row]>p,body [data-advance-row]>div p{font-size:14px;color:var(--sub)}
+body [data-advance-row] form{padding:16px;background:var(--soft);border:1px solid var(--line);border-radius:8px;margin-top:14px}
+body [data-advance-line]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0;border:1px solid var(--line2);border-radius:8px;padding:14px;margin-bottom:12px}
+body [data-advance-remove],body [data-advance-add]{font-size:14px;min-height:44px;border:1px solid var(--line2);border-radius:8px;background:var(--surface);padding:8px 12px;justify-self:start}
+body .transaction-form .fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+body .transaction-form .field,body .receipt-workspace .field{display:grid;grid-template-columns:minmax(0,1fr);gap:7px;padding:0;min-width:0}
+body .transaction-form .field>span,body .receipt-workspace .field>span{color:var(--sub);font-size:14px;font-weight:600;line-height:1.5}
+body .transaction-form .control,body .receipt-workspace .control{width:100%;min-width:0;font-size:16px}
+body .transaction-form .dewi-actions,body .transaction-form .hint{grid-column:1/-1}
+body .transaction-form .hint{font-family:inherit;font-size:13px!important;color:var(--sub)!important;line-height:1.65}
+body #mnFileStatus{font-family:inherit;font-size:13px!important;overflow-wrap:anywhere}
+body .receipt-workspace>.card{min-width:0}
+body #accountingReview,body #accountingResult,body #payrollPreview,body #payrollBatches,body #payrollDelivery,body #payrollContacts{min-width:0;overflow-wrap:anywhere;margin-top:16px}
+body #accountingReview:empty,body #accountingResult:empty,body #payrollPreview:empty{margin:0}
+body #accountingReview:not(:empty),body #accountingResult:not(:empty){padding:16px;background:var(--soft);border:1px solid var(--line);border-radius:8px}
+@media(max-width:600px){body #accountingDraft,body #accountingTrial,body #payrollImportForm,body [data-payroll-contact-form],body [data-advance-form],body [data-advance-line],body .transaction-form .fields{grid-template-columns:minmax(0,1fr)}body #advancePanel{padding:16px}body [data-advance-row] form{padding:12px}}
+/* Legacy !important closing inputs bypassed readability tokens. */
+body.is-staff .cls-input{font-size:16px!important;min-height:48px!important;height:48px!important}
+body.is-staff .cls-textarea{font-size:16px!important;line-height:1.6!important}
+body.is-staff .cls-label{font-size:14px;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.5}
+/* Follow-up: intrinsic receipt card, native administration and chart targets. */
+body .receipt-workspace{align-items:start}
+html[data-theme="dark"] body #scUploadBtn,html[data-theme="dark"] body .rail-fab{color:#10251b}
+body .transaction-form .field,body .receipt-workspace .field{align-items:start}
+body [data-replacement-unit],body [data-rename-name]{min-height:48px;font-size:16px;padding:10px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--surface);color:var(--ink);max-width:100%}
+body td:has([data-rename-name]){min-width:300px;white-space:normal}
+body td:has([data-rename-name]) label{display:grid;gap:6px;margin-bottom:10px}
+body td:has([data-rename-name]) input{display:block;width:100%;margin-bottom:10px}
+body td:has([data-rename-name]) .btn{margin:4px 4px 0 0}
+body .tabs{flex-wrap:wrap;max-width:100%}
+body .tabs button,body .legend-btn{min-height:44px;font-size:14px;color:var(--ink);padding:10px 12px}
+body .legend-btn[aria-pressed="false"]{opacity:1;color:var(--ink);border-style:dashed}
+body .chart-tools{min-width:0;max-width:100%}
+body .card-head:has(.tabs){flex-wrap:wrap}
+body .receipt-workspace .card:first-child{align-self:start}
+body .transaction-form .identity-value,body .receipt-workspace .identity-value{height:auto!important;padding:10px 12px;max-width:100%;color:var(--ink);min-height:48px;field-sizing:content;resize:none;white-space:pre-wrap;overflow-wrap:anywhere;overflow:hidden;opacity:1!important}
+body #profileName,body #profileBranch{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+/* Dock Owner chat in the reserved sticky toolbar, never above form fields. */
+body .rail-fab{position:fixed;top:10px!important;bottom:auto!important;right:14px!important;width:44px;height:44px;z-index:45}
+body:not(.is-staff) .topbar{padding-right:68px!important}
+body .dewi-popover{top:68px!important;bottom:auto!important;max-height:calc(100dvh - 82px)}
+</style>
 <style id="sipeka-readability-v1">
 /* Larger native typography and controls, preserving approved colors and bindings. */
 html,body{font-size:15px;line-height:1.6}
@@ -1217,6 +1276,18 @@ body .sr-filter label{font-size:13px}body .sr-filter input,body .sr-filter selec
 @media(max-width:1280px) and (min-width:921px){body .app,body .app.dewi-collapsed,body .app:not(.dewi-collapsed){grid-template-columns:230px minmax(0,1fr)}}
 @media(max-width:920px){body .content{padding:20px 18px 96px}body .sidebar{width:250px}body .app,body .app.dewi-collapsed{display:block}}
 @media(max-width:600px){body .content{padding:18px 12px 96px}body .grid{gap:14px}body .page-head h1,body .settings-view .settings-page-head h1{font-size:26px}body .kpi-value{font-size:23px}body .login-form h2{font-size:26px}body .login-form-panel{padding:28px 22px}}
+/* FamilyAgentFlora: already-closed Staff summary only; existing form/tabs unchanged. */
+body.is-staff .closed-shift{gap:16px;padding:0;min-width:0;font-size:15px;line-height:1.6}
+body.is-staff .closed-shift-head{display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px}
+body.is-staff .closed-shift-head h2{margin:0;font-size:20px;line-height:1.4;color:var(--ink)}
+body.is-staff .closed-shift-head .tag.ok{display:inline-flex;flex:0 0 auto;width:auto;min-height:28px;padding:4px 10px;background:var(--green-bg);color:var(--green2);font-size:12px;font-weight:750;line-height:1.4;letter-spacing:.035em;border:1px solid var(--green)}
+body.is-staff .closed-shift-meta{color:var(--sub);font-size:13px;overflow-wrap:anywhere}
+body.is-staff .closed-shift dl{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px 14px;max-width:560px;margin:0;padding:16px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+body.is-staff .closed-shift dt{color:var(--sub)}
+body.is-staff .closed-shift dd{margin:0;min-width:0;color:var(--ink);overflow-wrap:anywhere;font-weight:600}
+body.is-staff .closed-shift-notice{max-width:640px;color:var(--sub);font-size:13px;line-height:1.65;overflow-wrap:anywhere}
+body.is-staff .closed-shift>.btn{justify-self:start;width:auto;max-width:100%;min-height:44px;padding:10px 16px;font-size:14px;line-height:1.5;white-space:normal}
+@media(max-width:420px){body.is-staff .closed-shift dl{grid-template-columns:96px minmax(0,1fr);column-gap:12px}}
 </style>
 </head>
 <body>
@@ -1253,11 +1324,11 @@ const I=(name)=>({dashboard:'<path d="M4 4h6v7H4zM14 4h6v4h-6zM14 12h6v8h-6zM4 1
 const icon=n=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">'+I(n)+'</svg>';
 const navGroups=[['WORKSPACE',[['dashboard','Overview','dashboard'],['calendar','Calendar','calendar'],['transactions','Transactions','ledger'],['closing','Closing Shift','check']]],['CONTROL',[['cost','Cost Control','cost'],['approvals','Approvals','check']]],['REPORTING',[['reports','Reports & Export','report'],['accounting','Jurnal & Mutasi','ledger']]],['INTELLIGENCE',[['audit','Widya Audit','audit']]],['SYSTEM',[['organization','Organization','settings'],['payslip','Slip Gaji','report'],['settings','Settings','settings']]]];
 const viewClusters={cashflow:'dashboard',summary:'dashboard',branches:'dashboard',ledger:'transactions',expenses:'transactions',income:'transactions',closing:'closing',manual:'transactions',scan:'transactions',budget:'cost',vendor:'cost',tax:'reports',export:'reports',branchesSys:'organization',users:'organization',settings:'settings',insights:'dewi'};
-const sectionGroups={dashboard:[['dashboard','Overview'],['cashflow','Cash Flow'],['summary','Financial Summary'],['branches','Branch Performance']],transactions:[['transactions','Transactions'],['ledger','Single Ledger'],['expenses','Expenses'],['income','Income']],closing:[['closing','Daily Report Closing']],cost:[['cost','Cost Control'],['budget','Budget'],['vendor','Vendor Audit']],reports:[['reports','Financial Reports'],['tax','Tax & Compliance'],['export','Export Center']],organization:[['branchesSys','Branches'],['users','Users & Roles'],['settings','Settings']]};
+const sectionGroups={dashboard:[['dashboard','Overview'],['cashflow','Cash Flow'],['summary','Financial Summary'],['branches','Branch Performance']],transactions:[['transactions','Transactions'],['ledger','Single Ledger'],['expenses','Expenses'],['income','Income']],closing:[['closing','Daily Report Closing']],cost:[['cost','Cost Control'],['budget','Budget'],['vendor','Vendor Audit']],reports:[['reports','Financial Reports'],['tax','Tax & Compliance'],['export','Export Center']],organization:[['organization','Organization'],['branchesSys','Branches'],['users','Users & Roles'],['settings','Settings']]};
 const rolePermissions={owner:new Set(['dashboard','calendar','cashflow','transactions','ledger','expenses','income','cost','budget','vendor','branches','approvals','tax','export','reports','audit','insights','users','branchesSys','settings','organization','dewi','scan','manual','payslip']),staff:new Set(['dashboard','transactions','scan','manual','closing','settings'])};
 function canAccess(target){if(target==='payslip')return role==='owner';if(role==='owner'&&target==='closing')return false;if(role==='staff'&&(target==='dewi'||target.startsWith('dewi')||target==='insights'||target==='audit'||target==='approvals'))return false;return role==='owner'||(rolePermissions[role]&&rolePermissions[role].has(target))}
 function navRoot(target){return viewClusters[target]||target}
-function sectionNav(){const root=navRoot(view),items=(sectionGroups[root]||[]).filter(x=>canAccess(x[0]));if(items.length<2)return'';return'<nav class="section-nav" aria-label="'+root+' sections">'+items.map(x=>'<button class="'+(x[0]===view?'active':'')+'" data-view="'+x[0]+'">'+x[1]+'</button>').join('')+'</nav>'}
+function sectionNav(){if(['scan','manual'].includes(view))return '';const root=navRoot(view),items=(sectionGroups[root]||[]).filter(x=>canAccess(x[0]));if(items.length<2)return'';return'<nav class="section-nav" aria-label="'+root+' sections">'+items.map(x=>'<button class="'+(x[0]===view?'active':'')+'" data-view="'+x[0]+'">'+x[1]+'</button>').join('')+'</nav>'}
 const nav=document.getElementById('nav');
 function renderNav(){const dewiBtn=document.querySelector('.nav-link.dewi-primary')||document.querySelector('[data-view="dewi"]');if(dewiBtn){const allowed=role==='owner';dewiBtn.style.display=allowed?'':'none';}let activeGroups=navGroups;/* F16-fix: staff tidak mendapat PENGATURAN duplikat; SYSTEM navGroups sudah punya settings */nav.innerHTML=activeGroups.map(g=>{const items=g[1].filter(x=>canAccess(x[0]));if(!items.length)return'';return'<div class="group-title">'+g[0]+'</div><nav class="nav-list">'+items.map(x=>'<button class="nav-link '+(x[0]===navRoot(view)?'active ':'')+'" data-view="'+x[0]+'">'+icon(x[2])+'<span>'+x[1]+'</span></button>').join('')+'</nav>'}).join('');nav.querySelectorAll('[data-view]').forEach(bindView)}
 let transactions=[];
@@ -1435,9 +1506,9 @@ function scanPage(){
   + '<option value="PENGAJUAN_DANA">2. Pengajuan Dana Lapangan</option>'
   + '</select></div>'
 
-  + '<div class="field"><span>1. Nama Staff</span><input class="control" id="scStaffName" value="'+staffName+'" readonly style="background:var(--soft);opacity:0.9;"></div>'
+  + '<div class="field"><span>1. Nama Staff</span><textarea class="control identity-value" id="scStaffName" readonly rows="1" aria-label="Nama Staff" style="background:var(--soft);">'+escHtml(staffName)+'</textarea></div>'
 
-  + '<div class="field"><span>2. Unit Bisnis</span><input class="control" id="scUnitName" value="'+unitName+'" readonly style="background:var(--soft);opacity:0.9;"></div>'
+  + '<div class="field"><span>2. Unit Bisnis</span><textarea class="control identity-value" id="scUnitName" readonly rows="1" aria-label="Unit Bisnis" style="background:var(--soft);">'+escHtml(unitName)+'</textarea></div>'
 
   + '<div class="field"><span>3. Kategori Pengeluaran</span><select class="control" id="scCoa">'
   + '<option value="5101">Beban Chemical / Supplies</option>'
@@ -1477,6 +1548,7 @@ function closingPage(){
   const ownClosing=closingsList.find(c=>cu&&String(c.user_id)===String(cu.id)&&String(c.branch_id)===String(cu.branch_id));
   const locked=!!ownClosing||!cu||cu.role!=='STAFF'||!!cData.unavailable;
   const fmtRupiah = n => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
+  const closingNote = ownClosing ? [ownClosing.reason, ownClosing.operational_notes].map(v=>String(v||'').trim()).find(v=>v&&!/^(?:tidak ada|nihil|[-—])\.?$/i.test(v)) || 'Tidak ada catatan' : '';
   
   const now = new Date();
   const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -1513,9 +1585,9 @@ function closingPage(){
           ) : '<article class="card empty-table">Belum ada closing hari ini.</article>')
 
   + '</section><section id="closingInputPane" role="tabpanel" aria-labelledby="closingInputTab">'
-  + '<article class="cls-card"><p class="hint">'+escHtml(cData.notice||'Saldo awal / carryforward belum diverifikasi; rekonsiliasi lengkap tidak tersedia. Mutasi harian bukan saldo akhir.')+'</p>'
-  + (ownClosing?'<p class="hint" role="status">Anda sudah melakukan closing hari ini. Closing ID: '+escHtml(ownClosing.id)+'. Staff lain tetap dapat closing masing-masing.</p>':cData.unavailable?'<p class="hint" role="alert">Ringkasan closing belum tersedia. Muat ulang sebelum closing.</p>':'')
-  + (ownClosing?'<div class="closed-shift" role="status"><span class="tag ok">SHIFT DITUTUP</span><h2>Closing sudah tercatat</h2><p>Data shift ini hanya baca. Tidak ada shift baru yang dibuka.</p><dl><dt>Uang fisik</dt><dd>'+fmtRupiah(ownClosing.physical_cash)+'</dd><dt>Mutasi kas</dt><dd>'+fmtRupiah(ownClosing.system_balance)+'</dd><dt>Catatan</dt><dd>'+escHtml(ownClosing.reason||ownClosing.operational_notes||'—')+'</dd></dl><button class="btn" data-closing-tab="history">Lihat Riwayat Closing</button></div>':
+  + '<article class="cls-card">'+(!ownClosing?'<p class="hint">'+escHtml(cData.notice||'Saldo awal / carryforward belum diverifikasi; rekonsiliasi lengkap tidak tersedia. Mutasi harian bukan saldo akhir.')+'</p>':'')
+  + (!ownClosing&&cData.unavailable?'<p class="hint" role="alert">Ringkasan closing belum tersedia. Muat ulang sebelum closing.</p>':'')
+  + (ownClosing?'<div class="closed-shift" role="status"><header class="closed-shift-head"><h2>Closing sudah tercatat</h2><span class="tag ok">SHIFT DITUTUP</span></header><p class="closed-shift-meta">ID: <span class="mono">'+escHtml(ownClosing.id)+'</span> · Hanya baca; tidak membuka shift baru.</p><dl><dt>Uang fisik</dt><dd class="mono">'+fmtRupiah(ownClosing.physical_cash)+'</dd><dt>Mutasi kas</dt><dd class="mono">'+fmtRupiah(ownClosing.system_balance)+'</dd><dt>Catatan</dt><dd>'+escHtml(closingNote)+'</dd></dl><p class="closed-shift-notice">Mutasi kas harian (WIB), bukan saldo akhir. Saldo awal / carryforward belum diverifikasi; rekonsiliasi lengkap belum tersedia.</p><button class="btn primary" type="button" data-closing-tab="history">Lihat Riwayat Closing</button></div>':
   '<fieldset '+(locked?'disabled':'')+' style="border:0;padding:0;margin:0;min-width:0;">'
   + '<div class="card-head" style="margin-bottom:20px;padding:0;">'
   + '<div><h2 style="font-size:17px;margin:0 0 4px;font-weight:700;">Form Tutup Shift Kasir</h2><p style="margin:0;font-size:12px;color:var(--muted);">' + dateFormatted + ' · ' + scopeName() + '</p></div>'
@@ -1590,9 +1662,9 @@ function manualPage(){
   + '<option value="PENGAJUAN_DANA">Pengajuan Dana Lapangan</option>'
   + '</select></div>'
 
-  + '<div class="field"><span>1. Nama Staff</span><input class="control" id="mnStaffName" value="'+staffName+'" readonly style="background:var(--soft);opacity:0.9;"></div>'
+  + '<div class="field"><span>1. Nama Staff</span><textarea class="control identity-value" id="mnStaffName" readonly rows="1" aria-label="Nama Staff" style="background:var(--soft);">'+escHtml(staffName)+'</textarea></div>'
 
-  + '<div class="field"><span>2. Unit Bisnis</span><input class="control" id="mnUnitName" value="'+unitName+'" readonly style="background:var(--soft);opacity:0.9;"></div>'
+  + '<div class="field"><span>2. Unit Bisnis</span><textarea class="control identity-value" id="mnUnitName" readonly rows="1" aria-label="Unit Bisnis" style="background:var(--soft);">'+escHtml(unitName)+'</textarea></div>'
 
   + '<div class="field"><span>3. Kategori Pengeluaran</span><select class="control" id="mnCoa">'
   + '<option value="5101">Beban Chemical / Supplies</option>'
@@ -1790,7 +1862,7 @@ function payslipPage(){return pageHead('Organization','Slip Gaji','Rahasia · Ow
 '<article class="card" style="margin-top:16px"><div class="card-head"><h2>Batch & Status Pengiriman</h2><button class="btn" data-payroll-refresh>Refresh</button></div><p>Sent: diterima penyedia, bukan bukti dibaca. Uncertain: rekonsiliasi manual; tidak boleh retry.</p><div id="payrollBatches"></div><div id="payrollDelivery"></div></article>'+
 '<article class="card" style="margin-top:16px"><div class="card-head"><h2>Kontak Pribadi Staff</h2><button class="btn" data-payroll-contacts>Muat Kontak</button></div><p>Verifikasi identitas penerima di luar sistem. Telegram wajib ID pengguna positif dan sudah memulai chat pribadi bot. Jangan gunakan grup.</p><div id="payrollContacts"></div></article>'}
 
-function organizationPage(){return pageHead('System','Organization','Branches, access roles, and financial control settings in one workspace.','')+'<section class="grid feature-grid"><article class="card feature">'+icon('branch')+'<strong>Branches</strong><p>Maintain branch codes, operating status, and access scope.</p><button class="btn" data-view="branchesSys">Manage branches</button></article><article class="card feature">'+icon('users')+'<strong>Users &amp; Roles</strong><p>Review role permissions and branch assignments.</p><button class="btn" data-view="users">Manage access</button></article><article class="card feature">'+icon('settings')+'<strong>Financial Settings</strong><p>Set approval thresholds and reconciliation rules.</p><button class="btn" data-view="settings">Open settings</button></article></section>'}
+function organizationPage(){return pageHead('System','Organization','Branches, access roles, and account settings in one workspace.','')+'<section class="grid feature-grid"><article class="card feature">'+icon('branch')+'<strong>Branches</strong><p>Maintain branch codes, operating status, and access scope.</p><button class="btn" data-view="branchesSys">Manage branches</button></article><article class="card feature">'+icon('users')+'<strong>Users &amp; Roles</strong><p>Review role permissions and branch assignments.</p><button class="btn" data-view="users">Manage access</button></article><article class="card feature">'+icon('settings')+'<strong>Account Settings</strong><p>Manage your active account password and session identity. Financial policies are not configurable here.</p><button class="btn" data-view="settings">Open settings</button></article></section>'}
 function accountingPage(){return pageHead('Owner · persetujuan terpisah','Jurnal & Mutasi','Saldo awal belum tersedia. Neraca belum lengkap. Tidak ada posting otomatis. Draft sementara, bukan antrean tersimpan; kedaluwarsa 10 menit dan hilang saat restart.','')+'<article class="card" style="padding:20px"><form id="accountingDraft" style="display:grid;gap:12px"><label>Jenis sumber<select name="sourceType"><option>CASH_TRANSACTION</option><option>REVERSAL</option></select></label><label>ID transaksi / jurnal asli<input name="sourceId" required maxlength="128"></label><label>ID dana bernama<input name="fundId" maxlength="128"></label><label>Tanggal akuntansi<input name="accountingDate" type="date" required></label><label>Bukti review<textarea name="evidence" minlength="10" maxlength="2000" required></textarea></label><button class="btn" type="submit">Review draft · belum posting</button></form><div id="accountingReview"></div><p id="accountingStatus" role="status"></p></article><article class="card" style="padding:20px;margin-top:16px"><h2>Trial balance mutasi</h2><form id="accountingTrial" style="display:grid;gap:12px"><label>Dari<input name="start" type="date" required></label><label>Sampai<input name="end" type="date" required></label><label>ID cabang historis (kosong = semua)<input name="branchId"></label><button class="btn" type="submit">Muat mutasi aktual</button></form><div id="accountingResult"></div><p>Owner perlu tanggal cutover dan saldo awal terverifikasi beserta bukti; tanpa itu saldo akhir dan neraca lengkap tidak tersedia. Entitas hukum dan drawer/bank/QRIS harus ditetapkan Owner. Tidak ada inferensi akrual/pajak atau backfill.</p></article>';}
 function bindAccounting(){const f=content.querySelector('#accountingDraft');if(!f)return;const status=content.querySelector('#accountingStatus'),review=content.querySelector('#accountingReview'),trial=content.querySelector('#accountingTrial'),result=content.querySelector('#accountingResult'),actor=window.SipekaCurrentUser?.id;let token=null;const alive=()=>f.isConnected&&role==='owner'&&window.SipekaCurrentUser?.id===actor;const clear=()=>{token=null;review.replaceChildren();};f.oninput=clear;
 f.onsubmit=async e=>{e.preventDefault();clear();const button=f.querySelector('button');button.disabled=true;try{const draft=Object.fromEntries(new FormData(f));if(draft.sourceType==='REVERSAL')delete draft.fundId;draft.idempotencyKey=crypto.randomUUID();const d=await window.SipekaAuth.api('/api/accounting/review',{method:'POST',body:draft});if(!alive())return;token=d.reviewToken;review.innerHTML='<h3>Review · belum posting</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere"></pre><p></p><label><input type="checkbox" id="accountingConsent"> Saya Owner menyetujui jurnal secara terpisah; sumber, tanggal, dana telah ditinjau.</label><button class="btn primary" id="accountingApprove" type="button" disabled>Setujui & posting jurnal</button>';review.querySelector('pre').textContent=JSON.stringify({draft:d.draft,source:d.source},null,2);review.querySelector('p').textContent=d.notice;const consent=review.querySelector('input'),approve=review.querySelector('button');consent.onchange=()=>approve.disabled=!consent.checked;approve.onclick=async()=>{if(!alive()||!token||!consent.checked)return;approve.disabled=true;try{const posted=await window.SipekaAuth.api('/api/accounting/approve',{method:'POST',body:{reviewToken:token,approved:true}});if(!alive())return;clear();status.textContent='Diposting · jurnal '+posted.id+' · sumber '+posted.journal.source_id;}catch(err){if(alive()){status.textContent=err.message;approve.disabled=!consent.checked;}}};status.textContent='Draft ditinjau; belum diposting.';}catch(err){if(alive())status.textContent=err.message;}finally{if(alive())button.disabled=false;}};
