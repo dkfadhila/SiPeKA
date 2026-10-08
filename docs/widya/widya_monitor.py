@@ -76,7 +76,7 @@ def main():
     for unit, b in sample['backups'].items():
         targets = ', '.join(k + '=' + ('accepted' if v else 'FAILED') for k, v in sorted(b['targets'].items())) or 'offsite belum terverifikasi dari journal 24 jam'
         lines.append(f"Backup {unit}: {b['result']}, exit={b['exit']}, selesai={b['completed']}; {targets}.")
-    if now.hour == 0:
+    if now.hour == 18:
         lines.append(daily_summary(samples, now))
     lines.append('Saldo/accrual/audit finansial tidak disimpulkan dari count ledger. Tidak ada PII payroll. Telegram API accepted bukan bukti dibaca Owner.')
     report = '\n'.join(lines)

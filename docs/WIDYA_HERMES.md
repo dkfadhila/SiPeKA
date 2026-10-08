@@ -43,16 +43,18 @@ Every deletion requires a second explicit warning after the initial request, the
 
 Supported persistent Hermes cron, named profile `widya`:
 
-- Job `ebe2ca88af83`, `0 0,6,12,18 * * *`, timezone `Asia/Jakarta`: 00:00, 06:00, 12:00, 18:00 WIB; unlimited recurrence.
+- Job `ebe2ca88af83`, `0 6,18 * * *`, timezone `Asia/Jakarta`: only 06:00 and 18:00 WIB daily; unlimited recurrence.
 - Private delivery and failure notice: `telegram:1122048904`. Active shared `hermes-gateway.service` executes the profile scheduler.
 - Deterministic `--no-agent` script `/home/ubuntu/.hermes/profiles/widya/scripts/widya_monitor.py`; versioned source `docs/widya/widya_monitor.py`. No inference dependency or provider changes. Project workdir is the Widya workspace.
 - Read-only website `/`, `/api/health`, `/api/ready`, DB query inside `BEGIN READ ONLY` with statement timeout, disk/gateway state, daily PostgreSQL/receipt and VPS backup result/timestamp, sanitized R2/Supabase acceptance evidence. No payroll PII, financial writes, service restarts or SiPeKA deploy.
-- At 00:00, add the latest-24-hour summary from locally retained monitoring samples. First day is explicitly partial coverage; point-in-time sampling is not continuous monitoring or a full financial statement. No balance/accrual claims from record counts.
+- At 18:00, add the latest-24-hour summary from locally retained monitoring samples. First day is explicitly partial coverage; point-in-time sampling is not continuous monitoring or a full financial statement. No balance/accrual claims from record counts.
 - Runtime evidence: `/home/ubuntu/.hermes/profiles/widya/monitoring/{samples.jsonl,latest.txt,telegram-proof.json}`; local installation/probe artifacts `D:/FamilyAgent/Flora/generated/widya-vps/monitoring/`.
 
 Actual 2026-10-07 02:02 WIB verification: website/health/readiness/DB OK; gateway active; disk 17.3%; ledger count 0, branch count 6 (not a cash balance). PostgreSQL/receipt backup completed 02:00:09 WIB with R2/Supabase API acceptance; VPS backup completed 2026-10-06 03:24:12 WIB, offsite verification unavailable from its last-24-hour journal. Manual job run succeeded, Telegram API returned message ID `9`; device delivery/read status remains unverified. Job list readback confirmed active recurrence and next run `2026-10-07T06:00:00+07:00`.
 
 An initial probe used urllib's default User-Agent and falsely reported HTTP failures behind the website filter. Corrected explicit User-Agent; rerun returned all website checks OK and sent the corrected report. Existing historical samples retain that probe failure for audit.
+
+2026-10-08 cadence correction: supported CLI edited the existing job to `0 6,18 * * *`; profile timezone readback `Asia/Jakarta`, next run `2026-10-08T18:00:00+07:00`. Script/no-agent mode, private Owner delivery, model configuration and other jobs unchanged. Runtime SOUL/AGENTS/script match the canonical mirrors. Actual live read-only checks passed; isolated-state 06:00/18:00 clock-path tests confirmed the daily recap only at 18:00. Clock overrides test rendering, not historical service health. Production monitoring history/latest report were unchanged; no Telegram test send. Evidence: `D:/FamilyAgent/Flora/generated/widya-vps/monitoring-2x/`. PostgreSQL/receipt offsite targets accepted; VPS backup offsite verification still unavailable from its 24-hour journal.
 
 Commands: `/home/ubuntu/.local/bin/hermes --profile widya cron list`, `cron runs ebe2ca88af83`, `cron run ebe2ca88af83` (sends a real private report). Configure timezone with supported `hermes --profile widya config set timezone Asia/Jakarta`; do not hand-edit cron/config storage.
 
