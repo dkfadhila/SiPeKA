@@ -4,6 +4,12 @@ const { canonical } = require('./backup-postgres');
 const MAGIC = Buffer.from('SIPERC01');
 const PREFIX = 'sipeka/receipts/v1/';
 const FORMAT = 'sipeka-receipts-backup-v1';
+const BUNDLE_FORMAT = 'sipeka-receipts-backup-v2';
+function validateStorageMetadata(metadata, sha256) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata) || canonical(Object.keys(metadata).sort()) !== canonical(['original_filename','sha256'])) throw new Error('Invalid receipt storage metadata');
+  if (typeof metadata.original_filename !== 'string' || !/^[A-Za-z0-9._-]{1,120}\.jpeg$/.test(metadata.original_filename) || metadata.sha256 !== sha256) throw new Error('Invalid receipt storage metadata');
+  return metadata;
+}
 const MAX_BUNDLE = 256 * 1024 * 1024;
 const MAX_IMAGE = 6_000_000;
 const FILENAME = /^evidence-[0-9]+-[a-f0-9]{6}\.(?:jpg|png|webp|gif)$/;
@@ -38,9 +44,10 @@ async function buildBundle(snapshot, source) {
     const sha256 = hash(bytes);
     if (object.sha256 && object.sha256 !== sha256) throw new Error('Receipt source hash mismatch');
     if (object.mime && object.mime !== asset.mime) throw new Error('Receipt source MIME mismatch');
-    files.push({ filename: asset.filename, size: bytes.length, sha256 }); chunks.push(bytes); total += bytes.length;
+    const metadata = object.original_filename === undefined ? undefined : validateStorageMetadata({ original_filename: object.original_filename, sha256 }, sha256);
+    files.push({ filename: asset.filename, size: bytes.length, sha256, ...(metadata ? { metadata } : {}) }); chunks.push(bytes); total += bytes.length;
   }
-  const header = { format: FORMAT, snapshot, files };
+  const header = { format: BUNDLE_FORMAT, snapshot, files };
   const encoded = Buffer.from(canonical(header));
   if (encoded.length > 16 * 1024 * 1024 || total + encoded.length + 12 > MAX_BUNDLE) throw new Error('Receipt bundle too large');
   const length = Buffer.alloc(4); length.writeUInt32BE(encoded.length);
@@ -52,11 +59,14 @@ function inspectBundle(buffer, expected) {
   const length = buffer.readUInt32BE(8);
   if (!length || length > 16 * 1024 * 1024 || 12 + length > buffer.length) throw new Error('Invalid receipt bundle framing');
   const header = JSON.parse(buffer.subarray(12, 12 + length).toString('utf8'));
-  if (header.format !== FORMAT || !Array.isArray(header.files)) throw new Error('Invalid receipt bundle header');
+  if (![FORMAT,BUNDLE_FORMAT].includes(header.format) || !Array.isArray(header.files)) throw new Error('Invalid receipt bundle header');
   validateSnapshot(header.snapshot);
   if (header.files.length !== header.snapshot.assets.length) throw new Error('Receipt file count mismatch');
   let offset = 12 + length; const files = [];
   header.files.forEach((file, i) => {
+    const fields = ['filename','size','sha256', ...(header.format === BUNDLE_FORMAT && Object.hasOwn(file,'metadata') ? ['metadata'] : [])];
+    if (canonical(Object.keys(file).sort()) !== canonical(fields.sort())) throw new Error('Unexpected receipt file fields');
+    if (Object.hasOwn(file,'metadata')) validateStorageMetadata(file.metadata,file.sha256);
     if (file.filename !== header.snapshot.assets[i].filename || !Number.isSafeInteger(file.size) || file.size <= 0 || file.size > MAX_IMAGE || offset + file.size > buffer.length || !/^[a-f0-9]{64}$/.test(file.sha256)) throw new Error('Invalid receipt file framing');
     const bytes = buffer.subarray(offset, offset + file.size); offset += file.size;
     if (hash(bytes) !== file.sha256) throw new Error('Receipt image hash mismatch');
@@ -85,6 +95,30 @@ function ensureTargets(targets) {
   return targets;
 }
 function createSource(env = process.env, options = {}) {
+  if ((env.STORAGE_BACKEND || 'r2') === 'filesystem') {
+    const root = path.resolve(env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads', 'receipts'));
+    const read = require('../receipt-storage-bounded').createBoundedReceiptReader({backend:'filesystem',root});
+    return { read: async key => {
+      if (typeof key !== 'string' || !key.startsWith('receipts/') || !FILENAME.test(key.slice(9))) throw new Error('Invalid source receipt key');
+      const filename = key.slice(9); let metadata;
+      try {
+        const file = path.join(root, filename + '.metadata.json'), before = await fs.lstat(file);
+        if (!before.isFile() || before.isSymbolicLink() || before.size > 1024) throw new Error('Invalid receipt storage metadata');
+        const handle = await fs.open(file, 'r');
+        try {
+          const after = await handle.stat();
+          if (!after.isFile() || before.dev !== after.dev || before.ino !== after.ino || after.size > 1024) throw new Error('Invalid receipt storage metadata');
+          const data = Buffer.alloc(1025), result = await handle.read(data,0,data.length,0);
+          if (result.bytesRead > 1024) throw new Error('Invalid receipt storage metadata');
+          metadata = JSON.parse(data.subarray(0,result.bytesRead).toString('utf8'));
+        } finally { await handle.close(); }
+      } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      const bytes = await read({filename}), sha256 = hash(bytes);
+      if (metadata !== undefined) validateStorageMetadata(metadata,sha256);
+      return {bytes,sha256,...(metadata ? {original_filename:metadata.original_filename} : {})};
+    }, close() {} };
+  }
+  if (env.STORAGE_BACKEND && env.STORAGE_BACKEND !== 'r2') throw new Error('Unsupported storage backend');
   const endpoint = new URL(required(env, 'R2_ENDPOINT'));
   if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) throw new Error('Invalid R2 endpoint');
   const bucket = required(env, 'R2_ATTACHMENT_BUCKET');
@@ -102,7 +136,7 @@ function createSource(env = process.env, options = {}) {
           chunks.push(Buffer.from(chunk));
         }
       } finally { response.Body.destroy?.(); }
-      return { bytes: Buffer.concat(chunks), sha256: response.Metadata?.sha256, mime: response.ContentType };
+      return { bytes: Buffer.concat(chunks), sha256: response.Metadata?.sha256, mime: response.ContentType, original_filename: response.Metadata?.original_filename };
     },
     close: () => client.destroy()
   };
@@ -254,7 +288,13 @@ async function runVerify(env = process.env, manifestKey, options = {}) {
           const restore = path.join(dir, 'restore', target.name);
           await fs.mkdir(path.join(restore, 'receipts'), { recursive: true, mode: 0o700 });
           await fs.writeFile(path.join(restore, 'metadata.json'), JSON.stringify(decoded.snapshot, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-          for (const file of decoded.files) await fs.writeFile(path.join(restore, 'receipts', file.filename), file.bytes, { flag: 'wx', mode: 0o600 });
+          const storageMetadata = {};
+          for (const [i,file] of decoded.files.entries()) {
+            await fs.writeFile(path.join(restore, 'receipts', file.filename), file.bytes, { flag: 'wx', mode: 0o600 });
+            if (file.metadata) await fs.writeFile(path.join(restore, 'receipts', file.filename + '.metadata.json'), JSON.stringify(file.metadata) + '\n', { flag: 'wx', mode: 0o600 });
+            storageMetadata['receipts/' + file.filename] = {ContentType:decoded.snapshot.assets[i].mime, Metadata:{sha256:file.sha256,...(file.metadata ? {original_filename:file.metadata.original_filename} : {})}};
+          }
+          await fs.writeFile(path.join(restore, 'storage-metadata.json'), JSON.stringify(storageMetadata,null,2) + '\n', {flag:'wx',mode:0o600});
         }
         results.push({ target: target.name, ok: true, ...decoded.summary });
       } catch { results.push({ target: target.name, ok: false }); }

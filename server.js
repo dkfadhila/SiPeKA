@@ -7,6 +7,8 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { normalizeReceipt, friendlyFilename, safeDisplayFilename } = require('./receipt-upload');
+const { receiptDisplayName } = require('./storage');
 const { q, uid, atomicApprove, createSession, getValidSession,
   revokeUserSessions, checkIdempotency, ready, withRequestTransaction, db } = require(process.env.DATABASE_URL ? "./db-postgres" : "./db");
 
@@ -878,7 +880,8 @@ async function handleRequest(req, res, url, p) {
     const b = await readBody(req);
     const branchId = me.role === "STAFF" ? me.assigned_branch_id : (b.branch_id || null);
     if (me.role === "STAFF" && !branchId) return json(res, 403, { error: "Anda tidak terikat unit bisnis manapun" });
-    if (branchId !== null && (typeof branchId !== "string" || !(await q.unitByIdActive.get(branchId))))
+    const branch = typeof branchId === 'string' ? await q.unitByIdActive.get(branchId) : null;
+    if (branchId !== null && !branch)
       return json(res, 400, { error: "Unit bisnis tidak ditemukan" });
     let img = typeof b.image === "string" ? b.image : "";
     if (!img) return json(res, 400, { error: "image (base64) required" });
@@ -899,15 +902,15 @@ async function handleRequest(req, res, url, p) {
     const detectedMime = detectImageMime(imgBuf);
     if (!detectedMime) return json(res, 400, { error: "File bukan gambar yang didukung (JPEG, PNG, WebP, GIF)" });
 
-    const extMap = { "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif" };
-    const ext = extMap[detectedMime] || ".jpg";
-
-    const filename = `evidence-${Date.now()}-${uid().slice(0, 6)}${ext}`;
+    try { imgBuf = await normalizeReceipt(imgBuf); }
+    catch (error) { return json(res, error.status || 400, { error: error.message }); }
+    const original_filename = friendlyFilename(me.username, branch?.name);
+    const filename = `evidence-${Date.now()}-${uid().slice(0, 6)}.jpg`;
     const receiptUrl = `/api/receipts/${filename}`;
     let stored;
     try {
-      stored = await saveReceipt({ filename, buffer: imgBuf, mime: detectedMime, userId: me.id, branchId });
-      try { await q.insertReceipt.run(filename, me.id, branchId, detectedMime); }
+      stored = await saveReceipt({ filename, buffer: imgBuf, mime: 'image/jpeg', original_filename, userId: me.id, branchId });
+      try { await q.insertReceipt.run(filename, me.id, branchId, 'image/jpeg'); }
       catch (err) {
         try { await deleteReceipt(stored); }
         catch { console.error("[save-receipt] orphan cleanup failed"); }
@@ -917,7 +920,7 @@ async function handleRequest(req, res, url, p) {
       console.error("[save-receipt] storage or metadata write failed");
       return json(res, 500, { error: "Gagal menyimpan bukti transaksi" });
     }
-    return json(res, 201, { ok: true, receipt_key: receiptUrl, mime: detectedMime });
+    return json(res, 201, { ok: true, receipt_key: receiptUrl, mime: 'image/jpeg', original_filename, display_name: original_filename });
   }
 
   // ---- authenticated receipt access ----
@@ -937,7 +940,9 @@ async function handleRequest(req, res, url, p) {
       if (err.code === "EACCES") return json(res, 403, { error: "Akses ditolak" });
       throw err;
     }
+    const displayName = safeDisplayFilename(await receiptDisplayName(asset), filename);
     res.writeHead(200, { "Content-Type": asset.mime, "Content-Length": buffer.length,
+      "Content-Disposition": `inline; filename="${displayName}"; filename*=UTF-8''${encodeURIComponent(displayName)}`,
       "Cache-Control": "private, no-store", ...corsHeaders(res._sipeka_origin), ...SECURITY_HEADERS });
     return res.end(buffer);
   }

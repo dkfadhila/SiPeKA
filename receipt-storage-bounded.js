@@ -22,6 +22,7 @@ function createBoundedReceiptReader({backend=process.env.STORAGE_BACKEND||'files
     expectedHash=result.Metadata?.sha256;
    }else{
     const file=path.join(root,name),before=await fs.lstat(file);stop();if(!before.isFile()||before.isSymbolicLink())throw fail('OCR_INVALID_FILE',400);
+    try{const metadataFile=file+'.metadata.json',stat=await fs.lstat(metadataFile);stop();if(!stat.isFile()||stat.isSymbolicLink()||stat.size>1024)throw fail('OCR_INVALID_FILE',400);const metadata=JSON.parse(await fs.readFile(metadataFile,'utf8'));stop();if(typeof metadata.sha256!=='string'||!/^[a-f0-9]{64}$/.test(metadata.sha256))throw fail('OCR_INTEGRITY_MISMATCH',400);expectedHash=metadata.sha256;}catch(error){if(error.code!=='ENOENT')throw error;}
     handle=await fs.open(file,'r');const after=await handle.stat();stop();if(!after.isFile()||before.dev!==after.dev||before.ino!==after.ino)throw fail('OCR_INVALID_FILE',400);
     if(after.size<1||after.size>maxBytes)throw fail('OCR_INVALID_SIZE',413);
     stream=handle.createReadStream({autoClose:false,highWaterMark:Math.min(65536,maxBytes+1),signal:controller.signal});
