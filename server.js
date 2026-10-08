@@ -728,7 +728,7 @@ async function handleRequest(req, res, url, p) {
       : (url.searchParams.get("branch_id") || "UNIT_LP");
     const sysBal = (await q.cashDrawerBalanceToday.get(branchId))?.balance || 0;
     const closings = me.role === "STAFF"
-      ? (await q.closingsByBranchToday.all(me.assigned_branch_id))
+      ? (await q.closingsByUserBranchToday.all(me.id, me.assigned_branch_id))
       : (await q.allClosingsToday.all());
     return json(res, 200, { branch_id: branchId, system_balance: sysBal, closings });
   }
@@ -785,7 +785,7 @@ async function handleRequest(req, res, url, p) {
 
   if (p === "/api/closings" && req.method === "GET") {
     const closings = me.role === "STAFF"
-      ? (await q.closingsByBranchToday.all(me.assigned_branch_id))
+      ? (await q.closingsByUserBranchToday.all(me.id, me.assigned_branch_id))
       : (await q.allClosingsToday.all());
     return json(res, 200, closings);
   }

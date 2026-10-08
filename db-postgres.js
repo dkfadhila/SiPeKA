@@ -158,6 +158,7 @@ const q = {
     (id,branch_id,user_id,closing_date,system_balance,physical_cash,difference,reason,total_nota,kg_reguler,kg_express,kg_kilat,
      income_cash,income_qris,income_transfer,stock_detergent,stock_perfume,operational_notes,idempotency_key,fingerprint,status)
     VALUES($1,$2,$3,${TODAY},$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'CLOSED')`, { write: true }),
+  closingsByUserBranchToday: statement(closingJoin + ` WHERE c.user_id=$1 AND c.branch_id=$2 AND c.closing_date=${TODAY} ORDER BY c.created_at DESC`),
   closingsByBranchToday: statement(closingJoin + ` WHERE c.branch_id=$1 AND c.closing_date=${TODAY} ORDER BY c.created_at DESC`),
   allClosingsToday: statement(closingJoin + ` WHERE c.closing_date=${TODAY} ORDER BY c.created_at DESC`),
   closingTodayByUser: statement(`SELECT * FROM cash_closings WHERE user_id=$1 AND branch_id=$2 AND closing_date=${TODAY} ORDER BY created_at DESC LIMIT 1`),

@@ -454,6 +454,14 @@ const q = {
     )
     VALUES (?,?,?,date('now', '+7 hours'),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'CLOSED')
   `),
+  closingsByUserBranchToday: db.prepare(`
+    SELECT c.*, u.full_name as user_name, b.name as branch_name
+    FROM cash_closings c
+    JOIN app_users u ON u.id = c.user_id
+    JOIN business_units b ON b.id = c.branch_id
+    WHERE c.user_id = ? AND c.branch_id = ? AND c.closing_date = date('now', '+7 hours')
+    ORDER BY c.created_at DESC
+  `),
   closingsByBranchToday: db.prepare(`
     SELECT c.*, u.full_name as user_name, b.name as branch_name
     FROM cash_closings c
