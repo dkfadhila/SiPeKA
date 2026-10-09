@@ -479,7 +479,7 @@ async function handleRequest(req, res, url, p) {
       if(p==='/api/accounting/review'&&req.method==='POST'){
         const draft=accountingDraft(await readBody(req)),source=await accountingSource(pool,draft,sessionToken);
         const value=Buffer.from(JSON.stringify({draft,source,actor:me.id,session:crypto.createHash('sha256').update(sessionToken).digest('hex'),expires:Date.now()+600000})).toString('base64url');
-        return json(res,200,{draft,source,reviewToken:value+'.'+accountingSign(value),expiresInSeconds:600,notice:'Review belum memposting. Pemetaan dana dan kategori telah divalidasi; persetujuan memvalidasi ulang. Draft sementara, kedaluwarsa 10 menit, hilang saat restart; bukan antrean tersimpan. Saldo awal belum tersedia; neraca belum lengkap.'});
+        return json(res,200,{draft,source,reviewToken:value+'.'+accountingSign(value),expiresInSeconds:600,notice:'Review belum memposting. Pemetaan dana dan kategori telah divalidasi; persetujuan memvalidasi ulang. Draft sementara, kedaluwarsa 10 menit, hilang saat restart; bukan antrean tersimpan. Laporan ini menampilkan mutasi tercatat, bukan neraca lengkap.'});
       }
       if(p==='/api/accounting/approve'&&req.method==='POST'){
         const b=await readBody(req);
@@ -782,7 +782,7 @@ async function handleRequest(req, res, url, p) {
     const closings = me.role === "STAFF"
       ? (await q.closingsByUserBranchToday.all(me.id, me.assigned_branch_id))
       : (await q.allClosingsToday.all());
-    return json(res, 200, { branch_id: branchId, system_balance: sysBal, closings, basis:cash.basis, ordinaryDailyMovement:cash.ordinaryBalance, advanceCashDelta:cash.advanceCashDelta, openingBalances:'MISSING',carryforward:'UNVERIFIED',reconciliationComplete:false,endBalance:null,neracaComplete:false,notice:'Mutasi kas tercatat hari ini WIB, bukan saldo akhir. Saldo awal / carryforward belum diverifikasi; rekonsiliasi lengkap tidak tersedia. Closing lama tetap; bukan reset kas atau bukti setoran.' });
+    return json(res, 200, { branch_id: branchId, system_balance: sysBal, closings, basis:cash.basis, ordinaryDailyMovement:cash.ordinaryBalance, advanceCashDelta:cash.advanceCashDelta, openingBalances:'MISSING',carryforward:'UNVERIFIED',reconciliationComplete:false,endBalance:null,neracaComplete:false,notice:'Mutasi kas tercatat hari ini WIB, bukan saldo akhir. Closing lama tetap; bukan reset kas atau bukti setoran.' });
   }
 
   if (p === "/api/closing" && req.method === "POST") {

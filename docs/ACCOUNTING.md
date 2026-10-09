@@ -26,6 +26,6 @@ Required parent handoff edits BEFORE release: migration runner accounting table/
 `node --test tests/accounting.test.js tests/final-ui-source.test.js`: 4 passed. Actual VPS PG fresh 001–007 isolated schema using production maintenance connection privately, tests with actual sipeka_runtime: 1 integrated test passed; 8 concurrent identical retries same ID; immutable SQL/CREATE denied; Staff denied; wrong fund/QRIS denied; pending/advance blocked; period lock blocked; reversal original retained; exact aggregate 18014398509482005; opening MISSING, neraca false. Maintenance verification additionally proves deferred imbalance rolls back and original UPDATE refused. Evidence under `D:/FamilyAgent/Flora/generated/sipeka-completion/task3/`; schemas retained, no cleanup authorized. Production CoA read only; no production financial writes, no public migration.
 
 ## Minimum Owner questions before activation
-1. Cutover date, verified opening balances/documents; if unavailable approve movement-only label, not zero opening.
+1. Operational requests/receipt input require no opening setup. Reports describe recorded movements, not a complete balance sheet; unknown final balances remain unavailable, never assumed zero.
 2. Legal entity and branch membership; do not assume all units one taxpayer.
 3. Named drawer/bank/QRIS providers, evidence and reviewer; explicit Owner approves each journal independently. No further tax/provider setup needed for this foundation; accrual/tax completeness remains blocked.

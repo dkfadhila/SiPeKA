@@ -103,7 +103,7 @@ DB, `.env`, SSH key, token dan bukti privat tetap di luar Git dan folder release
 - [ ] Approval kas SETOR_NOTA yang mengubah periode pencipta yang sudah closing ditolak; penolakan pending tidak mengubah kas.
 - [ ] UI refresh history/status setelah sukses; form terkunci hanya untuk user yang telah closing.
 - [ ] Uji pergantian hari WIB: batas UTC 17:00, historical approval, akses hari berikutnya dan timestamp history.
-- [ ] Definisi saldo awal/pindah shift dan kebutuhan multi-shift per pengguna disepakati sebelum operasional penuh; daily close saat ini bukan mesin multi-shift umum.
+- [ ] Pengajuan dan input nota tidak memiliki prasyarat saldo. Daily close mencatat mutasi harian dan uang fisik, bukan neraca lengkap atau mesin multi-shift umum.
 
 ## 8. Receipt, scan dan AI nyata
 - [ ] PNG/JPEG/WebP/GIF valid dapat diunggah; signature palsu, file bukan gambar, base64 corrupt, traversal dan file terlalu besar ditolak.

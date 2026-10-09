@@ -27,7 +27,7 @@ async function trialBalance(pool,sessionToken,{start,end,branchId=null}){
   if(d!==c)throw Error('TRIAL_BALANCE_INVARIANT');
   await client.query('COMMIT');
   return{basis:'POSTED_RECORDED_CASH_BASIS_MOVEMENTS',openingBalances:'MISSING',neracaComplete:false,
-   notices:['Saldo awal belum diketahui; saldo akhir tidak tersedia.','Seimbang tidak berarti akrual lengkap, rekonsiliasi bank, kewajiban pajak, atau laporan audit.'],
+   notices:['Laporan ini menampilkan mutasi tercatat, bukan neraca lengkap','Seimbang tidak berarti akrual lengkap, rekonsiliasi bank, kewajiban pajak, atau laporan audit.'],
    start,end,branchId,rows,...counts,totalDebit:d.toString(),totalCredit:c.toString()};
  }catch(e){try{await client.query('ROLLBACK');}catch{}throw e;}finally{client.release();}
 }
