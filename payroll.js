@@ -19,7 +19,7 @@ function parseCsv(input){
  return rows;
 }
 function validateCsv(csv,users){
- const table=parseCsv(csv);if(!table.length||table.shift().join(',')!==HEADER)throw fault('PAYROLL_CSV_HEADER');
+ const table=parseCsv(csv);const header=table.shift()?.join(',');const byId=header===HEADER.replace('username','user_id');if(header!==HEADER&&!byId)throw fault('PAYROLL_CSV_HEADER');
  if(!table.length||table.length>1000)throw fault('PAYROLL_CSV_ROWS');
  const seen=new Set();let period;
  return table.map((r,index)=>{
@@ -27,13 +27,13 @@ function validateCsv(csv,users){
   const [p,username,...amounts]=r;
   if(!/^(?:20\d{2})-(?:0[1-9]|1[0-2])$/.test(p)|| (period&&period!==p))throw fault('PAYROLL_PERIOD');period=p;
   if(!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/.test(username))throw fault('PAYROLL_USERNAME');
-  const matches=users.filter(u=>u.username===username);if(matches.length>1)throw fault('PAYROLL_AMBIGUOUS_USERNAME');
+  const matches=users.filter(u=>(byId?u.id:u.username)===username);if(matches.length>1)throw fault('PAYROLL_AMBIGUOUS_USERNAME');
   const u=matches[0];if(!u||u.role!=='STAFF'||u.is_active===false||u.is_active===0)throw fault('PAYROLL_STAFF_NOT_FOUND');
   if(seen.has(u.id))throw fault('PAYROLL_DUPLICATE_PERIOD_STAFF');seen.add(u.id);
   const n=amounts.map(v=>{if(!/^(0|[1-9]\d{0,15})$/.test(v)||!Number.isSafeInteger(Number(v)))throw fault('PAYROLL_INTEGER_IDR');return Number(v);});
   const [basic_salary,allowances,deductions,pph21]=n;const gross=basic_salary+allowances,net=gross-deductions-pph21;
   if(!Number.isSafeInteger(gross)||!Number.isSafeInteger(net)||net<0)throw fault('PAYROLL_NET_INVALID');
-  return {period:p,user_id:u.id,username,full_name:u.full_name,basic_salary,allowances,deductions,pph21,net_salary:net};
+  return {period:p,user_id:u.id,username:u.username,full_name:u.full_name,basic_salary,allowances,deductions,pph21,net_salary:net};
  });
 }
 function createCipher(key){
@@ -56,11 +56,12 @@ function createPayrollService({pool,encryptionKey=process.env.PAYROLL_ENCRYPTION
   return view(c,actor,id,'IMPORT_PREVIEW');
  });},
  async preview(actor,id){owner(actor);return transaction(pool,c=>view(c,actor,id,'PREVIEW'));},
- async publish(actor,id,previewToken){owner(actor);return transaction(pool,async c=>{
+ async publish(actor,id,previewToken){owner(actor);createCipher(encryptionKey);return transaction(pool,async c=>{
   const b=(await c.query('SELECT * FROM payroll_batches WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!b)throw fault('PAYROLL_NOT_FOUND',404);if(previewToken!==b.preview_token)throw fault('PAYROLL_PREVIEW_TOKEN',409);
   if(b.status==='DRAFT'){
-   const rows=(await c.query('SELECT id,user_id FROM payroll_entries WHERE batch_id=$1',[id])).rows;
-   for(const r of rows)for(const channel of ['email','telegram'])await c.query("INSERT INTO payroll_delivery_outbox(id,entry_id,channel,status) VALUES($1,$2,$3,'pending') ON CONFLICT(entry_id,channel) DO NOTHING",[crypto.randomUUID(),r.id,channel]);
+   const rows=(await c.query('SELECT id,user_id,payload_cipher FROM payroll_entries WHERE batch_id=$1',[id])).rows;
+   for(const r of rows)cipher.open(r.payload_cipher,r.id);
+   for(const r of rows)for(const channel of ['telegram'])await c.query("INSERT INTO payroll_delivery_outbox(id,entry_id,channel,status) VALUES($1,$2,$3,'pending') ON CONFLICT(entry_id,channel) DO NOTHING",[crypto.randomUUID(),r.id,channel]);
    await c.query("UPDATE payroll_batches SET status='PUBLISHED',published_by=$2,published_at=clock_timestamp() WHERE id=$1",[id,actor.id]);
   }
   await audit(c,actor,'PUBLISH',id);return {id,status:'PUBLISHED'};

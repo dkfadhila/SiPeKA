@@ -26,25 +26,49 @@ function payroll() {
 }
 function deliveryWorker() {
   if (payrollWorker) return payrollWorker;
-  let emailTransport;
-  const port=Number(process.env.PAYROLL_SMTP_PORT || 587);
-  if (process.env.PAYROLL_SMTP_HOST && Number.isInteger(port) && port>0 && port<=65535) {
-    emailTransport=require('nodemailer').createTransport({host:process.env.PAYROLL_SMTP_HOST,port,
-      secure:port===465,requireTLS:port!==465,connectionTimeout:10000,greetingTimeout:10000,socketTimeout:20000,
-      ...(process.env.PAYROLL_SMTP_USER && process.env.PAYROLL_SMTP_PASSWORD ? {auth:{user:process.env.PAYROLL_SMTP_USER,pass:process.env.PAYROLL_SMTP_PASSWORD}} : {})});
-  }
-  const base=createNotificationAdapter({emailTransport,emailFrom:process.env.PAYROLL_EMAIL_FROM,
-    telegramToken:process.env.TELEGRAM_BOT_TOKEN,companyName:process.env.PAYROLL_COMPANY_NAME || 'SiPeKA'});
-  const pool=payrollPool();
-  // Verification is an Owner attestation, never inferred from syntactic validity.
-  const adapter={check:base.check};
-  for(const channel of ['email','telegram']) adapter[channel]=async args=>{
-    const col=channel==='email'?'email':'telegram_user_id';
-    const contact=(await pool.query('SELECT id FROM app_users WHERE role=$1 AND '+col+'=$2 AND '+(channel==='email'?'email_verified':'telegram_verified')+'=true',['STAFF',args.to])).rows;
-    if(contact.length!==1)throw new Error('PAYROLL_CONTACT_CHANGED');
-    return base[channel](args);
-  };
-  return payrollWorker=createPayrollDeliveryWorker({pool,adapter});
+  const {adapter}=require('./payroll-provider-config').createPayrollProviderConfig();
+  // Worker revalidates contact and payload under the leased connection's SHARE lock.
+  // Never acquire a second connection inside provider access (pool exhaustion/deadlock).
+  return payrollWorker=createPayrollDeliveryWorker({pool:payrollPool(),adapter});
+}
+let payrollOnboarding;
+function telegramOnboarding(){
+  return payrollOnboarding ||= require('./payroll-telegram-onboarding').createPayrollTelegramOnboarding({pool:payrollPool(),botUsername:process.env.PAYROLL_TELEGRAM_BOT_USERNAME,webhookSecret:process.env.PAYROLL_TELEGRAM_WEBHOOK_SECRET});
+}
+function payrollSafeError(res,e){const safe=/^PAYROLL_[A-Z0-9_]+$/.test(e.code||'');return json(res,safe&&Number.isInteger(e.status)?e.status:503,{error:safe?e.code:'PAYROLL_UNAVAILABLE'});}
+async function payrollWebhook(req,res,p){
+  if(p!=='/api/payroll/telegram/webhook')return false;
+  if(req.method!=='POST'){json(res,405,{error:'METHOD_NOT_ALLOWED'});return true;}
+  try{
+    if(!require('./payroll-telegram-onboarding').validSecret(req.headers['x-telegram-bot-api-secret-token'],process.env.PAYROLL_TELEGRAM_WEBHOOK_SECRET)){json(res,403,{error:'PAYROLL_WEBHOOK_AUTH'});return true;}
+    req._bodyLimit=16384;
+    await telegramOnboarding().webhook(req.headers['x-telegram-bot-api-secret-token'],await readBody(req));
+    json(res,200,{ok:true});
+  }catch(e){if(e.status===400||e.status===409)json(res,200,{ok:true});else payrollSafeError(res,e);}
+  return true;
+}
+async function payrollOnboardingRoute(req,res,p,me){
+  if(!p.startsWith('/api/payroll/telegram/'))return false;
+  if(!security.cookieToken(req)){json(res,401,{error:'PAYROLL_COOKIE_REQUIRED'});return true;}
+  try{
+    const svc=telegramOnboarding();let result;
+    if(p==='/api/payroll/telegram/status'&&req.method==='GET')result=await svc.status(me);
+    else if(p==='/api/payroll/telegram/bindings'&&req.method==='GET')result=await svc.pending(me);
+    else if(req.method==='POST'){
+      const allowed={'/api/payroll/telegram/link':['user_id'],'/api/payroll/telegram/confirm':['binding_id','user_id','chat_id','confirmed'],'/api/payroll/telegram/reject':['binding_id'],'/api/payroll/telegram/revoke':['user_id','chat_id','confirmed']}[p];
+      if(!allowed){json(res,404,{error:'not found'});return true;}
+      const b=await readBody(req);
+      if(!b||typeof b!=='object'||Array.isArray(b)||Object.keys(b).some(k=>!allowed.includes(k))){json(res,400,{error:'PAYROLL_CONTACT_SCOPE'});return true;}
+      if(p.endsWith('/link')){
+        if(payrollLinkLimiter.blocked(me.id,security.clientIP(req,authConfig))){json(res,429,{error:'PAYROLL_LINK_RATE_LIMIT'});return true;}
+        result=await svc.issue(me,b.user_id);
+      }else if(p.endsWith('/confirm'))result=await svc.confirm(me,b);
+      else if(p.endsWith('/reject'))result=await svc.reject(me,b.binding_id);
+      else if(p.endsWith('/revoke'))result=await svc.revokeContact(me,b);
+    }
+    json(res,result?200:404,result||{error:'not found'});
+  }catch(e){payrollSafeError(res,e);}
+  return true;
 }
 function schedulePayroll() {
   if (process.env.PAYROLL_DELIVERY_ENABLED !== '1') return;
@@ -100,6 +124,7 @@ const authReady = Promise.resolve(ready).then(async () => {
   if (process.env.DATABASE_URL) {
     await db.prepare("SELECT password_change_required,totp_cipher,totp_pending_cipher,totp_pending_until,totp_last_counter,recovery_hashes FROM app_users LIMIT 0").all();
     await db.prepare("SELECT last_seen_at,purpose FROM sessions LIMIT 0").all();
+    await db.prepare("SELECT token_hash,status,reviewed_by FROM payroll_telegram_bindings LIMIT 0").all();
     await accountingGuard(require('./db-postgres').getPool());
     await require('./advance-service').guard(require('./db-postgres').getPool());
   } else if (authConfig.requireOwner2FA || authConfig.production) throw new Error("Public auth requires PostgreSQL migration 002");
@@ -107,6 +132,7 @@ const authReady = Promise.resolve(ready).then(async () => {
 authReady.catch(() => {});
 const loginLimiter = security.createLimiter();
 const mfaLimiter = security.createLimiter();
+const payrollLinkLimiter = security.createLimiter();
 const TOTP_KEY = process.env.AUTH_TOTP_KEY || '';
 if (authConfig.requireOwner2FA) security.encryptionKey(TOTP_KEY);
 const PORT = process.env.PORT || 4321;
@@ -399,6 +425,7 @@ const server = http.createServer(async (req, res) => {
 
   try {
     await authReady;
+    if(await payrollWebhook(req,res,p))return;
     if (p.startsWith('/api/') && !['GET','HEAD','OPTIONS'].includes(req.method) && !security.validOrigin(req, authConfig))
       return json(res, 403, { error: "Origin tidak diizinkan" });
     const mutation = req.method === "POST" && (["/api/login", "/api/logout", "/api/change-password", "/api/users", "/api/users/reset-password", "/api/units", "/api/units/archive", "/api/transactions", "/api/approvals", "/api/closing"].includes(p) || p.startsWith('/api/auth/'));
@@ -535,7 +562,42 @@ async function handleRequest(req, res, url, p) {
     }
   }
 
+  if (p.startsWith('/api/reports/')) {
+    if(me.role!=='OWNER')return json(res,403,{error:'REPORT_OWNER_ONLY'});
+    if(!process.env.DATABASE_URL)return json(res,503,{error:'REPORT_POSTGRES_REQUIRED'});
+    const token=security.cookieToken(req);
+    if(!token)return json(res,401,{error:'REPORT_COOKIE_REQUIRED'});
+    const match=p.match(/^\/api\/reports\/([a-z-]+)(\/export)?$/);
+    if(!match||req.method!=='GET')return json(res,404,{error:'REPORT_NOT_FOUND'});
+    const reports=require('./operational-reports'),params=new URLSearchParams(url.searchParams);
+    if(match[2]){
+      if(params.getAll('format').length!==1||params.get('format')!=='csv')return json(res,400,{error:'REPORT_CSV_FORMAT_REQUIRED'});
+      params.delete('format');
+    }
+    const client=await require('./db-postgres').getPool().connect();
+    let report;
+    try{
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      await client.query("SET LOCAL statement_timeout='10s'");
+      report=await reports.read(client,me,token,match[1],params);
+      await client.query('COMMIT');
+    }catch(e){
+      try{await client.query('ROLLBACK');}catch{}
+      const code=e.statusCode?e.statusCode:503;
+      return json(res,code,{error:/^REPORT_[A-Z_]+$/.test(e.message||'')?e.message:'REPORT_SOURCE_UNAVAILABLE'});
+    }finally{client.release();}
+    if(match[2]){
+      const csv=reports.toCsv(report);
+      res.writeHead(200,{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="SiPeKA-'+match[1]+'.csv"',...SECURITY_HEADERS,'Cache-Control':'no-store'});
+      return res.end(csv);
+    }
+    return json(res,200,report);
+  }
+
+  if(await payrollOnboardingRoute(req,res,p,me))return;
+
   if (p.startsWith('/api/payroll')) {
+    if(!security.cookieToken(req))return json(res,401,{error:'PAYROLL_COOKIE_REQUIRED'});
     if(me.role!=='OWNER'){console.warn('[security] payroll access denied');return json(res,403,{error:'PAYROLL_OWNER_ONLY'});}
     try {
       if(p==='/api/payroll/template' && req.method==='GET'){
@@ -544,17 +606,8 @@ async function handleRequest(req, res, url, p) {
       }
       if(p==='/api/payroll/contacts'){
         const pool=payrollPool();
-        if(req.method==='GET')return json(res,200,(await pool.query("SELECT id,username,full_name,email,telegram_user_id,email_verified,telegram_verified FROM app_users WHERE role='STAFF' ORDER BY full_name")).rows);
-        if(req.method==='POST'){
-          const b=await readBody(req),email=b.email||null,tg=b.telegram_user_id||null;
-          if(typeof b.user_id!=='string'||(email!==null&&(typeof email!=='string'||email.length>254||! /^[^\s@<>;,]+@[^\s@<>;,]+\.[^\s@<>;,]+$/.test(email)))||(tg!==null&&(typeof tg!=='string'||!/^[1-9]\d{0,15}$/.test(tg)))||b.verified!==true)return json(res,400,{error:'PAYROLL_VERIFIED_PRIVATE_CONTACT_REQUIRED'});
-          const result=await require('./payroll').transaction(pool,async c=>{
-            const u=(await c.query("SELECT id FROM app_users WHERE id=$1 AND role='STAFF' FOR UPDATE",[b.user_id])).rows[0];if(!u)return false;
-            const duplicate=(await c.query("SELECT id FROM app_users WHERE id<>$1 AND (($2::text IS NOT NULL AND email=$2) OR ($3::text IS NOT NULL AND telegram_user_id=$3))",[b.user_id,email,tg])).rows;if(duplicate.length)throw Object.assign(new Error('PAYROLL_CONTACT_ALREADY_ASSIGNED'),{status:409,code:'PAYROLL_CONTACT_ALREADY_ASSIGNED'});
-            await c.query('UPDATE app_users SET email=$2,telegram_user_id=$3,email_verified=$4,telegram_verified=$5 WHERE id=$1',[b.user_id,email,tg,!!email,!!tg]);
-            await c.query("INSERT INTO payroll_access_audit(id,actor_id,action) VALUES($1,$2,'CONTACT_VERIFIED')",[crypto.randomUUID(),me.id]);return true;
-          });return json(res,result?200:404,result?{ok:true}:{error:'PAYROLL_STAFF_NOT_FOUND'});
-        }
+        if(req.method==='GET')return json(res,200,(await pool.query("SELECT id,username,full_name,telegram_user_id,telegram_verified FROM app_users WHERE role='STAFF' ORDER BY username")).rows);
+        if(req.method==='POST')return json(res,409,{error:'PAYROLL_TELEGRAM_START_LINK_REQUIRED'});
       }
       if(p==='/api/payroll/batches' && req.method==='GET'){
         const pool=payrollPool();await pool.query("INSERT INTO payroll_access_audit(id,actor_id,action) VALUES($1,$2,'BATCH_LIST')",[crypto.randomUUID(),me.id]);
