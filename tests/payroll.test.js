@@ -14,7 +14,7 @@ test('AES GCM binds entry identity and hides amounts; OWNER gate precedes DB',as
 test('PDF contains official slip and adapter blocks missing config and private chat violations',async()=>{
  const {renderSlipPdf,createNotificationAdapter}=require('../payroll-delivery');
  const row={period:'2026-09',username:'staff',full_name:'Staff',basic_salary:2500000,allowances:100000,deductions:20000,pph21:10000,net_salary:2570000};
- const pdf=renderSlipPdf(row,{companyName:'Company'});assert.equal(pdf.subarray(0,8).toString(),'%PDF-1.4');assert.match(pdf.toString(),/SiPeKA/);assert.match(pdf.toString(),/2570000/);assert.match(pdf.toString(),/SLIP GAJI/);
+ const pdf=renderSlipPdf(row,{companyName:'Company'});assert.equal(pdf.subarray(0,8).toString(),'%PDF-1.4');assert.match(pdf.toString(),/SiPeKA/);assert.match(pdf.toString(),/2\.570\.000/);assert.match(pdf.toString(),/SLIP GAJI/);
  const adapter=createNotificationAdapter({});await assert.rejects(adapter.email({to:'staff@example.com',row}),/EMAIL_CONFIG/);
  await assert.rejects(adapter.telegram({to:'-123',row}),/PRIVATE_CHAT/);
  await assert.rejects(adapter.telegram({to:'123',row}),/TELEGRAM_CONFIG/);
@@ -30,7 +30,7 @@ test('CSV limits, injection, quoting, exact integers and contact privacy',()=>{
 test('configured adapter sends single email attachment and private summary only',async()=>{
  const {createNotificationAdapter}=require('../payroll-delivery');let message,payload;
  const row={period:'2026-09',username:'staff',full_name:'Staff',basic_salary:1,allowances:0,deductions:0,pph21:0,net_salary:1};
- const adapter=createNotificationAdapter({emailFrom:'payroll@example.com',emailTransport:{async sendMail(m){message=m;return {accepted:[m.to],messageId:'r'};}},telegramToken:'fixture',fetchImpl:async(u,o)=>{payload=JSON.parse(o.body);return {ok:true,json:async()=>({ok:true,result:{message_id:2,chat:{id:123,type:'private'}}})};}});
+ const adapter=createNotificationAdapter({emailFrom:'payroll@example.com',emailTransport:{async sendMail(m){message=m;return {accepted:[m.to],messageId:'r'};}},telegramToken:'fixture',fetchImpl:async(u,o)=>{payload=require('./fixtures/payroll-document.cjs')(o.body);return {ok:true,json:async()=>({ok:true,result:{message_id:2,chat:{id:123,type:'private'}}})};}});
  assert.equal((await adapter.email({to:'staff@example.com',row,idempotencyKey:'job'})).providerId,'r');assert.equal(message.to,'staff@example.com');assert.equal(message.cc,undefined);assert.equal(message.bcc,undefined);assert.equal(message.attachments.length,1);assert.equal(message.messageId,'<job@payroll.sipeka>');
  assert.equal((await adapter.telegram({to:'123',row})).providerId,'2');assert.equal(payload.parse_mode,undefined);assert.equal(payload.protect_content,true);assert.ok(!payload.text.includes('Potongan'));
 });

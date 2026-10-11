@@ -18,7 +18,7 @@ test('email contact rejects recipient lists before transport access',()=>{
  assert.throws(()=>adapter.check('sms','123'),/CHANNEL/);
 });
 test('Telegram publication never asserts email delivery; requires positive receipt',async()=>{
- let text;const adapter=createNotificationAdapter({telegramToken:'fixture',fetchImpl:async(u,o)=>{text=JSON.parse(o.body).text;return {ok:true,json:async()=>({ok:true,result:{message_id:1,chat:{id:123,type:'private'}}})};}});
+ let text;const adapter=createNotificationAdapter({telegramToken:'fixture',fetchImpl:async(u,o)=>{text=require('./fixtures/payroll-document.cjs')(o.body).text;return {ok:true,json:async()=>({ok:true,result:{message_id:1,chat:{id:123,type:'private'}}})};}});
  await adapter.telegram({to:'123',row});assert.ok(!text.includes('Slip lengkap dikirim melalui email.'));
  const invalid=createNotificationAdapter({telegramToken:'fixture',fetchImpl:async()=>({ok:true,json:async()=>({ok:true,result:{chat:{id:123,type:'private'}}})})});
  await assert.rejects(invalid.telegram({to:'123',row}),/ACCEPTANCE_UNKNOWN/);

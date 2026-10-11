@@ -22,14 +22,14 @@ function payrollPool() {
 function payroll() {
   // Missing keys block sensitive operations, not template access or application startup.
   require('./payroll').createCipher(process.env.PAYROLL_ENCRYPTION_KEY);
-  return payrollService ||= createPayrollService({pool:payrollPool()});
+  return payrollService ||= createPayrollService({pool:payrollPool(),emailEnabled:require('./payroll-resend').resendReady(process.env)});
 }
 function deliveryWorker() {
   if (payrollWorker) return payrollWorker;
-  const {adapter}=require('./payroll-provider-config').createPayrollProviderConfig();
+  const {adapter,readiness}=require('./payroll-provider-config').createPayrollProviderConfig();
   // Worker revalidates contact and payload under the leased connection's SHARE lock.
   // Never acquire a second connection inside provider access (pool exhaustion/deadlock).
-  return payrollWorker=createPayrollDeliveryWorker({pool:payrollPool(),adapter});
+  return payrollWorker=createPayrollDeliveryWorker({pool:payrollPool(),adapter,emailEnabled:readiness?.email===true});
 }
 let payrollOnboarding;
 function telegramOnboarding(){
@@ -598,6 +598,14 @@ async function handleRequest(req, res, url, p) {
 
   if (p.startsWith('/api/payroll')) {
     if(!security.cookieToken(req))return json(res,401,{error:'PAYROLL_COOKIE_REQUIRED'});
+    const slipRoute=p.match(/^\/api\/payroll\/entries\/([a-f0-9-]{36})\/pdf$/);
+    if(req.method==='GET'&&(slipRoute||p==='/api/payroll/own-slips')){
+      try{
+        if(!slipRoute)return json(res,200,await payroll().ownSlips(me));
+        const slip=await payroll().slip(me,slipRoute[1]);const bytes=require('./payroll-pdf').renderSlipPdf(slip.row,{publishedAt:slip.publishedAt});
+        res.writeHead(200,{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="SiPeKA-slip-'+slip.row.period+'.pdf"',...SECURITY_HEADERS,'Cache-Control':'no-store, private'});return res.end(bytes);
+      }catch(e){return payrollSafeError(res,e);}
+    }
     if(me.role!=='OWNER'){console.warn('[security] payroll access denied');return json(res,403,{error:'PAYROLL_OWNER_ONLY'});}
     try {
       if(p==='/api/payroll/template' && req.method==='GET'){

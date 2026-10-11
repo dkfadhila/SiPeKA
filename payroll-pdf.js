@@ -1,0 +1,40 @@
+'use strict';
+const {fault}=require('./payroll');
+// PDF coordinates, points: 50 x 22.6 mm reserved for an Owner-supplied image.
+// No signature asset is accepted/rendered until a separately reviewed integration.
+const SIGNATURE_AREA=Object.freeze({x:365,y:172,width:142,height:64});
+function integer(value){if(typeof value==='number'&&!Number.isSafeInteger(value))throw fault('PAYROLL_INTEGER_IDR');if(!/^(0|[1-9]\d{0,30})$/.test(String(value)))throw fault('PAYROLL_INTEGER_IDR');return BigInt(value);}
+function money(value){return 'Rp '+integer(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.');}
+function publicationDate(value){if(value==null)return 'Belum diterbitkan';const date=new Date(value);if(!Number.isFinite(date.getTime()))throw fault('PAYROLL_PUBLICATION_DATE');return new Intl.DateTimeFormat('id-ID',{timeZone:'Asia/Jakarta',day:'numeric',month:'long',year:'numeric'}).format(date);}
+function plain(value,max=96){return String(value??'Tidak tersedia').replace(/[\x00-\x1f\x7f]/g,' ').slice(0,max);}
+function renderSlipPdf(row,{publishedAt,simulation=false}={}){
+ const commands=[];
+ const literal=value=>plain(value,180).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/\u2014/g,'\x97').replace(/[^\x20-\x7e\x97]/g,'?').replace(/([\\()])/g,'\\$1');
+ const text=(s,x,y,size=11,bold=false,color='0.18 0.23 0.28')=>commands.push(`${color} rg BT /${bold?'F2':'F1'} ${size} Tf 1 0 0 1 ${x} ${y} Tm (${literal(s)}) Tj ET`);
+ const line=y=>commands.push(`0.84 0.87 0.88 RG 0.6 w 48 ${y} m 547 ${y} l S`);
+ text('SiPeKA',48,784,17,true,'0.08 0.28 0.32');text('SLIP GAJI',48,746,26,true);text('RAHASIA / HANYA UNTUK PENERIMA',48,722,9);
+ if(simulation)text('CONTOH — DATA SIMULASI',320,784,11,true,'0.6 0.22 0.13');
+ line(701);text('Periode',48,675,10);text(row.period,170,675,12,true);
+ text('Nama',48,649,10);text(plain(row.full_name,66),170,649,12,true);text('Username',48,625,10);text(plain(row.username,64),170,625);
+ if(row.branch_name){text('Unit / cabang',48,601,10);text(plain(row.branch_name,64),170,601);}
+ line(578);text('RINCIAN',48,552,10,true);text('NOMINAL (IDR)',423,552,10,true);
+ const items=[['Gaji pokok',row.basic_salary],['Tunjangan',row.allowances]];let y=521;
+ const amount=(label,v,at,bold=false)=>{text(label,48,at,11,bold);const m=v==null?'Tidak tersedia':money(v);text(m,547-m.length*6.5,at,11,bold);};
+ for(const [label,v] of items){amount(label,v,y);y-=29;}
+ if(row.basic_salary!=null&&row.allowances!=null){amount('Penghasilan bruto',(integer(row.basic_salary)+integer(row.allowances)).toString(),y,true);y-=38;}
+ for(const [label,v] of [['Potongan',row.deductions],['PPh 21',row.pph21]]){if(v!=null){amount(label,v,y);y-=29;}}
+ if(row.deductions!=null&&row.pph21!=null){amount('Total potongan',(integer(row.deductions)+integer(row.pph21)).toString(),y,true);}
+ commands.push('0.92 0.96 0.96 rg 48 292 499 46 re f');amount('GAJI BERSIH',row.net_salary,310,true);
+ text('Slip diterbitkan oleh Owner; bukan bukti pembayaran.',48,267,9);
+ // Reserved image region remains completely blank, no box, fake autograph or ttd.
+ text('Raditya Martanegara',365,150,12,true);text('Penanggung jawab',365,132,10);text('Tanggal: '+publicationDate(publishedAt),365,114,10);
+ line(79);text('Dokumen pribadi. Simpan dengan aman dan jangan bagikan kepada pihak lain.',48,60,9);
+ const stream=Buffer.from(commands.join('\n'),'latin1');
+ const objects=[Buffer.from('<< /Type /Catalog /Pages 2 0 R >>'),Buffer.from('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'),Buffer.from('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>'),Buffer.from('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>'),Buffer.from('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>'),Buffer.concat([Buffer.from(`<< /Length ${stream.length} >>\nstream\n`),stream,Buffer.from('\nendstream')])];
+ const chunks=[Buffer.from('%PDF-1.4\n')],offsets=[0];let length=chunks[0].length;
+ objects.forEach((object,i)=>{offsets.push(length);const chunk=Buffer.concat([Buffer.from(`${i+1} 0 obj\n`),object,Buffer.from('\nendobj\n')]);chunks.push(chunk);length+=chunk.length;});
+ chunks.push(Buffer.from('xref\n0 7\n0000000000 65535 f \n'+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+`trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n${length}\n%%EOF\n`));return Buffer.concat(chunks);
+}
+function payrollCaption(row,publishedAt){return `Halo ${plain(row.full_name||row.username,80)},\n\nSlip gaji Anda untuk periode ${plain(row.period,7)} telah diterbitkan oleh Owner.\nGaji bersih: ${money(row.net_salary)}\nTanggal penerbitan: ${publicationDate(publishedAt)} (WIB)\n\nRincian pribadi terlampir dalam PDF. Penerbitan slip bukan konfirmasi pembayaran. Jika ada pertanyaan, silakan hubungi penanggung jawab.\n\nTerima kasih.\nSiPeKA — Bot Slip Gaji\nRahasia: hanya untuk Anda.`;}
+const onboardingMessages=Object.freeze({welcome:'Selamat datang di SiPeKA — Bot Slip Gaji. Bot ini hanya untuk slip gaji pribadi, bukan akses asisten AI. Masuk ke SiPeKA dan gunakan tautan Hubungkan Telegram dari akun Anda. Tautan berlaku terbatas dan sekali pakai.',pending:'Telegram Anda berhasil diajukan. Menunggu verifikasi Owner; slip belum dapat dikirim sebelum verifikasi selesai.',verified:'Telegram Anda telah diverifikasi Owner. Slip pribadi akan dikirim setelah Owner menerbitkan periode gaji. Ini bukan konfirmasi pembayaran.'});
+module.exports={renderSlipPdf,SIGNATURE_AREA,money,publicationDate,payrollCaption,onboardingMessages};
