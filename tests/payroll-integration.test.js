@@ -10,7 +10,7 @@ test('PostgreSQL payroll migration, encrypted preview, idempotent publish, priva
  let queue=Promise.resolve();const pool={query:(sql,args)=>db.query(sql,args),async connect(){let unlock;const prior=queue;queue=new Promise(r=>unlock=r);await prior;return {query:(sql,args)=>db.query(sql,args),release:unlock};}};
  try{
   await db.exec(fs.readFileSync(require.resolve('../migrations/001_initial.sql'),'utf8'));
-  await db.exec(fs.readFileSync(require.resolve('../migrations/004_payroll.sql'),'utf8'));
+  await db.exec(fs.readFileSync(require.resolve('../migrations/004_payroll.sql'),'utf8'));await db.exec(fs.readFileSync(require.resolve('../migrations/009_payroll_telegram_onboarding.sql'),'utf8'));await db.exec(fs.readFileSync(require.resolve('../migrations/010_payroll_contact_proof.sql'),'utf8'));
   await db.query("INSERT INTO app_users(id,username,password_hash,full_name,role,email,telegram_user_id) VALUES('owner','owner','fixture','Owner','OWNER',NULL,NULL),('s','staff','fixture','Staff','STAFF','staff@example.com','123')");
   const key=crypto.randomBytes(32).toString('hex');const {createPayrollService,templateCsv}=require('../payroll');const {createNotificationAdapter,createPayrollDeliveryWorker}=require('../payroll-delivery');const svc=createPayrollService({pool,encryptionKey:key}),actor={id:'owner',role:'OWNER'};
   assert.equal(await svc.template(actor),templateCsv());
@@ -22,7 +22,7 @@ test('PostgreSQL payroll migration, encrypted preview, idempotent publish, priva
   await assert.rejects(svc.publish(actor,preview.id,'wrong'),/PREVIEW_TOKEN/);assert.equal((await pool.query('SELECT * FROM payroll_delivery_outbox')).rows.length,0);
   assert.equal((await svc.preview(actor,preview.id)).rows[0].net_salary,2570000);
   const missing=createPayrollDeliveryWorker({pool,encryptionKey:key,adapter:createNotificationAdapter({})});assert.equal(await missing.runOnce(),null);
-  await Promise.all([svc.publish(actor,preview.id,preview.preview_token),svc.publish(actor,preview.id,preview.preview_token)]);assert.equal((await pool.query('SELECT * FROM payroll_delivery_outbox')).rows.length,1);
+  await Promise.all([svc.publish(actor,preview.id,preview.preview_token),svc.publish(actor,preview.id,preview.preview_token)]);assert.equal((await pool.query('SELECT * FROM payroll_delivery_outbox')).rows.length,0);await assert.rejects(svc.queueDelivery(actor,stored.id,['telegram']),/UNVERIFIED/);await pool.query("UPDATE app_users SET telegram_verified=true WHERE id='s'");await svc.queueDelivery(actor,stored.id,['telegram']);assert.equal((await pool.query('SELECT * FROM payroll_delivery_outbox')).rows.length,1);
   assert.equal((await missing.runOnce()).status,'blocked');assert.equal(await missing.runOnce(),null);
   const statuses=await svc.deliveryStatus(actor,preview.id);assert.equal(statuses.length,1);assert.ok(statuses.every(r=>r.status==='blocked'));
   await Promise.all(statuses.map(r=>svc.retryDelivery(actor,r.id)));
@@ -35,12 +35,12 @@ test('PostgreSQL payroll migration, encrypted preview, idempotent publish, priva
   await svc.publish(actor,preview.id,preview.preview_token);assert.equal(await worker.runOnce(),null);
   for(const r of await svc.deliveryStatus(actor,preview.id))await assert.rejects(svc.retryDelivery(actor,r.id),/RETRY_UNSAFE/);
   await assert.rejects(pool.query("UPDATE payroll_entries SET payload_cipher='v1.changed'"),/APPEND_ONLY/);await assert.rejects(pool.query('DELETE FROM payroll_access_audit'),/APPEND_ONLY/);await assert.rejects(pool.query("UPDATE payroll_batches SET status='DRAFT'"),/IMMUTABLE/);
-  const second=await svc.importCsv(actor,templateCsv()+'2026-10,staff,1000000,0,0,0');await svc.publish(actor,second.id,second.preview_token);
+  const second=await svc.importCsv(actor,templateCsv()+'2026-10,staff,1000000,0,0,0');await svc.publish(actor,second.id,second.preview_token);await svc.queueDelivery(actor,second.rows[0].entry_id,['telegram']);
   const broken=createPayrollDeliveryWorker({pool,encryptionKey:key,adapter:{check(){},email:async()=>{throw Error('SECRET PROVIDER BODY');},telegram:async()=>{throw Error('SECRET PROVIDER BODY');}}});
   const ambiguous=await broken.runOnce();assert.equal(ambiguous.status,'uncertain');await assert.rejects(svc.retryDelivery(actor,ambiguous.id),/RETRY_UNSAFE/);assert.ok(!(await pool.query('SELECT error_code FROM payroll_delivery_outbox WHERE id=$1',[ambiguous.id])).rows[0].error_code.includes('SECRET'));
   await pool.query("UPDATE payroll_delivery_outbox SET status='sending',updated_at=clock_timestamp()-interval '20 minutes' WHERE status='pending'");assert.ok((await broken.recoverStale()).every(r=>r.status==='uncertain'));assert.equal(await broken.runOnce(),null);
-  const third=await svc.importCsv(actor,templateCsv()+'2026-11,staff,5,0,0,0');await svc.publish(actor,third.id,third.preview_token);
-  await pool.query("INSERT INTO app_users(id,username,password_hash,full_name,role,email,telegram_user_id,email_verified,telegram_verified) VALUES('other','other','fixture','Other','STAFF','staff@example.com','123',true,true)");
+  const third=await svc.importCsv(actor,templateCsv()+'2026-11,staff,5,0,0,0');await svc.publish(actor,third.id,third.preview_token);await svc.queueDelivery(actor,third.rows[0].entry_id,['telegram']);
+  await assert.rejects(pool.query("INSERT INTO app_users(id,username,password_hash,full_name,role,email,telegram_user_id,email_verified,telegram_verified) VALUES('other','other','fixture','Other','STAFF','staff@example.com','123',true,true)"),e=>e.code==='23505');await pool.query("UPDATE app_users SET telegram_verified=false WHERE id='s'");
   const before=sends.length;assert.equal((await worker.runOnce()).status,'blocked');assert.equal(await worker.runOnce(),null);assert.equal(sends.length,before);
   const actions=(await pool.query('SELECT action FROM payroll_access_audit')).rows.map(r=>r.action);for(const action of ['TEMPLATE','IMPORT_PREVIEW','PREVIEW','PUBLISH','DELIVERY_STATUS','RETRY','DELIVERY_READ'])assert.ok(actions.includes(action));
  }finally{await db.close();}

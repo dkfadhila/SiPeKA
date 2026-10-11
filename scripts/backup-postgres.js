@@ -105,7 +105,7 @@ function canonical(value) {
 async function databaseEvidence(client, transactionId) {
   const tables = await client.query(`SELECT n.nspname AS schema, c.relname AS name
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-    WHERE c.relkind IN ('r','p') AND n.nspname NOT IN ('pg_catalog','information_schema')
+    WHERE c.relkind IN ('r','p') AND n.nspname = 'public'
     AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp%'
     ORDER BY n.nspname,c.relname`);
   const rowCounts = [];
@@ -301,7 +301,7 @@ async function runBackup(env = process.env, options = {}) {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const snapshot = (await client.query('SELECT pg_export_snapshot() AS snapshot')).rows[0].snapshot;
     await fs.writeFile(dump, '', { flag: 'wx', mode: 0o600 });
-    await runPg(env.PG_DUMP_BIN || 'pg_dump', ['--format=custom', '--no-password', '--snapshot=' + snapshot, '--file=' + dump], url);
+    await runPg(env.PG_DUMP_BIN || 'pg_dump', ['--format=custom', '--schema=public', '--no-password', '--snapshot=' + snapshot, '--file=' + dump], url);
     evidence = await databaseEvidence(client, env.TEST_TX_ID);
     await client.query('COMMIT');
   } finally { await client.end(); }
@@ -333,7 +333,7 @@ async function runBackup(env = process.env, options = {}) {
       const manifestResult = await replicateVerified(manifestFile, base + '.manifest.json', manifestTargets, dir);
       backups.push({ retention, manifestKey: base + '.manifest.json', data: dataResult, manifest: manifestResult });
     }
-    const result = { ok: backups.every(item => item.data.ok && item.manifest.ok), localDirectory: dir, backups, receipts: 'not-included' };
+    const result = { ok: backups.every(item => item.data.ok && item.manifest.ok), localDirectory: dir, backups, receipts: 'not-included', schemaScope:'public', excludedSchemas:'retained QA and other non-public schemas' };
     if (options.prune && result.ok) { result.prune = await pruneTargets(targets, dir, new Date(), env.BACKUP_ENCRYPTION_KEY); result.ok = result.prune.ok; }
     await fs.writeFile(path.join(dir, 'result.json'), JSON.stringify(result, null, 2) + '\n', { mode: 0o600 });
     return result;

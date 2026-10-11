@@ -41,7 +41,7 @@ const root=path.resolve(__dirname,'../..');
  GRANT EXECUTE ON FUNCTION advance_read(text,text,jsonb),advance_command(text,text,jsonb),accounting_owner(text),accounting_post(text,jsonb),accounting_preview(text,jsonb) TO sipeka_runtime;
  `);
  const acl=(await run("SELECT has_table_privilege('sipeka_runtime','payroll_telegram_bindings','SELECT') binding_select,has_column_privilege('sipeka_runtime','app_users','telegram_user_id','UPDATE') contact_update")).rows[0];process.send?.({type:'acl',value:acl});
- await run(`GRANT SELECT,INSERT,UPDATE ON payroll_telegram_bindings,payroll_batches,payroll_delivery_outbox TO sipeka_runtime; GRANT SELECT,INSERT ON payroll_entries,payroll_access_audit TO sipeka_runtime; GRANT UPDATE(telegram_user_id,telegram_verified) ON app_users TO sipeka_runtime; SET ROLE sipeka_runtime;`);
+ await run(`GRANT SELECT,INSERT,UPDATE ON payroll_telegram_bindings,payroll_batches,payroll_delivery_outbox TO sipeka_runtime; GRANT SELECT,INSERT ON payroll_entries,payroll_access_audit TO sipeka_runtime; GRANT SELECT,INSERT,UPDATE ON payroll_email_bindings TO sipeka_runtime; GRANT UPDATE(email,email_verified,email_registration_id,email_registered_at,email_registration_source,telegram_user_id,telegram_verified) ON app_users TO sipeka_runtime; SET ROLE sipeka_runtime;`);
  // Exercise exact current db-postgres.js, server.js, advance-service.js and startup guards.
  // Only wire transport changed: pg.Pool executes SQL inside PGlite instead of TCP.
  let connections=Promise.resolve();
@@ -58,7 +58,7 @@ const root=path.resolve(__dirname,'../..');
  await run('ROLLBACK');
  const sent=[];
  const configPath=require.resolve(path.join(root,'payroll-provider-config'));
- require(configPath).createPayrollProviderConfig=()=>({adapter:require(path.join(root,'payroll-delivery')).createNotificationAdapter({telegramToken:'synthetic-offline',fetchImpl:async(url,options)=>{const body=require('./payroll-document.cjs')(options.body);sent.push(body);return {ok:true,json:async()=>({ok:true,result:{message_id:sent.length,chat:{id:Number(body.chat_id),type:'private'}}})};}})});
+ require(configPath).createPayrollProviderConfig=()=>({readiness:{email:false,telegram:true,worker_enabled:true},adapter:require(path.join(root,'payroll-delivery')).createNotificationAdapter({telegramToken:'synthetic-offline',fetchImpl:async(url,options)=>{const body=require('./payroll-document.cjs')(options.body);sent.push(body);return {ok:true,json:async()=>({ok:true,result:{message_id:sent.length,chat:{id:Number(body.chat_id),type:'private'}}})};}})});
  process.on('message',async m=>{try{let value;if(m.action==='expire')value=await run("UPDATE payroll_telegram_bindings SET expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",[m.id]);else if(m.action==='state')value={sent,bindings:(await run('SELECT id,user_id,status,token_hash FROM payroll_telegram_bindings')).rows,outbox:(await run('SELECT user_id,channel,status,attempts FROM payroll_delivery_outbox o JOIN payroll_entries e ON e.id=o.entry_id')).rows};else if(m.action==='overflow'){await run('RESET ROLE');await run("UPDATE ledger_transactions SET amount=9007199254740991 WHERE id='ordinary'");await run('SET ROLE sipeka_runtime');value=true;}process.send({request:m.request,value});}catch(e){process.send({request:m.request,error:e.message});}});
  require(path.join(root,'server'));
 })().catch(e=>{console.error(e);process.exit(1);});

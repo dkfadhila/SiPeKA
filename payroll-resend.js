@@ -7,7 +7,12 @@ async function boundedJson(response){const reader=response.body?.getReader();if(
 function createResendTransport({env=process.env,fetchImpl=globalThis.fetch}={}){
  if(!resendReady(env)||typeof fetchImpl!=='function')throw fault('PAYROLL_EMAIL_CONFIG',503);
  const headers={Authorization:'Bearer '+env.PAYROLL_RESEND_API_KEY,'Content-Type':'application/json'};
- return {async sendMail(mail){
+ return {async sendProof({id,email,token,expires_at}){
+  if(!/^[a-f0-9-]{36}$/.test(id||'')||! /^[A-Za-z0-9_-]{43}$/.test(token||'')||require('./payroll-email-onboarding').canonicalEmail(email)!==email)throw fault('PAYROLL_EMAIL_CONTACT',503);
+  const signal=AbortSignal.timeout(20000),d=await fetchImpl('https://api.resend.com/domains/'+env.PAYROLL_RESEND_DOMAIN_ID,{headers,signal}),domain=await boundedJson(d);
+  if(!d.ok||domain.id!==env.PAYROLL_RESEND_DOMAIN_ID||domain.name!=='widyafa.xyz'||domain.status!=='verified')throw fault('PAYROLL_EMAIL_DOMAIN_UNVERIFIED',503);
+  const r=await fetchImpl('https://api.resend.com/emails',{method:'POST',headers:{...headers,'Idempotency-Key':id},signal,body:JSON.stringify({from:RESEND_FROM,to:[email],subject:'SiPeKA — verifikasi email pribadi',text:'Masuk ke akun Staff SiPeKA Anda, buka Slip Gaji > Kontak pribadi, lalu masukkan kode sekali pakai ini:\n\n'+token+'\n\nBerlaku sampai '+expires_at+'. Jangan bagikan kode. Bukti email belum mengaktifkan pengiriman; Owner harus memeriksa identitas terlebih dahulu. Abaikan bila Anda tidak meminta verifikasi.'})});const value=await boundedJson(r);if(!r.ok||typeof value.id!=='string'||!/^[a-f0-9-]{36}$/.test(value.id))throw fault('PAYROLL_EMAIL_ACCEPTANCE_UNKNOWN',503);return {accepted:true};
+ },async sendMail(mail){
   if(mail.from!=='raditya@widyafa.xyz'||typeof mail.to!=='string'||! /^[^\s@<>;,]+@[^\s@<>;,]+\.[^\s@<>;,]+$/.test(mail.to)||mail.attachments?.length!==1)throw fault('PAYROLL_EMAIL_CONTACT',503);
   const attachment=mail.attachments[0];if(!Buffer.isBuffer(attachment.content)||attachment.content.length>262144||attachment.content.subarray(0,5).toString()!=='%PDF-')throw fault('PAYROLL_PDF_LIMIT',503);
   const signal=AbortSignal.timeout(20000);

@@ -17,14 +17,19 @@ function renderSlipPdf(row,{publishedAt,simulation=false}={}){
  line(701);text('Periode',48,675,10);text(row.period,170,675,12,true);
  text('Nama',48,649,10);text(plain(row.full_name,66),170,649,12,true);text('Username',48,625,10);text(plain(row.username,64),170,625);
  if(row.branch_name){text('Unit / cabang',48,601,10);text(plain(row.branch_name,64),170,601);}
- line(578);text('RINCIAN',48,552,10,true);text('NOMINAL (IDR)',423,552,10,true);
- const items=[['Gaji pokok',row.basic_salary],['Tunjangan',row.allowances]];let y=521;
- const amount=(label,v,at,bold=false)=>{text(label,48,at,11,bold);const m=v==null?'Tidak tersedia':money(v);text(m,547-m.length*6.5,at,11,bold);};
- for(const [label,v] of items){amount(label,v,y);y-=29;}
- if(row.basic_salary!=null&&row.allowances!=null){amount('Penghasilan bruto',(integer(row.basic_salary)+integer(row.allowances)).toString(),y,true);y-=38;}
- for(const [label,v] of [['Potongan',row.deductions],['PPh 21',row.pph21]]){if(v!=null){amount(label,v,y);y-=29;}}
- if(row.deductions!=null&&row.pph21!=null){amount('Total potongan',(integer(row.deductions)+integer(row.pph21)).toString(),y,true);}
- commands.push('0.92 0.96 0.96 rg 48 292 499 46 re f');amount('GAJI BERSIH',row.net_salary,310,true);
+ text('Referensi: '+plain(row.entry_id||'Tidak tersedia',64),48,579,8);
+ text('Penerbitan: '+publicationDate(publishedAt)+' (WIB)',48,563,9);
+ line(545);text('PENGHASILAN',48,520,10,true);text('POTONGAN',311,520,10,true);
+ // Helvetica amounts use font widths (digits 556, period/space 278).
+ const width=(s,size,bold)=>[...s].reduce((n,c)=>n+(/\d/.test(c)?556:c==='R'?722:c==='p'?(bold?611:556):278),0)*size/1000;
+ const amount=(label,v,at,x,right,bold=false)=>{text(label,x,at,10,bold);const m=v==null?'Tidak tersedia':money(v),size=9;text(m,right-width(m,size,bold),at,size,bold);};
+ amount('Gaji pokok',row.basic_salary,485,48,284);amount('Tunjangan',row.allowances,451,48,284);
+ if(row.basic_salary!=null&&row.allowances!=null)amount('Penghasilan bruto',(integer(row.basic_salary)+integer(row.allowances)).toString(),402,48,284,true);
+ if(row.deductions!=null)amount('Potongan',row.deductions,485,311,547);
+ if(row.pph21!=null)amount('PPh 21',row.pph21,451,311,547);
+ if(row.deductions!=null&&row.pph21!=null)amount('Total potongan',(integer(row.deductions)+integer(row.pph21)).toString(),402,311,547,true);
+ commands.push('0.84 0.87 0.88 RG 0.6 w 297 390 m 297 526 l S');
+ commands.push('0.92 0.96 0.96 rg 48 292 499 70 re f');text('GAJI BERSIH',64,334,10,true);const net=row.net_salary==null?'Tidak tersedia':money(row.net_salary);text(net,531-width(net,20,true),314,20,true,'0.08 0.28 0.32');
  text('Slip diterbitkan oleh Owner; bukan bukti pembayaran.',48,267,9);
  // Reserved image region remains completely blank, no box, fake autograph or ttd.
  text('Raditya Martanegara',365,150,12,true);text('Penanggung jawab',365,132,10);text('Tanggal: '+publicationDate(publishedAt),365,114,10);
@@ -36,5 +41,5 @@ function renderSlipPdf(row,{publishedAt,simulation=false}={}){
  chunks.push(Buffer.from('xref\n0 7\n0000000000 65535 f \n'+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+`trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n${length}\n%%EOF\n`));return Buffer.concat(chunks);
 }
 function payrollCaption(row,publishedAt){return `Halo ${plain(row.full_name||row.username,80)},\n\nSlip gaji Anda untuk periode ${plain(row.period,7)} telah diterbitkan oleh Owner.\nGaji bersih: ${money(row.net_salary)}\nTanggal penerbitan: ${publicationDate(publishedAt)} (WIB)\n\nRincian pribadi terlampir dalam PDF. Penerbitan slip bukan konfirmasi pembayaran. Jika ada pertanyaan, silakan hubungi penanggung jawab.\n\nTerima kasih.\nSiPeKA — Bot Slip Gaji\nRahasia: hanya untuk Anda.`;}
-const onboardingMessages=Object.freeze({welcome:'Selamat datang di SiPeKA — Bot Slip Gaji. Bot ini hanya untuk slip gaji pribadi, bukan akses asisten AI. Masuk ke SiPeKA dan gunakan tautan Hubungkan Telegram dari akun Anda. Tautan berlaku terbatas dan sekali pakai.',pending:'Telegram Anda berhasil diajukan. Menunggu verifikasi Owner; slip belum dapat dikirim sebelum verifikasi selesai.',verified:'Telegram Anda telah diverifikasi Owner. Slip pribadi akan dikirim setelah Owner menerbitkan periode gaji. Ini bukan konfirmasi pembayaran.'});
+const onboardingMessages=Object.freeze({welcome:'Selamat datang di SiPeKA — Bot Slip Gaji. Bot ini hanya untuk slip gaji pribadi, bukan akses asisten AI. Masuk ke SiPeKA dan gunakan tautan Hubungkan Telegram dari akun Anda. Tautan berlaku terbatas dan sekali pakai.',pending:'Telegram Anda berhasil diajukan. Menunggu verifikasi Owner; slip belum dapat dikirim sebelum verifikasi selesai.',verified:'Telegram Anda telah diverifikasi Owner. Slip pribadi dapat dikirim melalui tombol kirim Owner setelah periode gaji diterbitkan. Ini bukan konfirmasi pembayaran.'});
 module.exports={renderSlipPdf,SIGNATURE_AREA,money,publicationDate,payrollCaption,onboardingMessages};

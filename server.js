@@ -15,6 +15,7 @@ const { q, uid, atomicApprove, createSession, getValidSession,
 const { createPayrollService } = require('./payroll');
 const { createNotificationAdapter, createPayrollDeliveryWorker } = require('./payroll-delivery');
 let payrollService, payrollWorker, payrollRunning = false, payrollScheduled = false;
+const payrollDeliveryReadiness={email:false,telegram:false};
 function payrollPool() {
   if (!process.env.DATABASE_URL) throw Object.assign(new Error('PAYROLL_PG_POOL_REQUIRED'), {status:503,code:'PAYROLL_PG_POOL_REQUIRED'});
   return require('./db-postgres').getPool();
@@ -22,7 +23,9 @@ function payrollPool() {
 function payroll() {
   // Missing keys block sensitive operations, not template access or application startup.
   require('./payroll').createCipher(process.env.PAYROLL_ENCRYPTION_KEY);
-  return payrollService ||= createPayrollService({pool:payrollPool(),emailEnabled:require('./payroll-resend').resendReady(process.env)});
+  const readiness=require('./payroll-provider-config').createPayrollProviderConfig().readiness;
+  Object.assign(payrollDeliveryReadiness,{email:readiness?.worker_enabled===true&&readiness?.email===true,telegram:readiness?.worker_enabled===true&&readiness?.telegram===true});
+  return payrollService ||= createPayrollService({pool:payrollPool(),deliveryReady:payrollDeliveryReadiness});
 }
 function deliveryWorker() {
   if (payrollWorker) return payrollWorker;
@@ -34,6 +37,23 @@ function deliveryWorker() {
 let payrollOnboarding;
 function telegramOnboarding(){
   return payrollOnboarding ||= require('./payroll-telegram-onboarding').createPayrollTelegramOnboarding({pool:payrollPool(),botUsername:process.env.PAYROLL_TELEGRAM_BOT_USERNAME,webhookSecret:process.env.PAYROLL_TELEGRAM_WEBHOOK_SECRET});
+}
+let payrollEmailOnboarding;
+function emailOnboarding(){return payrollEmailOnboarding ||= require('./payroll-email-onboarding').createPayrollEmailOnboarding({pool:payrollPool()});}
+async function payrollEmailRoute(req,res,p,me){
+ if(!p.startsWith('/api/payroll/email/'))return false;
+ if(!security.cookieToken(req)){json(res,401,{error:'PAYROLL_COOKIE_REQUIRED'});return true;}
+ try{const svc=emailOnboarding();let result;
+  if(req.method==='GET'&&p==='/api/payroll/email/status')result=await svc.status(me);
+  else if(req.method==='GET'&&p==='/api/payroll/email/bindings')result=await svc.pending(me);
+  else if(req.method==='POST'){const fields={'/api/payroll/email/bind':['email']}[p];if(!fields){json(res,404,{error:'not found'});return true;}const b=await readBody(req);if(!b||Array.isArray(b)||Object.keys(b).some(k=>!fields.includes(k)))throw require('./payroll').fault('PAYROLL_CONTACT_SCOPE');
+   if(p.endsWith('/bind')){if(payrollLinkLimiter.blocked(me.id,security.clientIP(req,authConfig)))throw require('./payroll').fault('PAYROLL_LINK_RATE_LIMIT',429);result=await svc.bind(me,b.email);}
+   if(p.endsWith('/prove'))result=await svc.prove(me,b.token);
+   if(p.endsWith('/confirm'))result=await svc.confirm(me,b);
+   if(p.endsWith('/reject'))result=await svc.reject(me,b.binding_id);
+  }
+  json(res,result?200:404,result||{error:'not found'});
+ }catch(e){payrollSafeError(res,e);}return true;
 }
 function payrollSafeError(res,e){const safe=/^PAYROLL_[A-Z0-9_]+$/.test(e.code||'');return json(res,safe&&Number.isInteger(e.status)?e.status:503,{error:safe?e.code:'PAYROLL_UNAVAILABLE'});}
 async function payrollWebhook(req,res,p){
@@ -55,13 +75,13 @@ async function payrollOnboardingRoute(req,res,p,me){
     if(p==='/api/payroll/telegram/status'&&req.method==='GET')result=await svc.status(me);
     else if(p==='/api/payroll/telegram/bindings'&&req.method==='GET')result=await svc.pending(me);
     else if(req.method==='POST'){
-      const allowed={'/api/payroll/telegram/link':['user_id'],'/api/payroll/telegram/confirm':['binding_id','user_id','chat_id','confirmed'],'/api/payroll/telegram/reject':['binding_id'],'/api/payroll/telegram/revoke':['user_id','chat_id','confirmed']}[p];
+      const allowed={'/api/payroll/telegram/link':['username'],'/api/payroll/telegram/confirm':['binding_id','user_id','chat_id','confirmed'],'/api/payroll/telegram/reject':['binding_id'],'/api/payroll/telegram/revoke':['user_id','chat_id','confirmed']}[p];
       if(!allowed){json(res,404,{error:'not found'});return true;}
       const b=await readBody(req);
       if(!b||typeof b!=='object'||Array.isArray(b)||Object.keys(b).some(k=>!allowed.includes(k))){json(res,400,{error:'PAYROLL_CONTACT_SCOPE'});return true;}
       if(p.endsWith('/link')){
         if(payrollLinkLimiter.blocked(me.id,security.clientIP(req,authConfig))){json(res,429,{error:'PAYROLL_LINK_RATE_LIMIT'});return true;}
-        result=await svc.issue(me,b.user_id);
+        result=await svc.issue(me,b);
       }else if(p.endsWith('/confirm'))result=await svc.confirm(me,b);
       else if(p.endsWith('/reject'))result=await svc.reject(me,b.binding_id);
       else if(p.endsWith('/revoke'))result=await svc.revokeContact(me,b);
@@ -594,6 +614,7 @@ async function handleRequest(req, res, url, p) {
     return json(res,200,report);
   }
 
+  if(await payrollEmailRoute(req,res,p,me))return;
   if(await payrollOnboardingRoute(req,res,p,me))return;
 
   if (p.startsWith('/api/payroll')) {
@@ -614,19 +635,21 @@ async function handleRequest(req, res, url, p) {
       }
       if(p==='/api/payroll/contacts'){
         const pool=payrollPool();
-        if(req.method==='GET')return json(res,200,(await pool.query("SELECT id,username,full_name,telegram_user_id,telegram_verified FROM app_users WHERE role='STAFF' ORDER BY username")).rows);
+        if(req.method==='GET')return json(res,200,(await pool.query("SELECT u.id,u.username,u.full_name,u.email,u.email_verified,u.email_registration_id,u.email_registration_source,u.telegram_user_id,u.telegram_verified,b.telegram_username,b.telegram_full_name FROM app_users u LEFT JOIN LATERAL (SELECT telegram_username,telegram_full_name FROM payroll_telegram_bindings WHERE user_id=u.id AND chat_id=u.telegram_user_id AND status='verified' ORDER BY reviewed_at DESC LIMIT 1) b ON true WHERE u.role='STAFF' ORDER BY u.username")).rows);
         if(req.method==='POST')return json(res,409,{error:'PAYROLL_TELEGRAM_START_LINK_REQUIRED'});
       }
       if(p==='/api/payroll/batches' && req.method==='GET'){
         const pool=payrollPool();await pool.query("INSERT INTO payroll_access_audit(id,actor_id,action) VALUES($1,$2,'BATCH_LIST')",[crypto.randomUUID(),me.id]);
         return json(res,200,(await pool.query('SELECT id,period,status,created_at FROM payroll_batches ORDER BY created_at DESC LIMIT 100')).rows);
       }
+      const send=p.match(/^\/api\/payroll\/entries\/([a-f0-9-]{36})\/send$/);
+      if(send&&req.method==='POST'){const b=await readBody(req);if(!b||Array.isArray(b)||Object.keys(b).some(k=>!['channels','confirmation'].includes(k))||!b.confirmation)return json(res,400,{error:'PAYROLL_CONTACT_SCOPE'});const result=await payroll().queueDelivery(me,send[1],b.channels,b.confirmation);schedulePayroll();return json(res,202,{jobs:result});}
       if(p==='/api/payroll/import' && req.method==='POST'){const svc=payroll();req._bodyLimit=2*BODY_LIMIT_JSON;const b=await readBody(req);return json(res,201,await svc.importCsv(me,b.csv));}
       const batch=p.match(/^\/api\/payroll\/([a-f0-9-]{36})\/(preview|publish|delivery)$/);
       if(batch){const svc=payroll(),id=batch[1],action=batch[2];
         if(action==='preview'&&req.method==='GET')return json(res,200,await svc.preview(me,id));
         if(action==='delivery'&&req.method==='GET'){const rows=await svc.deliveryStatus(me,id);return json(res,200,rows.map(row=>({...row,delivery_enabled:process.env.PAYROLL_DELIVERY_ENABLED==='1'})));}
-        if(action==='publish'&&req.method==='POST'){const b=await readBody(req),result=await svc.publish(me,id,b.preview_token);schedulePayroll();return json(res,200,result);}
+        if(action==='publish'&&req.method==='POST'){const b=await readBody(req),result=await svc.publish(me,id,b.preview_token);return json(res,200,result);}
       }
       const retry=p.match(/^\/api\/payroll\/delivery\/([a-f0-9-]{36})\/retry$/);
       if(retry&&req.method==='POST'){const result=await payroll().retryDelivery(me,retry[1]);schedulePayroll();return json(res,200,result);}
