@@ -1,7 +1,7 @@
 'use strict';
 const {fault}=require('./payroll');
-// Private rotated credentials and explicit provisioning attestation are required.
-function resendReady(env){return env.PAYROLL_EMAIL_ENABLED==='1'&&env.PAYROLL_RESEND_CREDENTIAL_PROVENANCE==='rotated-private'&&/^re_[A-Za-z0-9_-]{20,}$/.test(env.PAYROLL_RESEND_API_KEY||'')&&env.PAYROLL_EMAIL_FROM==='radit@widyafa.xyz'&&/^[a-f0-9-]{36}$/.test(env.PAYROLL_RESEND_DOMAIN_ID||'');}
+// Record actual credential provenance; never attest rotation that did not occur.
+function resendReady(env){return env.PAYROLL_EMAIL_ENABLED==='1'&&['rotated-private','user-authorized-chat'].includes(env.PAYROLL_RESEND_CREDENTIAL_PROVENANCE)&&/^re_[A-Za-z0-9_-]{20,}$/.test(env.PAYROLL_RESEND_API_KEY||'')&&env.PAYROLL_EMAIL_FROM==='radit@widyafa.xyz'&&/^[a-f0-9-]{36}$/.test(env.PAYROLL_RESEND_DOMAIN_ID||'');}
 async function boundedJson(response){const reader=response.body?.getReader();if(!reader)throw fault('PAYROLL_EMAIL_RESPONSE',503);let size=0,chunks=[];try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>65536)throw fault('PAYROLL_EMAIL_RESPONSE',503);chunks.push(Buffer.from(value));}return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw fault('PAYROLL_EMAIL_RESPONSE',503);}finally{await reader.cancel().catch(()=>{});}}
 function createResendTransport({env=process.env,fetchImpl=globalThis.fetch}={}){
  if(!resendReady(env)||typeof fetchImpl!=='function')throw fault('PAYROLL_EMAIL_CONFIG',503);
