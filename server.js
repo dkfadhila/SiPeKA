@@ -674,7 +674,7 @@ async function handleRequest(req, res, url, p) {
   if (p === "/api/change-password" && req.method === "POST") {
     const { old_password, new_password } = await readBody(req);
     if (!old_password || !new_password) return json(res, 400, { error: "Password lama dan baru wajib diisi" });
-    if (String(new_password).length < 12) return json(res, 400, { error: "Password baru minimal 12 karakter" });
+    security.validateNewPassword(new_password);
     const user = (await q.userById.get(me.id));
     if (!user || !(await security.checkPassword(String(old_password), user.password_hash)).valid)
       return json(res, 400, { error: "Password lama tidak sesuai" });
@@ -697,7 +697,7 @@ async function handleRequest(req, res, url, p) {
     const cleanUser = String(username).trim().toLowerCase();
     if (!cleanUser || cleanUser.length < 3) return json(res, 400, { error: "Username minimal 3 karakter tanpa spasi" });
     if ((await q.userByUsername.get(cleanUser))) return json(res, 400, { error: `Username @${cleanUser} sudah digunakan` });
-    if (String(password).length < 12) return json(res, 400, { error: "Password minimal 12 karakter" });
+    security.validateNewPassword(password);
     const userRole = role === "OWNER" ? "OWNER" : "STAFF";
     if (userRole === "STAFF" && !branch_id) return json(res, 400, { error: "Staff wajib terikat unit bisnis aktif" });
     const newId = "U_" + uid();
@@ -717,7 +717,7 @@ async function handleRequest(req, res, url, p) {
     if (me.role !== "OWNER") return json(res, 403, { error: "Khusus Owner" });
     const { user_id, new_password } = await readBody(req);
     if (!user_id || !new_password) return json(res, 400, { error: "user_id dan new_password wajib diisi" });
-    if (String(new_password).length < 12) return json(res, 400, { error: "Password baru minimal 12 karakter" });
+    security.validateNewPassword(new_password);
     const targetUser = (await q.userById.get(user_id));
     if (!targetUser) return json(res, 404, { error: "Pengguna tidak ditemukan" });
     (await q.resetUserPassword.run(await security.hashNewPassword(String(new_password)), user_id));
@@ -779,6 +779,8 @@ async function handleRequest(req, res, url, p) {
     if (!["SETOR_NOTA", "PENGAJUAN_DANA"].includes(rawIntent))
       return json(res, 400, { error: "tx_intent tidak valid, pilihan: SETOR_NOTA, PENGAJUAN_DANA" });
     const txIntent = rawIntent;
+    if (txIntent === "PENGAJUAN_DANA" && (method !== "CASH_DRAWER" || txType !== "EXPENSE"))
+      return json(res, 400, { error: "Pengajuan dana hanya untuk pengeluaran kas tunai; gunakan Setor Nota untuk realisasi non-tunai atau pendapatan" });
 
     let branchId = b.branch_id;
     if (me.role === "STAFF") {
@@ -919,6 +921,40 @@ async function handleRequest(req, res, url, p) {
     return json(res, 201, { ok: true, id, system_balance: sysBal, physical_cash: phys, difference: diff });
   }
 
+  if (p === '/api/closings/history' && req.method === 'GET') {
+    if (!security.cookieToken(req)) return json(res,401,{error:'Cookie sesi diperlukan'});
+    if (!process.env.DATABASE_URL) return json(res,503,{error:'Riwayat memerlukan PostgreSQL'});
+    return json(res,200,await require('./closing-history').read(require('./db-postgres').getPool(),me,url.searchParams));
+  }
+  if (p === '/api/calendar/notes') {
+    if (me.role !== 'OWNER') return json(res,403,{error:'CALENDAR_OWNER_REQUIRED'});
+    const token=security.cookieToken(req);
+    if (!token) return json(res,401,{error:'Cookie sesi diperlukan'});
+    if (!process.env.DATABASE_URL) return json(res,503,{error:'CALENDAR_POSTGRES_REQUIRED'});
+    const pool=require('./db-postgres').getPool(),validation=require('./closing-history');
+    try {
+      if (req.method==='GET') {
+        const {from,to}=validation.range(url.searchParams),{limit,offset}=validation.page(url.searchParams);
+        const branch=url.searchParams.get('branch_id');
+        if(branch&&branch!=='all'&&!(await q.unitById.get(branch)))return json(res,400,{error:'CALENDAR_BRANCH_INVALID'});
+        const rows=(await pool.query('SELECT calendar_note_read($1,$2,$3::date,$4::date,$5,$6) rows',[token,branch==='all'?null:branch,from,to,limit+1,offset])).rows[0].rows;
+        return json(res,200,{rows:rows.slice(0,limit),has_more:rows.length>limit,limit,offset,timezone:'Asia/Jakarta'});
+      }
+      if(req.method==='POST') {
+        req._bodyLimit=4096;const b=await readBody(req);validation.date(b.date);
+        if(Object.keys(b).some(k=>!['date','branch_id','text','idempotency_key'].includes(k))||typeof b.text!=='string'||!b.text.trim()||b.text.length>600||/[\u0000-\u001f\u007f]/.test(b.text)||typeof b.idempotency_key!=='string'||!b.idempotency_key.trim()||b.idempotency_key.length>128)return json(res,400,{error:'CALENDAR_INPUT_INVALID'});
+        const note=(await pool.query('SELECT calendar_note_create($1,$2::jsonb) note',[token,JSON.stringify(b)])).rows[0].note;
+        const readback=(await pool.query('SELECT calendar_note_read($1,$2,$3::date,$3::date,101,0) rows',[token,note.branch_id,note.note_date])).rows[0].rows.find(x=>x.id===note.id);
+        if(!readback)return json(res,503,{error:'CALENDAR_READBACK_FAILED'});
+        return json(res,note.idempotent?200:201,{...readback,idempotent:note.idempotent});
+      }
+      return json(res,405,{error:'METHOD_NOT_ALLOWED'});
+    } catch(e) {
+      if(e.code===400)throw e;
+      const code=/^CALENDAR_[A-Z_]+$/.test(e.message||'')?e.message:'CALENDAR_UNAVAILABLE';
+      return json(res,e.code==='42501'?403:code==='CALENDAR_IDEMPOTENCY_CONFLICT'?409:code==='CALENDAR_INPUT_INVALID'||code==='CALENDAR_BRANCH_INVALID'||['22007','22008'].includes(e.code)?400:503,{error:code});
+    }
+  }
   if (p === "/api/closings" && req.method === "GET") {
     const closings = me.role === "STAFF"
       ? (await q.closingsByUserBranchToday.all(me.id, me.assigned_branch_id))

@@ -51,7 +51,7 @@ test('TOTP uses server-generated encrypted secrets, validates current counter, r
 test('new passwords use Argon2id; valid legacy scrypt login requests rehash without resetting password', async () => {
   const security = require('../auth-security');
   const password = crypto.randomBytes(16).toString('hex');
-  const hashed = await security.hashNewPassword(password);
+  const hashed = await security.hashVerifiedPassword(password); // Existing lowercase credentials remain valid; new policy covered separately.
   assert.match(hashed, /^\$argon2id\$/);
   assert.deepEqual(await security.checkPassword(password, hashed), { valid: true, rehash: false });
   assert.equal((await security.checkPassword('incorrect', hashed)).valid, false);
@@ -60,5 +60,5 @@ test('new passwords use Argon2id; valid legacy scrypt login requests rehash with
   assert.deepEqual(await security.checkPassword(password, legacy), { valid: true, rehash: true });
   assert.equal((await security.checkPassword('incorrect', legacy)).valid, false);
   assert.equal((await security.checkPassword(password, 'malformed')).valid, false);
-  await assert.rejects(security.hashNewPassword('short'), /12/);
+  await assert.rejects(security.hashNewPassword('short'), /6/);
 });

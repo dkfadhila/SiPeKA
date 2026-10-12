@@ -249,8 +249,8 @@ function seed() {
   if (process.env.SIPEKA_SEED !== "1") return;
 
   const ownerPassword = process.env.SIPEKA_OWNER_PASSWORD;
-  if (!ownerPassword || ownerPassword.length < 8) {
-    console.error("[db] SIPEKA_SEED=1 tapi SIPEKA_OWNER_PASSWORD tidak di-set atau < 8 karakter. Seed dibatalkan.");
+  try { require('./auth-security').validateNewPassword(ownerPassword); } catch {
+    console.error("[db] SIPEKA_OWNER_PASSWORD wajib minimal 6 karakter, minimal 1 huruf besar A-Z, maksimal 1024. Seed dibatalkan.");
     return;
   }
 

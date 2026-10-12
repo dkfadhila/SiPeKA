@@ -3,9 +3,12 @@ const crypto = require('node:crypto');
 const argon2 = require('@node-rs/argon2');
 const argonOptions = { algorithm: argon2.Algorithm.Argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1, outputLen: 32 };
 async function hashVerifiedPassword(password) { return argon2.hash(password, argonOptions); }
+function validateNewPassword(password) {
+  if (typeof password !== 'string' || password.length < 6 || password.length > 1024 || !/[A-Z]/.test(password))
+    throw Object.assign(new Error('Password minimal 6 karakter, minimal 1 huruf besar A-Z, maksimal 1024; angka dan simbol tidak wajib'), { code: 400 });
+}
 async function hashNewPassword(password) {
-  if (typeof password !== 'string' || password.length < 12 || password.length > 1024)
-    throw Object.assign(new Error('Password baru minimal 12 karakter, maksimal 1024'), { code: 400 });
+  validateNewPassword(password);
   return hashVerifiedPassword(password);
 }
 async function checkPassword(password, stored) {
@@ -102,5 +105,5 @@ function newRecoveryCodes() {
   const codes = Array.from({ length: 8 }, () => crypto.randomBytes(16).toString('hex'));
   return { codes, hashes: codes.map(recoveryHash) };
 }
-module.exports = { hashNewPassword, hashVerifiedPassword, checkPassword, config, cookie, cookieToken, sessionToken, clientIP, validOrigin, createLimiter,
+module.exports = { validateNewPassword, hashNewPassword, hashVerifiedPassword, checkPassword, config, cookie, cookieToken, sessionToken, clientIP, validOrigin, createLimiter,
   encryptionKey, newEnrollment, decryptSecret, totp, verifyTotp, recoveryHash, newRecoveryCodes };
