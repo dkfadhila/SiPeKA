@@ -17,6 +17,7 @@ async function deliver({approval,staff,modules,transport,stateDir}){
  // One durable staff-period reservation, including recipient changes. Never auto-retry.
  const key=crypto.createHash('sha256').update(approval.staff_id+'\0'+approval.period).digest('hex'),target=path.join(stateDir,key+'.json');
  const id=crypto.randomUUID();const fd=fs.openSync(target,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify({status:'uncertain',id,approval_sha256:crypto.createHash('sha256').update(JSON.stringify(approval)).digest('hex')}));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
+ const dirfd=fs.openSync(stateDir,'r');try{fs.fsyncSync(dirfd);}finally{fs.closeSync(dirfd);}
  mail.messageId='<'+id+'@payroll.sipeka>';
  try{const result=await transport.sendMail(mail);if(!result?.accepted?.includes(approval.email)||!result.messageId)fail('PROVIDER_ACCEPTANCE_UNKNOWN');const out={status:'accepted',id,provider_id:result.messageId};const fd=fs.openSync(target,'r+');try{fs.ftruncateSync(fd,0);fs.writeFileSync(fd,JSON.stringify(out));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}return out;}catch{fail('UNCERTAIN_QUARANTINED_NO_RETRY');}
 }
