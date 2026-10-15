@@ -1553,6 +1553,114 @@ body #content .btn[style]{font-size:15px!important;line-height:24px!important;fo
 @media(max-width:1000px){.operational-kpis{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media(max-width:600px){.operational-kpis{grid-template-columns:minmax(0,1fr)!important}}
 </style>
+<style id="sipeka-owner-overview-polish">
+/* Keep long option intrinsic widths inside the existing command capsule. */
+body:has(.owner-overview) .topbar #ownerBranchSwitcher{flex:1 1 132px;min-width:0}
+body:has(.owner-overview) .topbar #ownerBranchSelect{width:100%;min-width:0;max-width:100%}
+/* Owner overview: balanced grid, unified rhythm, vibrant professional accents */
+body .owner-overview #advancePanel{max-width:none;margin:0}
+body #content .owner-overview>.table-card:not(:last-child) th:nth-child(n+2):nth-child(-n+5){text-align:right}
+body #content .owner-overview>.table-card th.right{text-align:right}
+@media(min-width:769px) and (max-width:920px){body:has(.owner-overview) .topbar .mobile-menu{flex:0 0 38px;margin-right:0;position:relative;z-index:1}body:has(.owner-overview) .topbar .top-actions{flex:0 1 360px;min-width:0;max-width:calc(100% - 46px)!important}body:has(.owner-overview) .topbar .branch-switcher{min-width:0;flex:1 1 0}body:has(.owner-overview) .topbar .branch-select{width:100%;min-width:0;max-width:130px!important}}
+
+.owner-overview{grid-column:1/-1;min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:24px}
+.owner-overview>*{min-width:0;margin-block:0}
+.owner-overview .page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin:0;flex-wrap:wrap}
+.owner-overview .page-head>div:first-child{flex:1 1 390px;min-width:0}
+.owner-overview h1,.owner-overview h2,.owner-overview h3{overflow-wrap:anywhere;text-wrap:balance}
+.owner-overview .page-head .page-actions{align-self:flex-start;justify-content:flex-start;gap:8px;flex-wrap:wrap}
+.owner-overview .btn{min-height:44px;padding:10px 16px;line-height:22px;white-space:normal;justify-content:center;border-radius:8px;font-weight:600;transition:all .15s ease}
+.owner-overview .btn:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+.owner-overview .scope-pill{min-height:44px;max-width:100%;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:700}
+.owner-overview>p[role=status]{padding:14px 18px;border-left:4px solid var(--green);border-radius:0 10px 10px 0;background:color-mix(in srgb,var(--green-bg) 65%,var(--surface));color:var(--sub);font-size:13px;line-height:20px;font-weight:500}
+
+.owner-overview .operational-kpis{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:0}
+.owner-overview .operational-kpis .kpi{padding:20px 22px;display:flex;flex-direction:column;min-width:0;border-radius:12px}
+.owner-overview .kpi-top{min-height:48px;align-items:flex-start}
+.owner-overview .kpi-top .spark{display:none}
+.owner-overview .kpi-value{font-size:28px;line-height:34px;margin:12px 0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.owner-overview .delta{font-size:13px;line-height:20px;margin-top:auto}
+.owner-overview .operational-kpis .kpi:nth-child(5){background:linear-gradient(145deg,color-mix(in srgb,var(--amber-bg) 80%,var(--surface)),var(--surface));border:1px solid color-mix(in srgb,var(--amber) 30%,var(--line));box-shadow:none}
+.owner-overview .operational-kpis .kpi:nth-child(6){background:linear-gradient(145deg,color-mix(in srgb,var(--green-bg) 85%,var(--surface)),var(--surface));border:1px solid color-mix(in srgb,var(--green) 30%,var(--line));box-shadow:none}
+.owner-overview .operational-kpis .kpi:nth-child(n+5) .kpi-top,.owner-overview .operational-kpis .kpi:nth-child(n+5) .kpi-value{color:var(--ink);text-shadow:none}
+.owner-overview .operational-kpis .kpi:nth-child(n+5) .delta{color:var(--sub)}
+.owner-overview .operational-kpis .kpi:nth-child(5):after{border-color:color-mix(in srgb,var(--amber) 9%,transparent)}
+.owner-overview .operational-kpis .kpi:nth-child(6):after{border-color:color-mix(in srgb,var(--green) 9%,transparent)}
+.owner-overview>.hint{font-size:13px;line-height:20px;color:var(--sub);max-width:100%;padding:0 2px}
+
+.owner-overview .dash-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:0}
+.owner-overview .dash-grid>.card{display:flex;flex-direction:column;gap:14px;padding:22px 24px;border-radius:12px;background:linear-gradient(145deg,color-mix(in srgb,var(--green-bg) 50%,var(--surface)),var(--surface));border:1px solid color-mix(in srgb,var(--green) 24%,var(--line));border-left:4px solid var(--green)}
+.owner-overview .dash-grid>.card:nth-child(2){background:linear-gradient(145deg,color-mix(in srgb,var(--amber-bg) 55%,var(--surface)),var(--surface));border:1px solid color-mix(in srgb,var(--amber) 24%,var(--line));border-left:4px solid var(--amber)}
+.owner-overview .dash-grid .card-head{padding:0;margin:0}
+.owner-overview .dash-grid p{margin:0;color:var(--sub)}
+.owner-overview .dash-grid .page-actions,.owner-overview .dash-grid>.card>.btn{margin-top:auto;align-self:flex-start}
+.owner-overview .dash-grid .page-actions{gap:8px;padding-top:4px;flex-wrap:wrap}
+
+/* Bottom section: distinctive theme accents per section */
+.owner-overview>.table-card{padding:0;overflow:hidden;border-radius:12px;border:1px solid color-mix(in srgb,var(--green) 24%,var(--line));border-top:4px solid var(--green);margin:0;background:var(--surface);box-shadow:0 4px 20px rgba(0,0,0,.04)}
+.owner-overview>.table-card>.card-head{padding:18px 24px;margin:0;background:linear-gradient(90deg,color-mix(in srgb,var(--green) 12%,var(--surface)),var(--surface));gap:14px;align-items:center;border-bottom:1px solid color-mix(in srgb,var(--green) 18%,var(--line))}
+.owner-overview>.table-card>.card-head h2{color:var(--ink);font-size:17px;font-weight:700}
+.owner-overview>.table-card>.card-head .btn{border-color:color-mix(in srgb,var(--green) 35%,var(--line));background:var(--surface);color:var(--green2)}
+.owner-overview>.table-card>.card-head .btn:hover{background:var(--green-bg)}
+
+.owner-overview>.table-card:last-child{border-color:color-mix(in srgb,#3b82f6 24%,var(--line));border-top:4px solid #3b82f6}
+.owner-overview>.table-card:last-child>.card-head{background:linear-gradient(90deg,color-mix(in srgb,#3b82f6 12%,var(--surface)),var(--surface));border-bottom-color:color-mix(in srgb,#3b82f6 18%,var(--line))}
+.owner-overview>.table-card:last-child>.card-head h2{color:var(--ink)}
+.owner-overview>.table-card:last-child>.card-head .btn{border-color:color-mix(in srgb,#3b82f6 35%,var(--line));background:var(--surface);color:#2563eb}
+.owner-overview>.table-card:last-child>.card-head .btn:hover{background:color-mix(in srgb,#3b82f6 10%,var(--surface))}
+
+.owner-overview .table-wrap{width:100%;max-width:100%;overflow-x:auto}
+.owner-overview table{width:100%;border-collapse:separate;border-spacing:0;min-width:760px}
+.owner-overview th{background:color-mix(in srgb,var(--green) 6%,var(--soft));color:var(--sub);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--line);border-top:0}
+.owner-overview>.table-card:last-child th{background:color-mix(in srgb,#3b82f6 6%,var(--soft))}
+.owner-overview td,.owner-overview th{padding:13px 18px;font-variant-numeric:tabular-nums;vertical-align:middle}
+.owner-overview td{border-bottom:1px solid color-mix(in srgb,var(--line) 75%,transparent);font-size:14px}
+.owner-overview tbody tr:last-child td{border-bottom:0}
+.owner-overview tbody tr:hover td{background:color-mix(in srgb,var(--green-bg) 40%,transparent)}
+.owner-overview>.table-card:last-child tbody tr:hover td{background:color-mix(in srgb,#3b82f6 5%,transparent);cursor:pointer}
+
+.owner-overview>.table-card:not(:last-child) :is(th,td):nth-child(n+2):nth-child(-n+5){text-align:right}
+.owner-overview>.table-card:not(:last-child) td:first-child{max-width:300px;overflow-wrap:anywhere;font-weight:600}
+.owner-overview .money,.owner-overview .right{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600}
+
+/* Status Badges */
+.owner-overview .tag{display:inline-flex;align-items:center;justify-content:center;min-height:24px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap;border:1px solid transparent}
+.owner-overview .tag.ok{color:#0d5d3a;background:#eaf6ef;border-color:#a7f3d0}
+.owner-overview .tag.warn{color:#a95d09;background:#fff5e5;border-color:#fed7aa}
+.owner-overview .tag.red{color:#b42318;background:#fff0ee;border-color:#fecaca}
+html[data-theme="dark"] .owner-overview .tag.ok{color:#8de0b5;background:#163428;border-color:#2c5a43}
+html[data-theme="dark"] .owner-overview .tag.warn{color:#f0ad55;background:#3b2b17;border-color:#5c4222}
+html[data-theme="dark"] .owner-overview .tag.red{color:#ff8178;background:#412321;border-color:#633330}
+
+.owner-overview td[data-label=Approval]{font-weight:600}
+.owner-overview td[data-label=Branch] span.code{display:inline-block;padding:2px 8px;border-radius:6px;background:var(--soft);border:1px solid var(--line);font-size:12px;font-weight:600}
+.owner-overview td[data-label=Account] span.code{color:var(--sub);font-size:13px}
+body #content .owner-overview td[data-label=Cabang],body #content .owner-overview td[data-label=Branch],body #content .owner-overview td[data-label=Transaction]{white-space:normal;overflow-wrap:anywhere}
+
+/* Advance Panel: Warm Amber Horizon */
+.owner-overview #advancePanel,.owner-overview>.card:not(.table-card):not(.quarterly-owner){grid-column:1/-1;width:100%;padding:22px 24px;margin:0;border-radius:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--amber) 8%,var(--surface)),var(--surface));border:1px solid color-mix(in srgb,var(--amber) 25%,var(--line));border-top:4px solid var(--amber);box-shadow:0 4px 20px rgba(0,0,0,.04)}
+.owner-overview #advancePanel>h2{margin:0 0 6px;color:var(--ink);font-size:17px;font-weight:700}
+.owner-overview #advancePanel>p{color:var(--sub);margin:0 0 16px;font-size:13px;line-height:20px}
+.owner-overview #advancePanel>p:last-child{margin:0;padding:14px 18px;background:color-mix(in srgb,var(--amber) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--amber) 25%,var(--line));border-radius:10px;color:var(--ink);font-size:13px;font-weight:600;display:flex;align-items:center;gap:10px}
+.owner-overview #advancePanel>p:last-child:before{content:"✓";display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--amber);color:#fff;font-size:11px;font-weight:700;flex-shrink:0}
+.owner-overview [data-advance-row]{padding:18px;margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow-wrap:anywhere}
+.owner-overview [data-advance-form]{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+.owner-overview [data-advance-form]>label:first-child{display:grid;gap:6px;flex:1 1 260px;min-width:0}
+.owner-overview [data-advance-form] input:not([type=checkbox]){width:100%;min-width:0;min-height:48px;font-size:16px;padding:10px 12px}
+.owner-overview [data-advance-form]>p{flex-basis:100%;margin:0}
+.owner-overview [data-advance-form]>.btn{border-color:color-mix(in srgb,var(--amber) 50%,var(--line));background:var(--amber-bg);color:var(--ink)}
+
+/* Quarterly owner section */
+.owner-overview .quarterly-owner{margin:0;padding:22px 24px;border-radius:12px;border:1px solid var(--line);border-top:4px solid var(--green);min-width:0;background:var(--surface);box-shadow:0 4px 20px rgba(0,0,0,.04)}
+.owner-overview .quarterly-owner>.card-head{padding:0;margin-bottom:18px}
+.owner-overview .quarterly-controls{gap:14px;align-items:end}
+.owner-overview .quarterly-controls>.btn{align-self:end;min-height:48px}
+.owner-overview .quarterly-controls .field{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;margin:0;min-width:0}
+.owner-overview .quarterly-controls .control{width:100%;min-width:0;min-height:48px;font-size:16px}
+
+@media(max-width:1050px){.owner-overview .operational-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.owner-overview .dash-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){.owner-overview{gap:18px}.owner-overview .operational-kpis{grid-template-columns:minmax(0,1fr)}.owner-overview .operational-kpis .kpi{padding:18px}.owner-overview .kpi-top{min-height:0}.owner-overview .dash-grid>.card,.owner-overview #advancePanel,.owner-overview .quarterly-owner{padding:18px}.owner-overview>.table-card{padding:0!important}.owner-overview>.table-card>.card-head{padding:18px}.owner-overview td{padding:12px 16px}.owner-overview .page-head .page-actions{width:100%}.owner-overview .page-actions .btn{flex:1 1 auto}.owner-overview .table-card table.responsive td{gap:14px}.owner-overview>.table-card:not(:last-child) td:first-child{max-width:none}.owner-overview .money{white-space:normal}body #content .owner-overview table.responsive td:before{color:var(--sub);width:auto!important;min-width:0!important;max-width:none!important;text-align:left;white-space:normal;word-break:normal;overflow-wrap:normal}body #content .owner-overview table.responsive td{display:grid!important;grid-template-columns:minmax(90px,.8fr) minmax(0,1.2fr);align-items:start;gap:14px}}
+</style>
 </head>
 <body>
 <section class="login-gate" id="loginGate" aria-label="Masuk ke SiPeKA">
@@ -1718,7 +1826,7 @@ function operationalSummary(branchId){
 }
 function operationalCards(){const m=operationalSummary(),money=n=>n===null?'Tidak tersedia':'Rp '+BigInt(n).toLocaleString('id-ID');return '<p role="status">'+(m.complete?(role==='staff'?'Pengajuan milik Anda; pencairan, belanja dan pengembalian hanya advance belum selesai.':'Snapshot pengajuan tunai yang tersedia dalam lingkup cabang; bukan total sepanjang waktu.'):'Data belum lengkap · sumber transaksi / lifecycle tidak tersedia. Muat ulang; jangan anggap nol.')+'</p><section class="grid kpis operational-kpis">'+kpi('Pengajuan menunggu approval',m.pendingCount===null?'Tidak tersedia':m.pendingCount+' pengajuan','Belum disetujui Owner',0,'')+kpi('Disetujui, belum dicairkan',money(m.approvedUndisbursed),'Approval pengajuan bukan penyerahan dana',0,'')+kpi('Dana dicairkan',money(m.disbursed),'Event DISBURSE · bukan belanja',0,'')+kpi('Belanja settlement disetujui',money(m.settled),'Event APPROVE nota · bukan nota biasa / verifikasi file',0,'')+kpi('Pertanggungjawaban outstanding',money(m.outstanding),'Dicairkan − settlement disetujui − dikembalikan',1,'')+kpi('Dana dikembalikan',money(m.returned),'Event RETURN · sisa perlu dikembalikan: '+money(m.returnDue),0,'')+'</section><p class="hint">Lifecycle tersedia untuk pengajuan kas laci tunai. Nota biasa terpisah; tidak masuk belanja settlement. Bukan saldo akhir atau laba/rugi.</p>';}
 function quarterlyOwnerSection(){return window.SipekaQuarterly?.render()||'';}
-function ownerDashboard(){return pageHead('Operasional','Pengajuan & Pertanggungjawaban','Review pengajuan, pencairan dana, nota dan pengembalian · '+escHtml(scopeName())+'.','<span class="scope-pill">'+escHtml(scopeName())+'</span><button class="btn" data-view="reports">View report</button><button class="btn primary" data-view="approvals">Review approval</button>')+operationalCards()+quarterlyOwnerSection()+'<section class="grid dash-grid"><article class="card"><div class="card-head"><div><h2>Alur dana operasional</h2><p>Pengajuan Staff · keputusan Owner · serah dana · review nota · pengembalian</p></div></div><p>Persetujuan pengajuan tidak otomatis mencairkan dana. Nota settlement baru menjadi belanja setelah review Owner. Nota biasa tetap berada di ledger terpisah.</p><div class="page-actions"><button class="btn" data-view="approvals">Review pengajuan</button><button class="btn" data-view="transactions">Lihat nota & transaksi</button></div></article><article class="card"><div class="card-head"><div><h2>Kontrol pertanggungjawaban</h2><p>Outstanding bukan kerugian atau saldo kas.</p></div></div><p>Selesaikan nota dan konfirmasi pengembalian berdasarkan bukti. Laporan Owner tetap tersedia melalui Reports & Export.</p><button class="btn" data-view="reports">Buka laporan</button></article></section><article class="card table-card">'+branchTable(5)+'</article>'+advancePanel()+'<article class="card table-card">'+transactionTable(6)+'</article>';}
+function ownerDashboard(){return '<div class="owner-overview">'+pageHead('Operasional','Pengajuan & Pertanggungjawaban','Review pengajuan, pencairan dana, nota dan pengembalian · '+escHtml(scopeName())+'.','<span class="scope-pill">'+escHtml(scopeName())+'</span><button class="btn" data-view="reports">View report</button><button class="btn primary" data-view="approvals">Review approval</button>')+operationalCards()+quarterlyOwnerSection()+'<section class="grid dash-grid"><article class="card"><div class="card-head"><div><h2>Alur dana operasional</h2><p>Pengajuan Staff · keputusan Owner · serah dana · review nota · pengembalian</p></div></div><p>Persetujuan pengajuan tidak otomatis mencairkan dana. Nota settlement baru menjadi belanja setelah review Owner. Nota biasa tetap berada di ledger terpisah.</p><div class="page-actions"><button class="btn" data-view="approvals">Review pengajuan</button><button class="btn" data-view="transactions">Lihat nota & transaksi</button></div></article><article class="card"><div class="card-head"><div><h2>Kontrol pertanggungjawaban</h2><p>Outstanding bukan kerugian atau saldo kas.</p></div></div><p>Selesaikan nota dan konfirmasi pengembalian berdasarkan bukti. Laporan Owner tetap tersedia melalui Reports & Export.</p><button class="btn" data-view="reports">Buka laporan</button></article></section><article class="card table-card">'+branchTable(5)+'</article>'+advancePanel()+'<article class="card table-card">'+transactionTable(6)+'</article></div>';}
 
 function chart(){
   const data=realDataChartBuckets(),range=chartPeriodRange(),source=realDataRealized(realDataRows('cash')).filter(r=>{const d=realDataDate(r.created_at);return d&&d>=range.from&&d<=range.to;});
@@ -1731,11 +1839,11 @@ function chart(){
   return '<div class="chart-area"><div class="chart-shell"><svg class="chart" viewBox="0 0 700 270" role="img" aria-label="Daily approved realized cash flow · '+chartPeriodLabel()+'"><text class="axis-title" x="44" y="16">RUPIAH · MILLION · DAILY</text>'+grid+series+samples+labels+'</svg></div></div>';
 }
 function costSection(){let p=scopeProfile(),rows=[];return '<section class="grid cost-layout"><article class="card"><div class="card-head"><div><h2>Cost Control</h2><p>Budget vs actual by account category · '+scopeName()+'</p></div><button class="btn" disabled aria-label="Budget belum tersedia; dataset dan spesifikasi diperlukan">Full analysis</button></div><div class="budget-list"><div class="budget-header"><span>Category</span><span>Budget</span><span>Actual</span><span>Variance</span></div><div class="empty-table">Budget not connected · no data for budget or variance.</div>'+rows.map(r=>'<div class="budget-row"><div class="budget-name"><strong>'+r[0]+'</strong><small>'+r[1]+'</small><div class="bar"><span class="'+r[5]+'" style="width:'+(r[4][0]=='+'?'100':'78')+'%"></span></div></div><div class="budget-num">'+r[2]+'</div><div class="budget-num">'+r[3]+'</div><div class="variance '+(r[4][0]=='+'?'warn':'')+'">'+r[4]+'</div></div>').join('')+'</div></article><article class="card"><div class="card-head"><div><h2>Widya Cost Signals</h2><p>'+scopeName()+' · automated control observations</p></div></div><div class="anomaly-list"><div class="anomaly"><strong><span>Expense ratio</span><span class="tag '+(!p.hasData?'':p.net<0?'red':p.ratio>=59?'warn':'ok')+'">'+p.status.toUpperCase()+'</span></strong><p><span class="mono">'+realDataRatio(p)+'</span> · approved realized expense / revenue; no budget comparison.</p></div><div class="anomaly"><strong><span>Net operating result</span><span class="tag '+(p.net<0?'red':p.hasData?'ok':'')+'">'+p.result+'</span></strong><p>'+escHtml(scopeName())+' records <span class="money">'+fmtM(p.net)+'</span> net cash flow · approved realized records.</p></div></div></article></section>'}
-function branchTable(limit){const units=(window.SipekaUnits||[]).filter(u=>selectedBranch==='all'||u.name===selectedBranch).slice(0,limit||undefined),money=n=>n===null?'Tidak tersedia':'Rp '+BigInt(n).toLocaleString('id-ID');return '<div class="card-head"><div><h2>Pertanggungjawaban cabang</h2><p>Pengajuan kas laci tunai · snapshot lifecycle, bukan margin</p></div><button class="btn" data-view="branches">View all</button></div><div class="table-wrap"><table class="responsive"><thead><tr><th>Cabang</th><th>Menunggu approval</th><th>Belum dicairkan</th><th>Dicairkan</th><th>Outstanding</th><th>Status sumber</th></tr></thead><tbody>'+units.map(u=>{const m=operationalSummary(u.id);return '<tr data-view="branches"><td data-label="Cabang">'+escHtml(u.name)+'</td><td data-label="Menunggu approval">'+(m.pendingCount===null?'Tidak tersedia':m.pendingCount)+'</td><td data-label="Belum dicairkan">'+money(m.approvedUndisbursed)+'</td><td data-label="Dicairkan">'+money(m.disbursed)+'</td><td data-label="Outstanding">'+money(m.outstanding)+'</td><td data-label="Status sumber">'+(m.complete?'Tersedia':'Belum lengkap')+'</td></tr>';}).join('')+'</tbody></table></div>';}
+function branchTable(limit){const units=(window.SipekaUnits||[]).filter(u=>selectedBranch==='all'||u.name===selectedBranch).slice(0,limit||undefined),money=n=>n===null?'Tidak tersedia':'Rp '+BigInt(n).toLocaleString('id-ID');return '<div class="card-head"><div><h2>Pertanggungjawaban cabang</h2><p>Pengajuan kas laci tunai · snapshot lifecycle, bukan margin</p></div><button class="btn" data-view="branches">View all</button></div><div class="table-wrap"><table class="responsive"><thead><tr><th>Cabang</th><th>Menunggu approval</th><th>Belum dicairkan</th><th>Dicairkan</th><th>Outstanding</th><th>Status sumber</th></tr></thead><tbody>'+units.map(u=>{const m=operationalSummary(u.id);return '<tr data-view="branches"><td data-label="Cabang">'+escHtml(u.name)+'</td><td data-label="Menunggu approval">'+(m.pendingCount===null?'Tidak tersedia':m.pendingCount)+'</td><td data-label="Belum dicairkan">'+money(m.approvedUndisbursed)+'</td><td data-label="Dicairkan">'+money(m.disbursed)+'</td><td data-label="Outstanding">'+money(m.outstanding)+'</td><td data-label="Status sumber">'+(role==='owner'&&view==='dashboard'?'<span class="tag '+(m.complete?'ok':'warn')+'">'+(m.complete?'Tersedia':'Belum lengkap')+'</span>':(m.complete?'Tersedia':'Belum lengkap'))+'</td></tr>';}).join('')+'</tbody></table></div>';}
 
 // F01-fix: escapeHtml global untuk semua dynamic string rendering
 function escHtml(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function transactionTable(limit,source){let base=visibleTransactions(source||transactions),data=limit?base.slice(0,limit):base,isStaff=role==='staff',rows=data.map(r=>{let i=transactions.indexOf(r);return'<tr data-transaction="'+i+'"><td data-label="Date"><time>'+escHtml(r[0])+'</time></td><td data-label="Transaction">'+escHtml(r[1])+'</td><td data-label="Branch"><span class="code">'+escHtml(r[2])+'</span></td><td data-label="Account"><span class="code">'+escHtml(r[3])+'</span></td><td data-label="Cash source">'+escHtml(r[4])+'</td><td data-label="Amount" class="right money">'+escHtml(r[5])+'</td><td data-label="'+(isStaff?'Audit':'Widya')+'"><span class="tag '+(r[6]==='Verified'?'ok':r[6]==='Anomaly'?'red':'warn')+'">'+escHtml(r[6])+'</span></td><td data-label="Approval">'+escHtml(r[7])+'</td></tr>'}).join('');return '<div class="card-head"><div><h2>Recent Transactions</h2><p>'+escHtml(scopeName())+' · latest ledger activity '+(isStaff?'recorded in system':'with approval status · evidence not verified')+'</p></div><button class="btn" data-view="transactions">View ledger</button></div>'+(data.length?'<div class="table-wrap"><table class="responsive"><thead><tr><th>Date</th><th>Transaction</th><th>Branch</th><th>Account</th><th>Wadah Kas</th><th class="right">Amount</th><th>'+(isStaff?'Audit':'Widya')+'</th><th>Approval</th></tr></thead><tbody>'+rows+'</tbody></table></div>':'<div class="empty-table">Belum ada transaksi terbaru untuk '+escHtml(scopeName())+'.</div>')}
+function transactionTable(limit,source){let base=visibleTransactions(source||transactions),data=limit?base.slice(0,limit):base,isStaff=role==='staff',rows=data.map(r=>{let i=transactions.indexOf(r);return'<tr data-transaction="'+i+'"><td data-label="Date"><time>'+escHtml(r[0])+'</time></td><td data-label="Transaction">'+escHtml(r[1])+'</td><td data-label="Branch"><span class="code">'+escHtml(r[2])+'</span></td><td data-label="Account"><span class="code">'+escHtml(r[3])+'</span></td><td data-label="Cash source">'+escHtml(r[4])+'</td><td data-label="Amount" class="right money">'+escHtml(r[5])+'</td><td data-label="'+(isStaff?'Audit':'Widya')+'"><span class="tag '+(r[6]==='Verified'?'ok':r[6]==='Anomaly'?'red':'warn')+'">'+escHtml(r[6])+'</span></td><td data-label="Approval">'+(role==='owner'&&view==='dashboard'?'<span class="tag '+(r[7]==='Approved'?'ok':r[7]==='Rejected'?'red':'warn')+'">'+escHtml(r[7])+'</span>':escHtml(r[7]))+'</td></tr>'}).join('');return '<div class="card-head"><div><h2>Recent Transactions</h2><p>'+escHtml(scopeName())+' · latest ledger activity '+(isStaff?'recorded in system':'with approval status · evidence not verified')+'</p></div><button class="btn" data-view="transactions">View ledger</button></div>'+(data.length?'<div class="table-wrap"><table class="responsive"><thead><tr><th>Date</th><th>Transaction</th><th>Branch</th><th>Account</th><th>Wadah Kas</th><th class="right">Amount</th><th>'+(isStaff?'Audit':'Widya')+'</th><th>Approval</th></tr></thead><tbody>'+rows+'</tbody></table></div>':'<div class="empty-table">Belum ada transaksi terbaru untuk '+escHtml(scopeName())+'.</div>')}
 function pageHead(k,t,s,actions){if(typeof role!=='undefined'&&role==='staff'&&actions&&/dewi|analysis|approval/i.test(String(actions)))actions='';return '<div class="page-head"><div><div class="eyebrow">'+k+'</div><h1>'+t+'</h1><p>'+s+'</p></div><div class="page-actions">'+(actions||'')+'</div></div>'}
 function adminDashboard(){return ownerDashboard();}
 function operatorDashboard(){return '<div class="operator staff-overview">'+pageHead('Unit penempatan',escHtml(scopeName()),'Ajukan dana, input nota, selesaikan pertanggungjawaban milik Anda.','')+'<section class="grid action-grid" aria-label="Tindakan harian"><button class="big-action" data-view="manual">'+icon('ledger')+'<strong>Input Transaksi</strong><small>Ajukan dana atau input nota</small></button><button class="big-action" data-view="closing">'+icon('check')+'<strong>Tutup Kas Shift</strong><small>Catat uang fisik dan laporan harian</small></button></section>'+operationalCards()+'<article class="card table-card">'+transactionTable(null,transactions.filter(r=>r[2]===scopeName()))+'</article>'+advancePanel()+'</div>';}
