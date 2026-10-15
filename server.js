@@ -12,95 +12,7 @@ const { receiptDisplayName } = require('./storage');
 const { q, uid, atomicApprove, createSession, getValidSession,
   revokeUserSessions, checkIdempotency, ready, withRequestTransaction, db } = require(process.env.DATABASE_URL ? "./db-postgres" : "./db");
 
-const { createPayrollService } = require('./payroll');
-const { createNotificationAdapter, createPayrollDeliveryWorker } = require('./payroll-delivery');
-let payrollService, payrollWorker, payrollRunning = false, payrollScheduled = false;
-const payrollDeliveryReadiness={email:false,telegram:false};
-function payrollPool() {
-  if (!process.env.DATABASE_URL) throw Object.assign(new Error('PAYROLL_PG_POOL_REQUIRED'), {status:503,code:'PAYROLL_PG_POOL_REQUIRED'});
-  return require('./db-postgres').getPool();
-}
-function payroll() {
-  // Missing keys block sensitive operations, not template access or application startup.
-  require('./payroll').createCipher(process.env.PAYROLL_ENCRYPTION_KEY);
-  const readiness=require('./payroll-provider-config').createPayrollProviderConfig().readiness;
-  Object.assign(payrollDeliveryReadiness,{email:readiness?.worker_enabled===true&&readiness?.email===true,telegram:readiness?.worker_enabled===true&&readiness?.telegram===true});
-  return payrollService ||= createPayrollService({pool:payrollPool(),deliveryReady:payrollDeliveryReadiness});
-}
-function deliveryWorker() {
-  if (payrollWorker) return payrollWorker;
-  const {adapter,readiness}=require('./payroll-provider-config').createPayrollProviderConfig();
-  // Worker revalidates contact and payload under the leased connection's SHARE lock.
-  // Never acquire a second connection inside provider access (pool exhaustion/deadlock).
-  return payrollWorker=createPayrollDeliveryWorker({pool:payrollPool(),adapter,emailEnabled:readiness?.email===true});
-}
-let payrollOnboarding;
-function telegramOnboarding(){
-  return payrollOnboarding ||= require('./payroll-telegram-onboarding').createPayrollTelegramOnboarding({pool:payrollPool(),botUsername:process.env.PAYROLL_TELEGRAM_BOT_USERNAME,webhookSecret:process.env.PAYROLL_TELEGRAM_WEBHOOK_SECRET});
-}
-let payrollEmailOnboarding;
-function emailOnboarding(){return payrollEmailOnboarding ||= require('./payroll-email-onboarding').createPayrollEmailOnboarding({pool:payrollPool()});}
-async function payrollEmailRoute(req,res,p,me){
- if(!p.startsWith('/api/payroll/email/'))return false;
- if(!security.cookieToken(req)){json(res,401,{error:'PAYROLL_COOKIE_REQUIRED'});return true;}
- try{const svc=emailOnboarding();let result;
-  if(req.method==='GET'&&p==='/api/payroll/email/status')result=await svc.status(me);
-  else if(req.method==='GET'&&p==='/api/payroll/email/bindings')result=await svc.pending(me);
-  else if(req.method==='POST'){const fields={'/api/payroll/email/bind':['email']}[p];if(!fields){json(res,404,{error:'not found'});return true;}const b=await readBody(req);if(!b||Array.isArray(b)||Object.keys(b).some(k=>!fields.includes(k)))throw require('./payroll').fault('PAYROLL_CONTACT_SCOPE');
-   if(p.endsWith('/bind')){if(payrollLinkLimiter.blocked(me.id,security.clientIP(req,authConfig)))throw require('./payroll').fault('PAYROLL_LINK_RATE_LIMIT',429);result=await svc.bind(me,b.email);}
-   if(p.endsWith('/prove'))result=await svc.prove(me,b.token);
-   if(p.endsWith('/confirm'))result=await svc.confirm(me,b);
-   if(p.endsWith('/reject'))result=await svc.reject(me,b.binding_id);
-  }
-  json(res,result?200:404,result||{error:'not found'});
- }catch(e){payrollSafeError(res,e);}return true;
-}
-function payrollSafeError(res,e){const safe=/^PAYROLL_[A-Z0-9_]+$/.test(e.code||'');return json(res,safe&&Number.isInteger(e.status)?e.status:503,{error:safe?e.code:'PAYROLL_UNAVAILABLE'});}
-async function payrollWebhook(req,res,p){
-  if(p!=='/api/payroll/telegram/webhook')return false;
-  if(req.method!=='POST'){json(res,405,{error:'METHOD_NOT_ALLOWED'});return true;}
-  try{
-    if(!require('./payroll-telegram-onboarding').validSecret(req.headers['x-telegram-bot-api-secret-token'],process.env.PAYROLL_TELEGRAM_WEBHOOK_SECRET)){json(res,403,{error:'PAYROLL_WEBHOOK_AUTH'});return true;}
-    req._bodyLimit=16384;
-    await telegramOnboarding().webhook(req.headers['x-telegram-bot-api-secret-token'],await readBody(req));
-    json(res,200,{ok:true});
-  }catch(e){if(e.status===400||e.status===409)json(res,200,{ok:true});else payrollSafeError(res,e);}
-  return true;
-}
-async function payrollOnboardingRoute(req,res,p,me){
-  if(!p.startsWith('/api/payroll/telegram/'))return false;
-  if(!security.cookieToken(req)){json(res,401,{error:'PAYROLL_COOKIE_REQUIRED'});return true;}
-  try{
-    const svc=telegramOnboarding();let result;
-    if(p==='/api/payroll/telegram/status'&&req.method==='GET')result=await svc.status(me);
-    else if(p==='/api/payroll/telegram/bindings'&&req.method==='GET')result=await svc.pending(me);
-    else if(req.method==='POST'){
-      const allowed={'/api/payroll/telegram/link':['username'],'/api/payroll/telegram/confirm':['binding_id','user_id','chat_id','confirmed'],'/api/payroll/telegram/reject':['binding_id'],'/api/payroll/telegram/revoke':['user_id','chat_id','confirmed']}[p];
-      if(!allowed){json(res,404,{error:'not found'});return true;}
-      const b=await readBody(req);
-      if(!b||typeof b!=='object'||Array.isArray(b)||Object.keys(b).some(k=>!allowed.includes(k))){json(res,400,{error:'PAYROLL_CONTACT_SCOPE'});return true;}
-      if(p.endsWith('/link')){
-        if(payrollLinkLimiter.blocked(me.id,security.clientIP(req,authConfig))){json(res,429,{error:'PAYROLL_LINK_RATE_LIMIT'});return true;}
-        result=await svc.issue(me,b);
-      }else if(p.endsWith('/confirm'))result=await svc.confirm(me,b);
-      else if(p.endsWith('/reject'))result=await svc.reject(me,b.binding_id);
-      else if(p.endsWith('/revoke'))result=await svc.revokeContact(me,b);
-    }
-    json(res,result?200:404,result||{error:'not found'});
-  }catch(e){payrollSafeError(res,e);}
-  return true;
-}
-function schedulePayroll() {
-  if (process.env.PAYROLL_DELIVERY_ENABLED !== '1') return;
-  if (payrollScheduled || payrollRunning) return;
-  payrollScheduled=true;
-  setImmediate(async()=>{
-    payrollScheduled=false;if(payrollRunning)return;payrollRunning=true;
-    try{const worker=deliveryWorker();await worker.recoverStale();for(let i=0;i<20;i++)if(!await worker.runOnce())break;}
-    catch{console.error('[payroll] worker blocked; check configuration');}
-    finally{payrollRunning=false;}
-  });
-}
+const deviceStaff = require('./device-staff');
 const accounting = require('./accounting');
 const accountingReviewKey = crypto.randomBytes(32); // Restart invalidates outstanding reviews; no persisted drafts.
 function accountingFailure(code,status=400){return Object.assign(new Error(code),{accountingCode:code,status});}
@@ -147,12 +59,12 @@ const authReady = Promise.resolve(ready).then(async () => {
     await db.prepare("SELECT token_hash,status,reviewed_by FROM payroll_telegram_bindings LIMIT 0").all();
     await accountingGuard(require('./db-postgres').getPool());
     await require('./advance-service').guard(require('./db-postgres').getPool());
+    await deviceStaff.guard(require('./db-postgres').getPool());
   } else if (authConfig.requireOwner2FA || authConfig.production) throw new Error("Public auth requires PostgreSQL migration 002");
 });
 authReady.catch(() => {});
 const loginLimiter = security.createLimiter();
 const mfaLimiter = security.createLimiter();
-const payrollLinkLimiter = security.createLimiter();
 const TOTP_KEY = process.env.AUTH_TOTP_KEY || '';
 if (authConfig.requireOwner2FA) security.encryptionKey(TOTP_KEY);
 const PORT = process.env.PORT || 4321;
@@ -393,7 +305,7 @@ const widyaReceiptRouter = require('./widya-receipt-analysis').createWidyaReceip
   bridge:widyaBridge,sendJSON:json,
 });
 async function widyaLedgerContext() {
- const txs = (await q.txAll.all()).slice(0,40);
+ const txs = (await deviceStaff.annotate({query:require('./db-postgres').query},'ledger_transactions',await q.txAll.all())).slice(0,40);
  return JSON.stringify({scope:'latest_40_only_not_complete_period',transactions:txs.map(t=>({id:t.id,date:t.created_at,branch:t.branch_name,type:t.tx_type,amount:t.amount,payment:t.payment_method,status:t.status,memo:t.memo}))});
 }
 
@@ -445,10 +357,10 @@ const server = http.createServer(async (req, res) => {
 
   try {
     await authReady;
-    if(await payrollWebhook(req,res,p))return;
+    if(p.startsWith('/api/payroll'))return json(res,410,{error:'PAYROLL_DISABLED_DEVICE_MODEL'});
     if (p.startsWith('/api/') && !['GET','HEAD','OPTIONS'].includes(req.method) && !security.validOrigin(req, authConfig))
       return json(res, 403, { error: "Origin tidak diizinkan" });
-    const mutation = req.method === "POST" && (["/api/login", "/api/logout", "/api/change-password", "/api/users", "/api/users/reset-password", "/api/units", "/api/units/archive", "/api/transactions", "/api/approvals", "/api/closing"].includes(p) || p.startsWith('/api/auth/'));
+    const mutation = req.method === "POST" && (["/api/login", "/api/logout", "/api/change-password", "/api/users", "/api/users/reset-password", "/api/units", "/api/units/archive", "/api/transactions", "/api/approvals", "/api/closing"].includes(p) || p.startsWith('/api/auth/') || p==='/api/operational-staff' || p==='/api/devices/configure' || deviceStaff.financialPath(p));
     if (process.env.DATABASE_URL && mutation) {
       // Do not report success until PostgreSQL has committed the entire request.
       res._deferJSON = true;
@@ -463,6 +375,7 @@ const server = http.createServer(async (req, res) => {
       res._deferJSON = false;
       return json(res, 409, { error: 'Nota sudah dicadangkan untuk settlement advance. Gunakan nota lain.' });
     }
+    if(/^OPERATIONAL_[A-Z_]+$/.test(err.message||'')){res._deferJSON=false;return json(res,err.code==='42501'?403:409,{error:err.message});}
     const status = err.statusCode ?? err.code;
     const code = Number.isInteger(status) && status >= 400 && status < 600 ? status : 500;
     const msg = code === 500 ? "Terjadi kesalahan server" : err.message;
@@ -509,6 +422,22 @@ async function handleRequest(req, res, url, p) {
 
   if (p.startsWith('/api/') && me && (me.session_purpose !== 'full' || me.password_change_required) && p !== '/api/change-password')
     return json(res, 403, { error: 'Ganti password untuk mengamankan akun', setup_required: true });
+
+  if (p==='/api/operational-staff' || p==='/api/devices/configure') {
+    if(!process.env.DATABASE_URL)return json(res,503,{error:'OPERATIONAL_POSTGRES_REQUIRED'});
+    if(req.method==='GET'&&p==='/api/operational-staff')return json(res,200,await deviceStaff.directory(security.cookieToken(req)));
+    if(req.method==='POST'){
+      if(me.role!=='OWNER')return json(res,403,{error:'OPERATIONAL_OWNER_REQUIRED'});
+      const b=await readBody(req);
+      if(!b||Array.isArray(b)||typeof b!=='object'||(p==='/api/devices/configure')!==Object.hasOwn(b,'device_id'))return json(res,400,{error:'OPERATIONAL_INPUT_INVALID'});
+      return json(res,200,await deviceStaff.directory(security.cookieToken(req),b));
+    }
+    return json(res,405,{error:'METHOD_NOT_ALLOWED'});
+  }
+  if(req.method==='POST'&&deviceStaff.financialPath(p)) {
+    if(!process.env.DATABASE_URL)return json(res,503,{error:'OPERATIONAL_POSTGRES_REQUIRED'});
+    req.operationalStaff=await deviceStaff.bind(req,security.cookieToken(req));
+  }
 
   if (p.startsWith('/api/accounting')) {
     if(me.role!=='OWNER')return json(res,403,{error:'ACCOUNTING_OWNER_ONLY'});
@@ -559,18 +488,18 @@ async function handleRequest(req, res, url, p) {
     const staffRoute=p==='/api/advances/own-unresolved'||match&&match[2]==='settlements'&&!match[4];
     if(me.role!==(staffRoute?'STAFF':'OWNER'))return json(res,403,{error:staffRoute?'STAFF_REQUIRED':'OWNER_REQUIRED'});
     if(!process.env.DATABASE_URL)return json(res,503,{error:'ADVANCE_POSTGRES_REQUIRED'});
-    const svc=require('./advance-service'),pool=require('./db-postgres').getPool(),sessionToken=security.cookieToken(req);
+    const svc=require('./advance-service'),pool={query:require('./db-postgres').query},sessionToken=security.cookieToken(req);
     if(!sessionToken)return json(res,401,{error:'ADVANCE_COOKIE_REQUIRED'});
     try{
-      if(req.method==='GET'&&p==='/api/advances/own-unresolved')return json(res,200,await svc.listOwn(pool,sessionToken));
-      if(req.method==='GET'&&p==='/api/advances')return json(res,200,await svc.snapshot(pool,sessionToken));
+      if(req.method==='GET'&&p==='/api/advances/own-unresolved')return json(res,200,await deviceStaff.advances(pool,await svc.listOwn(pool,sessionToken)));
+      if(req.method==='GET'&&p==='/api/advances')return json(res,200,await deviceStaff.advances(pool,await svc.snapshot(pool,sessionToken)));
       if(req.method==='GET'&&p==='/api/reports/advance-movements')return json(res,200,await svc.report(pool,sessionToken,{start:url.searchParams.get('start'),end:url.searchParams.get('end'),branchId:url.searchParams.get('branchId')}));
       if(req.method==='POST'&&match){
         const b=await readBody(req),advanceId=decodeURIComponent(match[1]),settlementId=match[3]?decodeURIComponent(match[3]):undefined;
         const fields=['idempotencyKey','evidence',...(match[2]==='return'?['amount']:match[2]==='settlements'&&!match[4]?['lines']:[]),...(['disburse','return'].includes(match[2])?['confirmed']:[])];
         if(Object.keys(b).some(k=>!fields.includes(k)))return json(res,400,{error:'ADVANCE_PAYLOAD_INVALID'});
         if(['disburse','return'].includes(match[2])&&b.confirmed!==true)return json(res,400,{error:'EXPLICIT_CASH_CONFIRMATION_REQUIRED'});
-        const request={...b,advanceId,...(settlementId?{settlementId}:{})};delete request.confirmed;
+        const request={...b,operationalStaff:req.operationalStaff,advanceId,...(settlementId?{settlementId}:{})};delete request.confirmed;
         const method=match[4]==='approve'?'approveSettlement':match[4]==='reject'?'rejectSettlement':match[2]==='disburse'?'disburse':match[2]==='return'?'confirmReturn':'submitSettlement';
         return json(res,200,await svc[method](pool,sessionToken,request));
       }
@@ -588,7 +517,7 @@ async function handleRequest(req, res, url, p) {
     const token=security.cookieToken(req);
     if(!token)return json(res,401,{error:'REPORT_COOKIE_REQUIRED'});
     const match=p.match(/^\/api\/reports\/([a-z-]+)(\/export)?$/);
-    if(!match||req.method!=='GET')return json(res,404,{error:'REPORT_NOT_FOUND'});
+    if(!match||req.method!=='GET'||match[1]==='quarterly-data'||(match[1]==='quarterly-owner'&&match[2]))return json(res,404,{error:'REPORT_NOT_FOUND'});
     const reports=require('./operational-reports'),params=new URLSearchParams(url.searchParams);
     if(match[2]){
       if(params.getAll('format').length!==1||params.get('format')!=='csv')return json(res,400,{error:'REPORT_CSV_FORMAT_REQUIRED'});
@@ -600,6 +529,10 @@ async function handleRequest(req, res, url, p) {
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       await client.query("SET LOCAL statement_timeout='10s'");
       report=await reports.read(client,me,token,match[1],params);
+      if(['fund-requests','daily-closings','audit-evidence'].includes(match[1])) {
+        report.rows=await deviceStaff.annotate(client,match[1]==='daily-closings'?'cash_closings':'ledger_transactions',report.rows);
+        for(const key of ['device_id','staff_id','staff_name','attribution'])if(!report.columns.some(c=>c.key===key))report.columns.push({key,label:key});
+      }
       await client.query('COMMIT');
     }catch(e){
       try{await client.query('ROLLBACK');}catch{}
@@ -614,48 +547,6 @@ async function handleRequest(req, res, url, p) {
     return json(res,200,report);
   }
 
-  if(await payrollEmailRoute(req,res,p,me))return;
-  if(await payrollOnboardingRoute(req,res,p,me))return;
-
-  if (p.startsWith('/api/payroll')) {
-    if(!security.cookieToken(req))return json(res,401,{error:'PAYROLL_COOKIE_REQUIRED'});
-    const slipRoute=p.match(/^\/api\/payroll\/entries\/([a-f0-9-]{36})\/pdf$/);
-    if(req.method==='GET'&&(slipRoute||p==='/api/payroll/own-slips')){
-      try{
-        if(!slipRoute)return json(res,200,await payroll().ownSlips(me));
-        const slip=await payroll().slip(me,slipRoute[1]);const bytes=require('./payroll-pdf').renderSlipPdf(slip.row,{publishedAt:slip.publishedAt});
-        res.writeHead(200,{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="SiPeKA-slip-'+slip.row.period+'.pdf"',...SECURITY_HEADERS,'Cache-Control':'no-store, private'});return res.end(bytes);
-      }catch(e){return payrollSafeError(res,e);}
-    }
-    if(me.role!=='OWNER'){console.warn('[security] payroll access denied');return json(res,403,{error:'PAYROLL_OWNER_ONLY'});}
-    try {
-      if(p==='/api/payroll/template' && req.method==='GET'){
-        const csv=await createPayrollService({pool:payrollPool()}).template(me);
-        res.writeHead(200,{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="SiPeKA-template-slip-gaji.csv"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end(csv);
-      }
-      if(p==='/api/payroll/contacts'){
-        const pool=payrollPool();
-        if(req.method==='GET')return json(res,200,(await pool.query("SELECT u.id,u.username,u.full_name,u.email,u.email_verified,u.email_registration_id,u.email_registration_source,u.telegram_user_id,u.telegram_verified,b.telegram_username,b.telegram_full_name FROM app_users u LEFT JOIN LATERAL (SELECT telegram_username,telegram_full_name FROM payroll_telegram_bindings WHERE user_id=u.id AND chat_id=u.telegram_user_id AND status='verified' ORDER BY reviewed_at DESC LIMIT 1) b ON true WHERE u.role='STAFF' ORDER BY u.username")).rows);
-        if(req.method==='POST')return json(res,409,{error:'PAYROLL_TELEGRAM_START_LINK_REQUIRED'});
-      }
-      if(p==='/api/payroll/batches' && req.method==='GET'){
-        const pool=payrollPool();await pool.query("INSERT INTO payroll_access_audit(id,actor_id,action) VALUES($1,$2,'BATCH_LIST')",[crypto.randomUUID(),me.id]);
-        return json(res,200,(await pool.query('SELECT id,period,status,created_at FROM payroll_batches ORDER BY created_at DESC LIMIT 100')).rows);
-      }
-      const send=p.match(/^\/api\/payroll\/entries\/([a-f0-9-]{36})\/send$/);
-      if(send&&req.method==='POST'){const b=await readBody(req);if(!b||Array.isArray(b)||Object.keys(b).some(k=>!['channels','confirmation'].includes(k))||!b.confirmation)return json(res,400,{error:'PAYROLL_CONTACT_SCOPE'});const result=await payroll().queueDelivery(me,send[1],b.channels,b.confirmation);schedulePayroll();return json(res,202,{jobs:result});}
-      if(p==='/api/payroll/import' && req.method==='POST'){const svc=payroll();req._bodyLimit=2*BODY_LIMIT_JSON;const b=await readBody(req);return json(res,201,await svc.importCsv(me,b.csv));}
-      const batch=p.match(/^\/api\/payroll\/([a-f0-9-]{36})\/(preview|publish|delivery)$/);
-      if(batch){const svc=payroll(),id=batch[1],action=batch[2];
-        if(action==='preview'&&req.method==='GET')return json(res,200,await svc.preview(me,id));
-        if(action==='delivery'&&req.method==='GET'){const rows=await svc.deliveryStatus(me,id);return json(res,200,rows.map(row=>({...row,delivery_enabled:process.env.PAYROLL_DELIVERY_ENABLED==='1'})));}
-        if(action==='publish'&&req.method==='POST'){const b=await readBody(req),result=await svc.publish(me,id,b.preview_token);return json(res,200,result);}
-      }
-      const retry=p.match(/^\/api\/payroll\/delivery\/([a-f0-9-]{36})\/retry$/);
-      if(retry&&req.method==='POST'){const result=await payroll().retryDelivery(me,retry[1]);schedulePayroll();return json(res,200,result);}
-      return json(res,404,{error:'not found'});
-    }catch(e){const safe=/^PAYROLL_[A-Z0-9_]+$/.test(e.code||'');return json(res,safe&&Number.isInteger(e.status)?e.status:503,{error:safe?e.code:'PAYROLL_UNAVAILABLE'});}
-  }
   if ((p==='/api/units/archive' && req.method==='POST') || (/^\/api\/units\/[^/]+$/.test(p) && req.method==='DELETE')) {
     if(me.role!=='OWNER')return json(res,403,{error:'Khusus Owner'});
     const b=await readBody(req),id=req.method==='DELETE'?decodeURIComponent(p.slice('/api/units/'.length)):b.branch_id;
@@ -754,9 +645,9 @@ async function handleRequest(req, res, url, p) {
 
   if (p === "/api/transactions" && req.method === "GET") {
     if (me.role === "STAFF") {
-      return json(res, 200, { scope: "today-own", rows: (await q.txStaffToday.all(me.id, me.assigned_branch_id)) });
+      return json(res, 200, { scope: "today-own", rows: (await deviceStaff.annotate({query:require('./db-postgres').query},'ledger_transactions',await q.txStaffToday.all(me.id, me.assigned_branch_id))) });
     }
-    return json(res, 200, { scope: "all", rows: (await q.txAll.all()) });
+    return json(res, 200, { scope: "all", rows: (await deviceStaff.annotate({query:require('./db-postgres').query},'ledger_transactions',await q.txAll.all())) });
   }
 
   if (p === "/api/transactions" && req.method === "POST") {
@@ -809,7 +700,7 @@ async function handleRequest(req, res, url, p) {
       if (asset.branch_id !== branchId) return json(res, 400, { error: "Bukti transaksi harus berasal dari cabang yang sama" });
     }
     const idem = idempotencyKey(b.idempotency_key);
-    const fingerprint = fingerprintOf({ amount, method, txType, txIntent, coaId: String(coaId), memo, receiptKey });
+    const fingerprint = fingerprintOf({ amount, method, txType, txIntent, coaId: String(coaId), memo, receiptKey, operationalStaff:req.operationalStaff });
     const idemCheck = await checkIdempotency(idem, me.id, branchId, fingerprint);
     if (idemCheck.exists) {
       if (idemCheck.conflict) return json(res, 409, { error: idemCheck.reason });
@@ -868,7 +759,7 @@ async function handleRequest(req, res, url, p) {
     const closings = me.role === "STAFF"
       ? (await q.closingsByUserBranchToday.all(me.id, me.assigned_branch_id))
       : (await q.allClosingsToday.all());
-    return json(res, 200, { branch_id: branchId, system_balance: sysBal, closings, basis:cash.basis, ordinaryDailyMovement:cash.ordinaryBalance, advanceCashDelta:cash.advanceCashDelta, openingBalances:'MISSING',carryforward:'UNVERIFIED',reconciliationComplete:false,endBalance:null,neracaComplete:false,notice:'Mutasi kas tercatat hari ini WIB, bukan saldo akhir. Closing lama tetap; bukan reset kas atau bukti setoran.' });
+    return json(res, 200, { branch_id: branchId, system_balance: sysBal, closings:await deviceStaff.annotate({query:require('./db-postgres').query},'cash_closings',closings), basis:cash.basis, ordinaryDailyMovement:cash.ordinaryBalance, advanceCashDelta:cash.advanceCashDelta, openingBalances:'MISSING',carryforward:'UNVERIFIED',reconciliationComplete:false,endBalance:null,neracaComplete:false,notice:'Mutasi kas tercatat hari ini WIB, bukan saldo akhir. Closing lama tetap; bukan reset kas atau bukti setoran.' });
   }
 
   if (p === "/api/closing" && req.method === "POST") {
@@ -900,7 +791,7 @@ async function handleRequest(req, res, url, p) {
     for (const field of counts) payload[field] = (measured.has(field) ? safeMeasure : safeInt)(b[field] === undefined ? 0 : b[field], field);
     payload.operational_notes = String(b.operational_notes || "");
     const idem = idempotencyKey(b.idempotency_key);
-    const fingerprint = fingerprintOf(payload);
+    const fingerprint = fingerprintOf({...payload,operationalStaff:req.operationalStaff});
     const existing = (await q.closingTodayByUser.get(me.id, branchId));
     if (existing) {
       if (existing.idempotency_key !== idem || existing.fingerprint !== fingerprint)
@@ -924,7 +815,7 @@ async function handleRequest(req, res, url, p) {
   if (p === '/api/closings/history' && req.method === 'GET') {
     if (!security.cookieToken(req)) return json(res,401,{error:'Cookie sesi diperlukan'});
     if (!process.env.DATABASE_URL) return json(res,503,{error:'Riwayat memerlukan PostgreSQL'});
-    return json(res,200,await require('./closing-history').read(require('./db-postgres').getPool(),me,url.searchParams));
+    const history=await require('./closing-history').read(require('./db-postgres').getPool(),me,url.searchParams);history.rows=await deviceStaff.annotate({query:require('./db-postgres').query},'cash_closings',history.rows);return json(res,200,history);
   }
   if (p === '/api/calendar/notes') {
     if (me.role !== 'OWNER') return json(res,403,{error:'CALENDAR_OWNER_REQUIRED'});
@@ -959,7 +850,7 @@ async function handleRequest(req, res, url, p) {
     const closings = me.role === "STAFF"
       ? (await q.closingsByUserBranchToday.all(me.id, me.assigned_branch_id))
       : (await q.allClosingsToday.all());
-    return json(res, 200, closings);
+    return json(res, 200, await deviceStaff.annotate({query:require('./db-postgres').query},'cash_closings',closings));
   }
 
   if (p === "/api/staff-performance" && req.method === "GET") {
@@ -1095,7 +986,7 @@ async function handleRequest(req, res, url, p) {
 }
 
 Promise.resolve(authReady).then(() => {
-  if(process.env.DATABASE_URL && process.env.PAYROLL_DELIVERY_ENABLED==='1'){const timer=setInterval(schedulePayroll,30000);timer.unref();schedulePayroll();}
+  // Device/unit model: no payroll scheduler, provider initialization or delivery worker.
   server.listen(PORT, HOST, () => {
     console.log(`[sipeka] API + frontend di http://${HOST}:${PORT}`);
     console.log('[sipeka] Widya: authenticated Hermes profile bridge (OCR configured separately)');

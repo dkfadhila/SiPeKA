@@ -7,18 +7,19 @@ function integer(value){if(typeof value==='number'&&!Number.isSafeInteger(value)
 function money(value){return 'Rp '+integer(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.');}
 function publicationDate(value){if(value==null)return 'Belum diterbitkan';const date=new Date(value);if(!Number.isFinite(date.getTime()))throw fault('PAYROLL_PUBLICATION_DATE');return new Intl.DateTimeFormat('id-ID',{timeZone:'Asia/Jakarta',day:'numeric',month:'long',year:'numeric'}).format(date);}
 function plain(value,max=96){return String(value??'Tidak tersedia').replace(/[\x00-\x1f\x7f]/g,' ').slice(0,max);}
-function renderSlipPdf(row,{publishedAt,simulation=false}={}){
+function renderSlipPdf(row,{publishedAt,simulation=false,documentIdentity}={}){
  const commands=[];
  const literal=value=>plain(value,180).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/\u2014/g,'\x97').replace(/[^\x20-\x7e\x97]/g,'?').replace(/([\\()])/g,'\\$1');
  const text=(s,x,y,size=11,bold=false,color='0.18 0.23 0.28')=>commands.push(`${color} rg BT /${bold?'F2':'F1'} ${size} Tf 1 0 0 1 ${x} ${y} Tm (${literal(s)}) Tj ET`);
  const line=y=>commands.push(`0.84 0.87 0.88 RG 0.6 w 48 ${y} m 547 ${y} l S`);
- text('SiPeKA',48,784,17,true,'0.08 0.28 0.32');text('SLIP GAJI',48,746,26,true);text('RAHASIA / HANYA UNTUK PENERIMA',48,722,9);
+ text('SiPeKA',48,documentIdentity?779:784,documentIdentity?14:17,true,'0.08 0.28 0.32');text('SLIP GAJI',48,746,26,true);text('RAHASIA / HANYA UNTUK PENERIMA',48,722,9);
  if(simulation)text('CONTOH — DATA SIMULASI',320,784,11,true,'0.6 0.22 0.13');
+ if(documentIdentity){const name=require('./report-identity').companyName(documentIdentity.company_name);const parts=name.match(/.{1,45}/g);parts.forEach((s,i)=>text(s,48,812-i*12,10,true));}
  line(701);text('Periode',48,675,10);text(row.period,170,675,12,true);
  text('Nama',48,649,10);text(plain(row.full_name,66),170,649,12,true);text('Username',48,625,10);text(plain(row.username,64),170,625);
- if(row.branch_name){text('Unit / cabang',48,601,10);text(plain(row.branch_name,64),170,601);}
- text('Referensi: '+plain(row.entry_id||'Tidak tersedia',64),48,579,8);
- text('Penerbitan: '+publicationDate(publishedAt)+' (WIB)',48,563,9);
+ const branch=documentIdentity?.branch_name||row.branch_name;const branchLines=branch?(documentIdentity?plain(branch,120).match(/.{1,40}/g):[plain(branch,64)]):[];if(branch){text('Unit / cabang',48,601,10);branchLines.forEach((s,i)=>text(s,170,601-i*11,documentIdentity?9:11));}const branchOffset=Math.max(0,branchLines.length-2)*11;
+ text('Referensi: '+plain(row.entry_id||'Tidak tersedia',64),48,579-branchOffset,8);
+ text('Penerbitan: '+publicationDate(publishedAt)+' (WIB)',48,563-branchOffset,9);
  line(545);text('PENGHASILAN',48,520,10,true);text('POTONGAN',311,520,10,true);
  // Helvetica amounts use font widths (digits 556, period/space 278).
  const width=(s,size,bold)=>[...s].reduce((n,c)=>n+(/\d/.test(c)?556:c==='R'?722:c==='p'?(bold?611:556):278),0)*size/1000;

@@ -943,7 +943,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   let applied = {branch:'all',dateFrom:nowDay.slice(0,7)+'-01',dateTo:day(new Date(Date.UTC(Number(nowDay.slice(0,4)),Number(nowDay.slice(5,7)),0,12)))};
   let snapshot = {rows:[],units:[],user:{}}, loaded = false, message = '';
   const money = n => {const value=String(n);if(!/^-?\d+$/.test(value))throw Error('Nominal rupiah tidak valid.');return 'Rp '+(value.startsWith('-')?'-':'')+value.replace(/^-/, '').replace(/\B(?=(\d{3})+(?!\d))/g,'.');};
-  const operationalIds=new Set(['profit-loss','cash-flow','fund-requests','daily-closings','audit-evidence']);
+  const operationalIds=new Set(['profit-loss','cash-flow','fund-requests','daily-closings','audit-evidence','fund-position','recorded-income-expense']);
   const currencyKeys=new Set(['amount','income','expense','net','system_balance','physical_cash','difference']);
   let generation=0;const operational=new Map();
   function identity(){const u=host.SipekaCurrentUser||snapshot.user;return JSON.stringify([u?.id,u?.role,u?.branch_id]);}
@@ -964,7 +964,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       if(r.id!==id||r.complete!==true||!Array.isArray(r.columns)||!r.columns.length||!Array.isArray(r.rows)||!Array.isArray(r.notices)||!Array.isArray(r.missingDatasets)||r.missingDatasets.length||r.filters?.branch!==f.branch||r.filters?.dateFrom!==f.dateFrom||r.filters?.dateTo!==f.dateTo||r.filters?.timezone!=='Asia/Jakarta')throw Error('Sumber operasional tidak lengkap; ekspor diblokir.');
       for(const c of r.columns){if(typeof c.key!=='string'||typeof c.label!=='string')throw Error('Schema laporan tidak valid.');}
       for(const row of r.rows)for(const c of r.columns)if(currencyKeys.has(c.key)&&row[c.key]!=null&&(typeof row[c.key]!=='string'||!/^ -?\d+$/.test(' '+row[c.key])))throw Error('Nominal sumber tidak valid; ekspor diblokir.');
-      if(r.totals)for(const k of ['income','expense','net'])if(typeof r.totals[k]!=='string'||!/^ -?\d+$/.test(' '+r.totals[k]))throw Error('Total sumber tidak valid.');
+      if(r.totals)for(const k of ['income','expense','net'])if(!(r.coverage&&r.totals[k]===null)&&(typeof r.totals[k]!=='string'||!/^ -?\d+$/.test(' '+r.totals[k])))throw Error('Total sumber tidak valid.');
       const item=catalog.find(x=>x.id===id);entry.report={...r,title:item.title,description:item.description,columns:r.columns.map(c=>({...c,type:currencyKeys.has(c.key)?'currency':c.key==='count'?'number':'text'})),filters:f,branch:pendingReport(id,f).branch,generatedAt:r.generated_at,template:false,approvedCount:r.totals?.count||0,readiness:r.readiness==='empty'?'Tidak ada data':'Sumber operasional tersedia'};return entry.report;
     }catch(error){if(current()){entry.error=error.message;delete entry.report;}throw error;}finally{delete entry.promise;}})();return entry.promise;
   }
@@ -975,6 +975,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   const C = (spec) => spec.map(s => col(...s));
   const base = [['branch_id','ID Cabang'],['branch','Cabang']];
   const defs = [
+    ['fund-position','reports','Ringkasan Posisi Dana (Neraca Terbatas)','Informasi internal; bukan laporan keuangan lengkap',[['item','Keterangan'],['amount','Nominal (Rp)','currency'],['status','Ketersediaan'],['basis','Dasar data']],[]],
+    ['recorded-income-expense','reports','Ringkasan Pendapatan & Beban Tercatat','Informasi internal; bukan laporan keuangan lengkap',[['item','Keterangan'],['amount','Nominal (Rp)','currency'],['status','Ketersediaan'],['basis','Dasar data']],[]],
     ['profit-loss','reports','Profit & Loss','Mutasi operasional: beban settlement pada tanggal review; bukan arus kas atau laba akrual.', [...base,['account_code','Kode Akun'],['account_name','Nama Akun'],['income','Pemasukan (Rp)','currency'],['expense','Pengeluaran (Rp)','currency'],['net','Mutasi Bersih (Rp)','currency']],[]],
     ['cash-flow','reports','Cash Flow','Mutasi kas tercatat per wadah pembayaran; bukan saldo akhir.',[...base,['method','Wadah Pembayaran'],['income','Kas Masuk (Rp)','currency'],['expense','Kas Keluar (Rp)','currency'],['net','Mutasi Bersih (Rp)','currency'],['count','Transaksi','number']],[]],
     ['expense-breakdown','reports','Expense Breakdown','Pengeluaran approved per cabang dan akun.',[...base,['account_code','Kode Beban'],['account_name','Nama Beban'],['count','Transaksi','number'],['expense','Pengeluaran (Rp)','currency'],['share','Porsi Beban Cabang (%)','number']],[]],
@@ -1069,18 +1071,31 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const cell=v=>{if(typeof v==='number'&&Number.isFinite(v))return String(v);let s=String(v??'');if(/^[\s\u0000-\u001f\u007f]*[=+\-@]|^[\u0000-\u001f\u007f]/.test(s)&&!s.startsWith("'"))s="'"+s;return [String.fromCharCode(34),',',CR,LF].some(c=>s.includes(c))?'"'+s.replace(/"/g,'""')+'"':s;};
     return BOM+[report.columns.map(csvHeader),...report.rows.map(r=>report.columns.map(c=>csvValue(c,r[c.key])))].map(r=>r.map(cell).join(',')).join(CR+LF)+CR+LF;
   }
-  function csvManifest(report){return {schema_version:'1.0',report_id:report.id,title:report.title,branch:report.branch,filters:report.filters,timezone:'Asia/Jakarta',currency:'IDR',generated_at:report.generatedAt,readiness:report.readiness,source_row_count:report.sourceCount,export_row_count:report.rows.length,provenance:report.provenance,complete:report.complete,neracaComplete:false,reconciliationComplete:false,endBalance:null,missing_datasets:report.missingDatasets,notices:report.notices,columns:report.columns.map(c=>({header:operationalIds.has(report.id)?c.key:csvHeader(c),source_key:c.key,type:c.type,unit:c.type==='currency'?'IDR':['rate','share','ratio'].includes(c.key)?'percent':null}))};}
-  function downloadManifest(id){const r=buildReport(id);requireSource(r);if(!host.document)throw new Error('Manifest membutuhkan browser.');const blob=new host.Blob([JSON.stringify(csvManifest(r),null,2)],{type:'application/json;charset=utf-8'}),url=host.URL.createObjectURL(blob),a=host.document.createElement('a');a.href=url;a.download=filename(r,'manifest.json');host.document.body.appendChild(a);a.click();a.remove();host.setTimeout(()=>host.URL.revokeObjectURL(url),1000);notify('Manifest metadata diunduh.');return r;}
+  function csvManifest(report){return {document_identity:report.documentIdentity||null,schema_version:'1.0',report_id:report.id,title:report.title,branch:report.branch,filters:report.filters,timezone:'Asia/Jakarta',currency:'IDR',generated_at:report.generatedAt,readiness:report.readiness,source_row_count:report.sourceCount,export_row_count:report.rows.length,provenance:report.provenance,complete:report.complete,coverage:report.coverage||null,snapshot:report.snapshot||null,subtitle:report.subtitle||null,neracaComplete:false,reconciliationComplete:false,endBalance:null,missing_datasets:report.missingDatasets,notices:report.notices,columns:report.columns.map(c=>({header:operationalIds.has(report.id)?c.key:csvHeader(c),source_key:c.key,type:c.type,unit:c.type==='currency'?'IDR':['rate','share','ratio'].includes(c.key)?'percent':null}))};}
+  async function downloadManifest(id){const r=await exportReport(id);if(!r)return null;requireSource(r);if(!host.document)throw new Error('Manifest membutuhkan browser.');const blob=new host.Blob([JSON.stringify(csvManifest(r),null,2)],{type:'application/json;charset=utf-8'}),url=host.URL.createObjectURL(blob),a=host.document.createElement('a');a.href=url;a.download=filename(r,'manifest.json');host.document.body.appendChild(a);a.click();a.remove();host.setTimeout(()=>host.URL.revokeObjectURL(url),1000);notify('Manifest metadata diunduh.');return r;}
   const slug=s=>String(s).normalize('NFKD').replace(/[^a-zA-Z0-9_-]+/g,'-').replace(/^-|-$/g,'').slice(0,70)||'cabang';
   const filename=(r,ext)=>`SiPeKA-${r.id}-${r.filters.branch==='all'?'all':slug(r.branch)+'-'+slug(r.filters.branch)}-${r.filters.dateFrom}_${r.filters.dateTo}.${ext}`;
   function notify(s) {message=s;if(host.document)host.document.querySelectorAll('[data-sr-status]').forEach(e=>{e.textContent=s;});}
-  function downloadCsv(id,input) {
-    if(operationalIds.has(id))return downloadOperationalCsv(id,input);
-    const r=buildReport(id);requireSource(r);if(!host.document)throw new Error('Unduhan CSV membutuhkan browser.');
-    const blob=new host.Blob([toCsv(r)],{type:'text/csv;charset=utf-8'}),url=host.URL.createObjectURL(blob),a=host.document.createElement('a');a.href=url;a.download=filename(r,'csv');host.document.body.appendChild(a);a.click();a.remove();host.setTimeout(()=>host.URL.revokeObjectURL(url),1000);notify((r.template?'Template CSV diunduh · Belum terhubung.':'CSV diunduh. ')+(!r.sourceCount&&!r.template?'Tidak ada transaksi pada periode ini.':''));return r;
+  async function exportReport(id,input) {
+    const epoch=generation,account=identity(),f=filters(input);
+    const decision=await host.SipekaDocumentIdentity.request({branch:f.branch});
+    if(!decision)return null;
+    const {branches,...metadata}=decision;
+    if(epoch!==generation||account!==identity())throw Error('Lingkup/akun berubah; unduhan dibatalkan.');
+    snapshot.units=branches.map(u=>({...u}));
+    const selected={...f,branch:metadata.branch_id};
+    if(operationalIds.has(id))await loadOperational(id,selected);
+    if(epoch!==generation||account!==identity())throw Error('Lingkup/akun berubah; unduhan dibatalkan.');
+    const r={...buildReport(id,selected),documentIdentity:metadata,branch:metadata.branch_name};requireSource(r);return r;
   }
-function downloadPdf(id) {
-  const r = buildReport(id);requireSource(r);const Ctor = host.jspdf?.jsPDF;
+  function saveManifest(r){saveBlob(new host.Blob([JSON.stringify(csvManifest(r),null,2)],{type:'application/json;charset=utf-8'}),r,'manifest.json');}
+  async function downloadCsv(id,input) {
+    const selected=await exportReport(id,input);if(!selected)return null;
+    if(operationalIds.has(id)){const r=await downloadOperationalCsv(id,selected.filters);saveManifest({...r,documentIdentity:selected.documentIdentity,branch:selected.branch});return r;}
+    const r=selected;saveBlob(new host.Blob([toCsv(r)],{type:'text/csv;charset=utf-8'}),r,'csv');saveManifest(r);notify('CSV dan metadata identitas diunduh.');return r;
+  }
+async function downloadPdf(id,input) {
+  const r = await exportReport(id,input);if(!r)return null;requireSource(r);const Ctor = host.jspdf?.jsPDF;
   if (!Ctor) throw new Error('PDF belum tersedia: muat jsPDF dan plugin autoTable inline.');
   const version = '2.0.0';
   const landscape = r.columns.length > 8 || ['ppn','pph21','pph4','pbjt','umkm','tax-checklist','general-ledger','management-report','audit-evidence'].includes(id);
@@ -1100,19 +1115,22 @@ function downloadPdf(id) {
   const wrapped = (value,x,y,width,size=9,bold=false,color=ink) => {font(size,bold,color);const lines=doc.splitTextToSize(text(value),width);doc.text(lines,x,y,{lineHeightFactor:1.25});return y+lines.length*size*0.3528*1.25;};
   const continuation = () => {
     font(13,true,green);doc.text('SiPeKA',M,13);font(8,false,muted);doc.text('LANJUTAN · '+id,W-M,13,{align:'right'});line(17);
-    let y=wrapped(r.title,M,23,usable,10,true);
+    let y=wrapped(r.documentIdentity.company_name,M,23,usable,10,true);
+    y=wrapped(r.title,M,y+1,usable,10,true);
     y=wrapped('Cabang: '+r.branch+' | Periode: '+r.filters.dateFrom+' / '+r.filters.dateTo+' WIB',M,y+1,usable,8,false,muted);
     return y+5;
   };
   font(23,true,green);doc.text('SiPeKA',M,19);font(8,true,muted);doc.text(category,W-M,18,{align:'right'});line(24);
-  let y=wrapped(r.title,M,34,usable,20,true)+4;
+  let y=wrapped(r.documentIdentity.company_name,M,32,usable,12,true)+3;
+  y=wrapped(r.title,M,y,usable,20,true)+4;
+  if(r.subtitle)y=wrapped(r.subtitle,M,y,usable,10,true)+4;
   const metaWidth=(usable-10)/2;
   font(7,true,muted);doc.text('CABANG / LINGKUP',M,y);doc.text('PERIODE LAPORAN · WIB',M+metaWidth+10,y);
   const leftEnd=wrapped(r.branch,M,y+5,metaWidth,10,true);
   const rightEnd=wrapped(r.filters.dateFrom+' / '+r.filters.dateTo,M+metaWidth+10,y+5,metaWidth,10,true);
   y=Math.max(leftEnd,rightEnd)+4;
   font(7,true,muted);doc.text('WAKTU PEMBUATAN · WIB',M,y);doc.text('IDENTITAS LAPORAN',M+metaWidth+10,y);
-  const timeEnd=wrapped(r.generatedAt || stamp(),M,y+5,metaWidth,8.5);
+  const timeEnd=wrapped(r.generatedAt&&Number.isFinite(Date.parse(r.generatedAt))?new Intl.DateTimeFormat('id-ID',{timeZone:'Asia/Jakarta',dateStyle:'medium',timeStyle:'medium',hour12:false}).format(new Date(r.generatedAt))+' WIB':r.generatedAt || stamp(),M,y+5,metaWidth,8.5);
   const idEnd=wrapped(id+' · v'+version,M+metaWidth+10,y+5,metaWidth,8.5);
   y=Math.max(timeEnd,idEnd)+4;
   y=wrapped('STATUS DATA  /  '+state+(r.template ? ' · Template' : ''),M,y,usable,8,true,green)+5;
@@ -1137,7 +1155,8 @@ function downloadPdf(id) {
   const continuationY=(() => {
     font(10,true);const a=doc.splitTextToSize(text(r.title),usable).length*10*0.3528*1.25;
     font(8,false);const b=doc.splitTextToSize('Cabang: '+r.branch+' | Periode: '+r.filters.dateFrom+' / '+r.filters.dateTo+' WIB',usable).length*8*0.3528*1.25;
-    return 23+a+1+b+5;
+    font(10,true);const companyHeight=doc.splitTextToSize(r.documentIdentity.company_name,usable).length*10*0.3528*1.25;
+    return 23+companyHeight+1+a+1+b+5;
   })();
   const allColumns=r.columns;
   const groups=allColumns.length>8 ? [allColumns.slice(0,7),...Array.from({length:Math.ceil((allColumns.length-7)/6)},(_,i)=>[allColumns[0],...allColumns.slice(7+i*6,13+i*6)])] : [allColumns];
@@ -1150,7 +1169,8 @@ function downloadPdf(id) {
   r.columns.forEach((c,i)=>{columnStyles[i]={cellWidth:usable*weights[i]/sum,halign:c.type==='text' ? 'left' : 'right'};});
   const body=r.rows.map(row=>r.columns.map(c=>{
     const v=row[c.key];
-    if(c.type==='currency'&&v!=null&&v!=='')return money(v).replace(/^Rp /,'');
+    if(c.type==='currency'&&v!=null&&v!==''){const raw=String(v),formatted=money(raw.replace(/^-/,'')).replace(/^Rp /,'');return raw.startsWith('-')?'('+formatted+')':formatted;}
+    if(c.type==='currency'&&v==null&&r.subtitle)return 'Belum tersedia';
     if(typeof v==='number' && Number.isFinite(v)) {
       // Unit appears in original column label. Compact values keep wide registers readable.
       if(c.type==='currency') return v<0 ? '('+Math.abs(v).toLocaleString('id-ID')+')' : v.toLocaleString('id-ID');
@@ -1196,7 +1216,7 @@ function downloadPdf(id) {
   return doc;
 }
   function preview(r) {
-    return '<div class="sr-preview"><h3>'+esc(r.title)+'</h3><p>'+esc(r.readiness)+' · '+esc(r.sourceCount)+' baris sumber · '+esc(r.provenance)+'</p><div class="sr-table-wrap"><table><thead><tr>'+r.columns.map(c=>'<th>'+esc(c.label)+'</th>').join('')+'</tr></thead><tbody>'+r.rows.slice(0,8).map(row=>'<tr>'+r.columns.map(c=>'<td class="'+(c.type!=='text'?'sr-number':'')+'">'+esc(c.type==='currency'&&row[c.key]!=null&&row[c.key]!==''?money(row[c.key]):row[c.key])+'</td>').join('')+'</tr>').join('')+'</tbody></table></div><p>'+esc(r.rows.length>8?'Pratinjau 8 dari '+r.rows.length+' baris. Unduhan berisi seluruh baris.':!r.rows.length?'Tidak ada transaksi pada filter ini.':'Seluruh baris ditampilkan.')+'</p><p>'+esc(r.notices.join(' '))+'</p></div>';
+    return '<div class="sr-preview"><h3>'+esc(r.title)+'</h3><p>'+esc(r.readiness)+' · '+esc(r.sourceCount)+' baris sumber · '+esc(r.provenance)+'</p><div class="sr-table-wrap"><table><thead><tr>'+r.columns.map(c=>'<th>'+esc(c.label)+'</th>').join('')+'</tr></thead><tbody>'+r.rows.slice(0,8).map(row=>'<tr>'+r.columns.map(c=>'<td class="'+(c.type!=='text'?'sr-number':'')+'">'+esc(c.type==='currency'&&row[c.key]!=null&&row[c.key]!==''?money(row[c.key]):c.type==='currency'&&row[c.key]==null?'Belum tersedia':row[c.key])+'</td>').join('')+'</tr>').join('')+'</tbody></table></div><p>'+esc(r.rows.length>8?'Pratinjau 8 dari '+r.rows.length+' baris. Unduhan berisi seluruh baris.':!r.rows.length?'Tidak ada transaksi pada filter ini.':'Seluruh baris ditampilkan.')+'</p><p>'+esc(r.notices.join(' '))+'</p></div>';
   }
   function render(section) {
     if(!['reports','tax','export'].includes(section))return '';
@@ -1209,7 +1229,7 @@ function downloadPdf(id) {
     const pages=[];if(root.matches?.('[data-sr-page]'))pages.push(root);pages.push(...root.querySelectorAll('[data-sr-page]'));
     pages.forEach(page=>{
       const form=page.querySelector('[data-sr-filter]');if(form)form.onsubmit=e=>{e.preventDefault();try{const next=filters({branch:form.elements.branch.value,dateFrom:form.elements.dateFrom.value,dateTo:form.elements.dateTo.value});invalidateOperational();applied=next;message='Filter diterapkan: '+next.dateFrom+' – '+next.dateTo;const section=page.dataset.srPage;const parent=page.parentNode;page.outerHTML=render(section);bind(root===page?parent:root);}catch(err){const status=page.querySelector('[data-sr-status]');status.textContent=err.message;status.setAttribute('role','alert');}};
-      page.querySelectorAll('[data-sr-action]').forEach(button=>button.onclick=async()=>{try{const id=button.dataset.srId,action=button.dataset.srAction,epoch=generation,account=identity();if(operationalIds.has(id)){await loadOperational(id);if(epoch!==generation||account!==identity()||!page.isConnected)return;}if(action==='preview'){page.querySelector('[data-sr-preview]').innerHTML=preview(buildReport(id));}else if(action==='csv')await downloadCsv(id);else if(action==='manifest')downloadManifest(id);else downloadPdf(id);}catch(err){notify(err.message);}});
+      page.querySelectorAll('[data-sr-action]').forEach(button=>button.onclick=async()=>{try{const id=button.dataset.srId,action=button.dataset.srAction,epoch=generation,account=identity();if(operationalIds.has(id)){await loadOperational(id);if(epoch!==generation||account!==identity()||!page.isConnected)return;}if(action==='preview'){page.querySelector('[data-sr-preview]').innerHTML=preview(buildReport(id));}else if(action==='csv')await downloadCsv(id);else if(action==='manifest')await downloadManifest(id);else await downloadPdf(id);}catch(err){notify(err.message);}});
       const epoch=generation,account=identity();
       page.querySelectorAll('[data-sr-id]').forEach(button=>{if(operationalIds.has(button.dataset.srId))button.disabled=true;});
       const ids=[...new Set([...page.querySelectorAll('[data-sr-id]')].map(b=>b.dataset.srId).filter(id=>operationalIds.has(id)))];
@@ -1220,6 +1240,73 @@ function downloadPdf(id) {
 })(typeof window!=='undefined'?window:globalThis);
 
 </script>
+<style>
+.sipeka-document-identity{width:min(480px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;box-sizing:border-box;border:1px solid #b4c9bc;border-radius:16px;padding:24px;background:#fff;color:#24352b}.sipeka-document-identity::backdrop{background:rgba(10,30,20,.55)}.sipeka-document-identity label{display:block;margin:16px 0 6px;font-weight:600}.sipeka-document-identity input,.sipeka-document-identity select{box-sizing:border-box;width:100%;min-height:44px;padding:10px;border:1px solid #71877a;border-radius:8px;font-size:16px}.sipeka-document-identity p{overflow-wrap:anywhere;line-height:1.5}.document-identity-actions{display:flex;gap:12px;justify-content:flex-end}.document-identity-actions button{min-height:44px;padding:10px 18px;border:1px solid #16794f;border-radius:8px;background:#fff;color:#166343;font:inherit;cursor:pointer}.document-identity-actions button[type=submit]{background:#16794f;color:#fff}.sipeka-document-identity :focus-visible{outline:3px solid #16794f;outline-offset:3px}#documentIdentityError{color:#a22020}
+</style>
+<script id="sipeka-document-identity">
+/* Embedded in financial-dashboard.html. Document identity lives only for this action. */
+(function(host){
+'use strict';
+let pending=false;
+const account=()=>String(host.SipekaCurrentUser?.id||'')+'|'+String(host.SipekaCurrentUser?.role||'');
+function validate(value){const name=String(value??'').trim();if(!name||name.length>80||/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(name))throw Error('Isi Nama Perusahaan, 1–80 karakter tanpa karakter kontrol.');return name;}
+async function request({branch='all',entryId,lockBranch=false}={}){
+ if(pending)throw Error('Selesaikan dialog identitas yang sedang terbuka.');
+ pending=true;const who=account(),trigger=host.document.activeElement;
+ let dialog;
+ try{
+  const response=await host.fetch(entryId?'/api/payroll/entries/'+encodeURIComponent(entryId)+'/identity':'/api/units'+(host.SipekaCurrentUser?.role==='OWNER'?'?include_archived=1':''),{credentials:'same-origin',cache:'no-store'});
+  if(!response.ok)throw Error('Identitas cabang tidak tersedia (HTTP '+response.status+').');
+  const result=await response.json();if(who!==account())throw Error('Akun berubah; unduhan dibatalkan.');
+  const units=entryId?[{id:result.branch_id,name:result.branch_name}]:result;
+  if(!Array.isArray(units)||!units.length||units.some(u=>typeof u.id!=='string'||!u.id||typeof u.name!=='string'))throw Error('Cabang backend tidak tersedia.');
+  if(entryId)branch=result.branch_id;
+  const all=!entryId&&host.SipekaCurrentUser?.role==='OWNER';
+  if(branch!=='all'&&!units.some(u=>u.id===branch))throw Error('Cabang sudah berubah; muat ulang laporan.');
+  dialog=host.document.createElement('dialog');dialog.className='sipeka-document-identity';
+  dialog.setAttribute('aria-labelledby','documentIdentityTitle');dialog.setAttribute('aria-describedby','documentIdentityHelp');
+  dialog.innerHTML='<form novalidate><h2 id="documentIdentityTitle">Identitas dokumen</h2><p id="documentIdentityHelp">Isi identitas untuk unduhan ini. Nama perusahaan tidak disimpan ke master perusahaan.</p><label for="documentCompany">Nama Perusahaan</label><input id="documentCompany" name="company" required maxlength="80" autocomplete="off" aria-describedby="documentIdentityError"><label for="documentBranch">Cabang</label><select id="documentBranch" name="branch" required></select><p data-identity-note></p><p id="documentIdentityError" role="alert" aria-live="assertive"></p><div class="document-identity-actions"><button type="button" data-identity-cancel>Batal</button><button type="submit">Unduh dokumen</button></div></form>';
+  const form=dialog.querySelector('form'),select=form.elements.branch;
+  if(all)select.add(new Option('Semua Cabang','all'));
+  units.forEach(u=>select.add(new Option(u.name,u.id)));
+  select.value=branch==='all'&&!all?units[0].id:branch;select.disabled=!!entryId||lockBranch;
+  dialog.querySelector('[data-identity-note]').textContent=entryId?'Cabang mengikuti Staff penerima dan diperiksa kembali oleh server.':lockBranch?'Cabang mengikuti filter tabel yang sedang diekspor.':'Data laporan akan difilter sesuai cabang yang dipilih.';
+  host.document.body.append(dialog);dialog.showModal();form.elements.company.focus();
+  return await new Promise(resolve=>{
+   const finish=value=>{dialog.close();resolve(value);};
+   dialog.addEventListener('cancel',e=>{e.preventDefault();finish(null);});
+   dialog.querySelector('[data-identity-cancel]').onclick=()=>finish(null);
+   form.onsubmit=e=>{e.preventDefault();try{if(who!==account())throw Error('Akun berubah; batalkan dan muat ulang.');const company_name=validate(form.elements.company.value);form.elements.company.value=company_name;if(!select.value)throw Error('Pilih cabang.');finish({company_name,branch_id:select.value,branch_name:select.selectedOptions[0].textContent,branches:units});}catch(error){form.elements.company.setAttribute('aria-invalid','true');dialog.querySelector('#documentIdentityError').textContent=error.message;form.elements.company.focus();}};
+  });
+ }finally{dialog?.remove();pending=false;if(trigger?.isConnected)trigger.focus();}
+}
+host.SipekaDocumentIdentity={request,validate};
+})(window);
+
+</script>
+<script id="sipeka-quarterly-owner">
+/* Embedded into the existing dashboard; no standalone static route required. */
+(function(){
+'use strict';
+let chosen=null,request=0,controller;
+const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money=v=>v==null?'Tidak tersedia':'Rp '+BigInt(v).toLocaleString('id-ID');
+function selection(){if(!chosen){const d=new Date(Date.now()+25200000);chosen={year:d.getUTCFullYear(),quarter:Math.floor(d.getUTCMonth()/3)+1};}return chosen;}
+function render(){const s=selection();return '<section class="card quarterly-owner" data-quarterly-owner aria-label="Analisa per tiga bulan"><div class="card-head"><div><h2>Analisa per 3 bulan</h2><p>Triwulan kalender · tanggal pencatatan dan event WIB</p></div></div><form data-quarterly-filter class="quarterly-controls"><label class="field"><span>Tahun</span><input class="control" name="year" type="number" min="2000" max="2100" required value="'+s.year+'"></label><label class="field"><span>Triwulan</span><select class="control" name="quarter">'+['Jan–Mar','Apr–Jun','Jul–Sep','Okt–Des'].map((v,i)=>'<option value="'+(i+1)+'"'+(s.quarter===i+1?' selected':'')+'>Q'+(i+1)+' · '+v+'</option>').join('')+'</select></label><button class="btn primary" type="submit">Tampilkan</button></form><div data-quarterly-result role="status" aria-live="polite">Memuat analisa…</div></section>';}
+function output(r){const labels=[['requests','Pengajuan'],['requestAmount','Nominal pengajuan'],['disbursements','Dicairkan'],['spending','Belanja disetujui'],['returns','Dikembalikan']];const value=(row,k)=>k==='requests'?row[k]:money(row[k]);return '<p>'+escape(r.filters.dateFrom)+' – '+escape(r.filters.dateTo)+' WIB · '+(r.readiness==='empty'?'Tidak ada data tercatat pada periode ini.':r.periodClosed?'Periode selesai.':'Periode berjalan; belum tiga bulan penuh.')+'</p><div class="table-wrap"><table class="responsive"><caption>Rincian bulanan dan total triwulan</caption><thead><tr><th>Bulan</th>'+labels.map(x=>'<th>'+x[1]+'</th>').join('')+'</tr></thead><tbody>'+[...r.months,{month:'Total triwulan',...r.totals}].map(row=>'<tr><td data-label="Bulan">'+escape(row.month)+'</td>'+labels.map(([k,l])=>'<td data-label="'+l+'">'+escape(value(row,k))+'</td>').join('')+'</tr>').join('')+'</tbody></table></div><div class="quarterly-snapshot"><p><strong>Snapshot saat ini</strong> · bukan posisi akhir triwulan</p><p>Outstanding: '+escape(money(r.snapshot.outstanding))+' · Pengajuan menunggu approval: '+escape(r.snapshot.pendingRequests)+' · Settlement menunggu review: '+escape(r.snapshot.pendingSettlements)+'</p></div><p>Perbandingan Q sebelumnya: '+(r.comparison.available?escape(r.comparison.previousPeriod.from)+' – '+escape(r.comparison.previousPeriod.to)+' WIB · selisih mutasi tercatat: '+labels.map(([k,l])=>l+' '+escape(k==='requests'?r.comparison.delta[k]:money(r.comparison.delta[k]))).join(' · '):'belum tersedia; periode berjalan atau periode pembanding kosong.')+'</p><p class="hint">'+r.notices.map(escape).join('<br>')+'</p>';}
+function bind(){controller?.abort();const epoch=++request,root=document.querySelector('[data-quarterly-owner]'),u=window.SipekaCurrentUser;if(!root||String(u?.role).toUpperCase()!=='OWNER')return;
+ const identity=JSON.stringify([u.id,u.role,window.__sipekaBranch]),form=root.querySelector('form'),target=root.querySelector('[data-quarterly-result]');
+ const current=()=>epoch===request&&root.isConnected&&identity===JSON.stringify([window.SipekaCurrentUser?.id,window.SipekaCurrentUser?.role,window.__sipekaBranch]);
+ form.onsubmit=e=>{e.preventDefault();chosen={year:Number(form.elements.year.value),quarter:Number(form.elements.quarter.value)};bind();};
+ const branch=window.__sipekaBranch==='all'?'all':(window.SipekaUnits||[]).find(x=>x.name===window.__sipekaBranch)?.id;
+ if(!branch){target.textContent='Cabang tidak tersedia.';return;}controller=new AbortController();target.textContent='Memuat analisa…';
+ fetch('/api/reports/quarterly-owner?'+new URLSearchParams({...selection(),branch_id:branch}),{credentials:'same-origin',cache:'no-store',signal:controller.signal}).then(async response=>{if(!response.ok)throw Error('Analisa tidak tersedia (HTTP '+response.status+').');return response.json();}).then(r=>{if(current())target.innerHTML=output(r);}).catch(e=>{if(!current()||e.name==='AbortError')return;target.textContent=e.message+' Data belum tersedia, bukan nol. ';const b=document.createElement('button');b.className='btn';b.textContent='Coba lagi';b.onclick=bind;target.append(b);});
+}
+window.SipekaQuarterly={render,bind,output};
+})();
+
+</script>
+<style>.quarterly-owner{margin:20px 0;min-width:0}.quarterly-controls{display:flex;flex-wrap:wrap;gap:16px;align-items:end;margin-bottom:20px}.quarterly-controls .field{min-width:150px;flex:1}.quarterly-snapshot{padding:16px 0;border-top:1px solid var(--line);margin-top:16px}.quarterly-owner caption{text-align:left;padding:12px 0}.quarterly-owner td{overflow-wrap:anywhere}@media(max-width:600px){.quarterly-controls{flex-direction:column;align-items:stretch}.quarterly-controls .field{width:100%}}</style>
 <style id="sipeka-full-ui-local">
 /* Measured mobile subtab clipping; retain accepted navigation and colors. */
 body .section-nav{display:flex;flex-wrap:wrap;overflow:visible;gap:6px}
@@ -1499,10 +1586,10 @@ loginForm.onsubmit=e=>{e.preventDefault();window.SipekaAuth&&window.SipekaAuth.l
 document.querySelector('[data-login-help]').onclick=()=>{loginError.textContent='Hubungi Owner / CEO untuk mengatur ulang akses akun.'};
 const I=(name)=>({dashboard:'<path d="M4 4h6v7H4zM14 4h6v4h-6zM14 12h6v8h-6zM4 15h6v5H4z"/>',cash:'<path d="M4 18V9m5 9V5m6 13v-7m5 7V3"/>',calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>',ledger:'<path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/>',cost:'<path d="M12 3v18M17 7c0-2-2-3-5-3S7 5 7 7s2 3 5 3 5 1 5 3-2 4-5 4-5-2-5-4"/>',branch:'<path d="M4 20V8l8-5 8 5v12M8 20v-6h8v6"/>',check:'<path d="m5 12 4 4L19 6"/>',report:'<path d="M6 3h9l3 3v15H6zM9 11h6M9 15h6"/>',dewi:'<path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2"/><circle cx="12" cy="12" r="3"/>',scan:'<path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4M8 9h8v6H8z"/>',audit:'<path d="m12 3 8 4v5c0 5-3 8-8 9-5-1-8-4-8-9V7zM9 12l2 2 4-5"/>',users:'<circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20c0-4 2-6 5-6s5 2 5 6M14 15c3 0 5 2 5 5"/>',settings:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-2-2-3-2.6 1A8 8 0 0 0 15 6l-.4-3h-4l-.5 3A7 7 0 0 0 8 7L5 6 3 9l2 2a8 8 0 0 0 0 2l-2 2 2 3 3-1a7 7 0 0 0 2 1l.5 3h4l.4-3a7 7 0 0 0 2-1l3 1 2-3-2-2z"/>'})[name]||'<circle cx="12" cy="12" r="8"/>';
 const icon=n=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">'+I(n)+'</svg>';
-const navGroups=[['WORKSPACE',[['dashboard','Overview','dashboard'],['calendar','Calendar','calendar'],['transactions','Transactions','ledger'],['closing','Closing Shift','check']]],['CONTROL',[['approvals','Approvals','check']]],['REPORTING',[['reports','Reports & Export','report'],['accounting','Jurnal & Mutasi','ledger']]],['INTELLIGENCE',[['audit','Widya Audit','audit']]],['SYSTEM',[['organization','Organization','settings'],['payslip','Slip Gaji','report'],['settings','Settings','settings']]]];
+const navGroups=[['WORKSPACE',[['dashboard','Overview','dashboard'],['calendar','Calendar','calendar'],['transactions','Transactions','ledger'],['closing','Closing Shift','check']]],['CONTROL',[['approvals','Approvals','check']]],['REPORTING',[['reports','Reports & Export','report'],['accounting','Jurnal & Mutasi','ledger']]],['INTELLIGENCE',[['audit','Widya Audit','audit']]],['SYSTEM',[['organization','Organization','settings'],['settings','Settings','settings']]]];
 const viewClusters={cashflow:'dashboard',summary:'dashboard',branches:'dashboard',ledger:'transactions',expenses:'transactions',income:'transactions',closing:'closing',manual:'transactions',scan:'transactions',budget:'cost',vendor:'cost',tax:'reports',export:'reports',branchesSys:'organization',users:'organization',settings:'settings',insights:'dewi'};
-const sectionGroups={dashboard:[['dashboard','Overview'],['cashflow','Cash Flow'],['summary','Financial Summary'],['branches','Pertanggungjawaban Cabang']],transactions:[['transactions','Transactions'],['ledger','Single Ledger'],['expenses','Expenses'],['income','Income']],closing:[['closing','Daily Report Closing']],cost:[['cost','Cost Control'],['budget','Budget'],['vendor','Vendor Audit']],reports:[['reports','Financial Reports'],['export','Export Center']],organization:[['organization','Organization'],['branchesSys','Branches'],['users','Users & Roles'],['settings','Settings']]};
-const rolePermissions={owner:new Set(['dashboard','calendar','cashflow','transactions','ledger','expenses','income','cost','budget','vendor','branches','approvals','tax','export','reports','audit','insights','users','branchesSys','settings','organization','dewi','scan','manual','payslip']),staff:new Set(['dashboard','transactions','scan','manual','closing','settings','payslip'])};
+const sectionGroups={dashboard:[['dashboard','Overview'],['cashflow','Cash Flow'],['summary','Financial Summary'],['branches','Pertanggungjawaban Cabang']],transactions:[['transactions','Transactions'],['ledger','Single Ledger'],['expenses','Expenses'],['income','Income']],closing:[['closing','Daily Report Closing']],cost:[['cost','Cost Control'],['budget','Budget'],['vendor','Vendor Audit']],reports:[['reports','Financial Reports'],['export','Export Center']],organization:[['organization','Organization'],['branchesSys','Branches'],['users','Device & Unit Bisnis'],['settings','Settings']]};
+const rolePermissions={owner:new Set(['dashboard','calendar','cashflow','transactions','ledger','expenses','income','cost','budget','vendor','branches','approvals','tax','export','reports','audit','insights','users','branchesSys','settings','organization','dewi','scan','manual']),staff:new Set(['dashboard','transactions','scan','manual','closing','settings'])};
 function canAccess(target){if(['cost','budget','vendor','tax'].includes(target))return false;if(target==='payslip')return role==='owner'||role==='staff';if(role==='owner'&&target==='closing')return false;if(role==='staff'&&(target==='dewi'||target.startsWith('dewi')||target==='insights'||target==='audit'||target==='approvals'))return false;return role==='owner'||(rolePermissions[role]&&rolePermissions[role].has(target))}
 function navRoot(target){return viewClusters[target]||target}
 function sectionNav(){if(['scan','manual'].includes(view))return '';const root=navRoot(view),items=(sectionGroups[root]||[]).filter(x=>canAccess(x[0]));if(items.length<2)return'';return'<nav class="section-nav" aria-label="'+root+' sections">'+items.map(x=>'<button class="'+(x[0]===view?'active':'')+'" data-view="'+x[0]+'">'+x[1]+'</button>').join('')+'</nav>'}
@@ -1630,7 +1717,8 @@ function operationalSummary(branchId){
  return window.SipekaOperations.summarize({rows:role==='staff'?rows.filter(r=>r.status!=='APPROVED'||advances.some(a=>String(a.advanceId)===String(r.id))):rows,advances,available:!!window.SipekaCurrentUser&&!window.SipekaAdvanceUnavailable&&!window.SipekaTransactionUnavailable});
 }
 function operationalCards(){const m=operationalSummary(),money=n=>n===null?'Tidak tersedia':'Rp '+BigInt(n).toLocaleString('id-ID');return '<p role="status">'+(m.complete?(role==='staff'?'Pengajuan milik Anda; pencairan, belanja dan pengembalian hanya advance belum selesai.':'Snapshot pengajuan tunai yang tersedia dalam lingkup cabang; bukan total sepanjang waktu.'):'Data belum lengkap · sumber transaksi / lifecycle tidak tersedia. Muat ulang; jangan anggap nol.')+'</p><section class="grid kpis operational-kpis">'+kpi('Pengajuan menunggu approval',m.pendingCount===null?'Tidak tersedia':m.pendingCount+' pengajuan','Belum disetujui Owner',0,'')+kpi('Disetujui, belum dicairkan',money(m.approvedUndisbursed),'Approval pengajuan bukan penyerahan dana',0,'')+kpi('Dana dicairkan',money(m.disbursed),'Event DISBURSE · bukan belanja',0,'')+kpi('Belanja settlement disetujui',money(m.settled),'Event APPROVE nota · bukan nota biasa / verifikasi file',0,'')+kpi('Pertanggungjawaban outstanding',money(m.outstanding),'Dicairkan − settlement disetujui − dikembalikan',1,'')+kpi('Dana dikembalikan',money(m.returned),'Event RETURN · sisa perlu dikembalikan: '+money(m.returnDue),0,'')+'</section><p class="hint">Lifecycle tersedia untuk pengajuan kas laci tunai. Nota biasa terpisah; tidak masuk belanja settlement. Bukan saldo akhir atau laba/rugi.</p>';}
-function ownerDashboard(){return pageHead('Operasional','Pengajuan & Pertanggungjawaban','Review pengajuan, pencairan dana, nota dan pengembalian · '+escHtml(scopeName())+'.','<span class="scope-pill">'+escHtml(scopeName())+'</span><button class="btn" data-view="reports">View report</button><button class="btn primary" data-view="approvals">Review approval</button>')+operationalCards()+'<section class="grid dash-grid"><article class="card"><div class="card-head"><div><h2>Alur dana operasional</h2><p>Pengajuan Staff · keputusan Owner · serah dana · review nota · pengembalian</p></div></div><p>Persetujuan pengajuan tidak otomatis mencairkan dana. Nota settlement baru menjadi belanja setelah review Owner. Nota biasa tetap berada di ledger terpisah.</p><div class="page-actions"><button class="btn" data-view="approvals">Review pengajuan</button><button class="btn" data-view="transactions">Lihat nota & transaksi</button></div></article><article class="card"><div class="card-head"><div><h2>Kontrol pertanggungjawaban</h2><p>Outstanding bukan kerugian atau saldo kas.</p></div></div><p>Selesaikan nota dan konfirmasi pengembalian berdasarkan bukti. Laporan Owner tetap tersedia melalui Reports & Export.</p><button class="btn" data-view="reports">Buka laporan</button></article></section><article class="card table-card">'+branchTable(5)+'</article>'+advancePanel()+'<article class="card table-card">'+transactionTable(6)+'</article>';}
+function quarterlyOwnerSection(){return window.SipekaQuarterly?.render()||'';}
+function ownerDashboard(){return pageHead('Operasional','Pengajuan & Pertanggungjawaban','Review pengajuan, pencairan dana, nota dan pengembalian · '+escHtml(scopeName())+'.','<span class="scope-pill">'+escHtml(scopeName())+'</span><button class="btn" data-view="reports">View report</button><button class="btn primary" data-view="approvals">Review approval</button>')+operationalCards()+quarterlyOwnerSection()+'<section class="grid dash-grid"><article class="card"><div class="card-head"><div><h2>Alur dana operasional</h2><p>Pengajuan Staff · keputusan Owner · serah dana · review nota · pengembalian</p></div></div><p>Persetujuan pengajuan tidak otomatis mencairkan dana. Nota settlement baru menjadi belanja setelah review Owner. Nota biasa tetap berada di ledger terpisah.</p><div class="page-actions"><button class="btn" data-view="approvals">Review pengajuan</button><button class="btn" data-view="transactions">Lihat nota & transaksi</button></div></article><article class="card"><div class="card-head"><div><h2>Kontrol pertanggungjawaban</h2><p>Outstanding bukan kerugian atau saldo kas.</p></div></div><p>Selesaikan nota dan konfirmasi pengembalian berdasarkan bukti. Laporan Owner tetap tersedia melalui Reports & Export.</p><button class="btn" data-view="reports">Buka laporan</button></article></section><article class="card table-card">'+branchTable(5)+'</article>'+advancePanel()+'<article class="card table-card">'+transactionTable(6)+'</article>';}
 
 function chart(){
   const data=realDataChartBuckets(),range=chartPeriodRange(),source=realDataRealized(realDataRows('cash')).filter(r=>{const d=realDataDate(r.created_at);return d&&d>=range.from&&d<=range.to;});
@@ -1920,7 +2008,7 @@ function usersPage(){
     return "<div class=\"field\" style=\"display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);\">"
       + "<div>"
       + "  <strong>" + fullNameEsc + "</strong> <small style=\"color:var(--muted);\">@" + uname + "</small>"
-      + "  <div style=\"font-size:11px;color:var(--sub);margin-top:2px;\"><span class=\"tag " + (isStaff ? "" : "ok") + "\">" + u.role + "</span> · Cabang: <b>" + bName + "</b></div>"
+      + "  <div style=\"font-size:11px;color:var(--sub);margin-top:2px;\"><span class=\"tag " + (isStaff ? "" : "ok") + "\">" + (isStaff ? "DEVICE" : "OWNER") + "</span> · Cabang: <b>" + bName + "</b></div>"
       + "</div>"
       + "<div style=\"display:flex;align-items:center;gap:6px;\">"
       + (isStaff ? ("<button class=\"btn btn-sm sipeka-reset-pwd\" type=\"button\" data-uid='" + uid + "'  data-uname='" + uname + "' style=\"font-size:11px;padding:4px 10px;\">Reset Sandi</button>") : "")
@@ -1928,26 +2016,26 @@ function usersPage(){
       + "</div>";
   }).join("");
 
-  return pageHead("System control", "Users & Roles", "Manajemen pengguna, penugasan staf per cabang, dan kontrol akses.")
+  return (window.SipekaDeviceStaff?.directory()||'')+pageHead("System control", "Device & Unit Bisnis", "Akun operasional milik device; nama Staff dikelola terpisah.")
   + "<section class=\"grid two-col\">"
   + "<article class=\"card\">"
-  + "  <div class=\"card-head\"><div><h2>Daftar Pengguna & Staff</h2><p>Owner dapat mengelola dan mereset kata sandi staf langsung</p></div><button class=\"btn btn-sm\" type=\"button\" onclick=\"window.SipekaLoadAllUsers()\">Refresh</button></div>"
+  + "  <div class=\"card-head\"><div><h2>Daftar Akun Device & Owner</h2><p>Akun lama tetap valid sebagai device unit</p></div><button class=\"btn btn-sm\" type=\"button\" onclick=\"window.SipekaLoadAllUsers()\">Refresh</button></div>"
   + "  <div class=\"fields\" id=\"usersListContainer\" style=\"display:flex;flex-direction:column;gap:0;\">"
-  + (staffCards || "<div class=\"field\"><span>Belum ada staf terdaftar</span><strong>—</strong></div>")
+  + (staffCards || "<div class=\"field\"><span>Belum ada device terdaftar</span><strong>—</strong></div>")
   + "  </div>"
   + "</article>"
   + "<article class=\"card\">"
-  + "  <div class=\"card-head\"><div><h2>Tambah Staff Baru</h2><p>Daftarkan akun staf baru dan tautkan ke cabang operasional</p></div></div>"
+  + "  <div class=\"card-head\"><div><h2>Tambah Device Baru</h2><p>Daftarkan akun device dan tautkan ke unit bisnis</p></div></div>"
   + "  <form id=\"newUserForm\" onsubmit=\"event.preventDefault(); if(window.SipekaCreateStaff) window.SipekaCreateStaff();\" style=\"display:flex;flex-direction:column;gap:12px;\">"
   + "    <div class=\"fields\">"
-  + "      <div class=\"field\"><span>Username</span><input type=\"text\" id=\"nuUsername\" class=\"control\" placeholder=\"misal: rani\" style=\"width:100%;\" required></div>"
-  + "      <div class=\"field\"><span>Nama Lengkap</span><input type=\"text\" id=\"nuFullName\" class=\"control\" placeholder=\"misal: Rani Wijaya\" style=\"width:100%;\" required></div>"
+  + "      <div class=\"field\"><span>Username</span><input type=\"text\" id=\"nuUsername\" class=\"control\" placeholder=\"misal: laundry_pusat_2\" style=\"width:100%;\" required></div>"
+  + "      <div class=\"field\"><span>Label Device</span><input type=\"text\" id=\"nuFullName\" class=\"control\" placeholder=\"misal: Device Laundry Pusat 2\" style=\"width:100%;\" required></div>"
   + "      <div class=\"field\"><span>Cabang Penugasan</span><select id=\"nuBranch\" class=\"control\" style=\"width:100%;\">" + branchOptions + "</select></div>"
   + "      <div class=\"field\"><span>Password Awal</span><input type=\"password\" id=\"nuPassword\" class=\"control\" placeholder=\"Minimal 6 karakter, minimal 1 huruf besar A-Z; angka dan simbol tidak wajib\" minlength=\"6\" maxlength=\"1024\" pattern=\"[\\s\\S]*[A-Z][\\s\\S]*\" style=\"width:100%;\" required></div>"
   + "    </div>"
   + "    <div id=\"nuMsg\" style=\"font-size:12px;min-height:16px;margin-top:2px;\"></div>"
   + "    <div style=\"display:flex;justify-content:flex-end;margin-top:4px;\">"
-  + "      <button type=\"submit\" id=\"nuSubmitBtn\" class=\"btn primary\" style=\"padding:8px 20px;font-weight:600;\">+ Daftarkan Staff</button>"
+  + "      <button type=\"submit\" id=\"nuSubmitBtn\" class=\"btn primary\" style=\"padding:8px 20px;font-weight:600;\">+ Daftarkan Device</button>"
   + "    </div>"
   + "  </form>"
   + "</article>"
@@ -2021,7 +2109,7 @@ function settingsPage() {
   const activeUser = window.SipekaCurrentUser || (window.SipekaAuth && window.SipekaAuth.currentUser);
   const user = activeUser && typeof activeUser === 'object' && !Array.isArray(activeUser) ? activeUser : storedUser;
   const roleCode = String(user.role || '').toUpperCase();
-  const roleName = roleCode === 'OWNER' ? 'Owner / CEO' : roleCode === 'STAFF' ? 'Staff Operasional' : (user.role || '—');
+  const roleName = roleCode === 'OWNER' ? 'Owner / CEO' : roleCode === 'STAFF' ? 'Device Operasional' : (user.role || '—');
   const currentScope = typeof selectedBranch !== 'undefined' ? selectedBranch : window.__sipekaBranch;
   const assignedBranch = user.assigned_branch_name || user.branch_name;
   const branchName = roleCode === 'OWNER'
@@ -2052,26 +2140,22 @@ function settingsPage() {
     + '<div class="settings-session-row"><dt>Cakupan Cabang</dt><dd>' + escapeHtml(branchName) + '</dd></div>'
     + '<div class="settings-session-row"><dt>Mata Uang Basis</dt><dd>IDR · Rupiah</dd></div>'
     + '<div class="settings-session-row"><dt>Zona Waktu</dt><dd>Asia/Jakarta (WIB)</dd></div>'
-    + '</dl></article><article class="settings-panel"><h2>Kontak Akun Pribadi</h2><p>Email terdaftar oleh akun aktif. Telegram harus dibuktikan melalui Start bot pribadi. Perubahan kontak membatalkan pengikatan sebelumnya.</p><button class="btn" data-payroll-self>Muat Kontak Saya</button><div id="payrollSelf"></div><p id="payrollMsg" role="status"></p></article>' + (roleCode==='OWNER'?ownerSecurityPanel(user):'') + '</div></section>';
+    + '</dl></article>' + (roleCode==='OWNER'?ownerSecurityPanel(user):'') + '</div></section>';
 }
 function ownerSecurityPanel(){return '';}
-function payslipPage(){if(window.SipekaCurrentUser?.role==='STAFF')return pageHead('Organization','Slip Gaji & Kontak Pribadi','Email terdaftar melalui Settings; Telegram terbukti melalui bot pribadi.','')+'<article class="card payroll-contacts"><button class="btn" data-payroll-self>Periksa Kontak Pribadi</button><button class="btn" data-payroll-own>Slip Gaji Saya</button><div id="payrollOwnSlips"></div><div id="payrollSelf"></div><p id="payrollMsg" role="status"></p></article>';return pageHead('Organization','Slip Gaji','Rahasia · Owner saja. PPh 21 diisi Owner; bukan perhitungan pajak otomatis.','')+
-'<section class="payroll-workspace"><article class="card payroll-import"><div class="card-head"><div><h2>Import & Persetujuan</h2><p>Siapkan CSV, lalu periksa preview sebelum publikasi.</p></div><a class="btn" href="/api/payroll/template" download>Unduh Template Slip Gaji</a></div><form id="payrollImportForm"><label class="upload-field" for="payrollCsv"><span>File slip gaji</span><input type="file" id="payrollCsv" accept=".csv,text/csv" aria-describedby="payrollFileHint" required><small id="payrollFileHint">CSV UTF-8 · maksimal 1 MiB. Gunakan username atau user_id Staff unik sesuai template; bukan nama tampilan.</small></label><div class="upload-actions"><button class="btn primary" type="submit">Upload CSV & Preview</button><small>Belum mengirim slip kepada staff.</small></div></form><p id="payrollMsg" role="status"></p><div id="payrollPreview"></div></article>'+
-'<article class="card payroll-batches"><div class="card-head"><h2>Batch & Status Pengiriman</h2><button class="btn" data-payroll-refresh>Refresh</button></div><p>Sent: diterima penyedia, bukan bukti dibaca. Uncertain: rekonsiliasi manual; tidak boleh retry.</p><div id="payrollBatches"><p class="composition-empty">Refresh untuk memuat daftar batch dan memeriksa status pengiriman.</p></div><div id="payrollDelivery"></div></article>'+
-'<article class="card payroll-contacts"><div class="card-head"><h2>Kontak Pribadi Staff</h2><button class="btn" data-payroll-contacts>Muat Kontak</button></div><p>Verifikasi identitas penerima di luar sistem. Gunakan tautan Start pribadi sekali pakai, lalu konfirmasi identitas Staff secara terpisah. Telegram pribadi saja. Email hanya dapat dikirim ke kontak master terdaftar oleh akun; bukan bukti kepemilikan mailbox; alamat CSV tidak digunakan.</p><div id="payrollContacts"><p class="composition-empty">Muat kontak untuk memeriksa identitas dan alamat pengiriman pribadi.</p></div></article></section>'}
-
-function organizationPage(){return pageHead('System','Organization','Branches, access roles, and account settings in one workspace.','')+'<section class="grid feature-grid"><article class="card feature">'+icon('branch')+'<strong>Branches</strong><p>Maintain branch codes, operating status, and access scope.</p><button class="btn" data-view="branchesSys">Manage branches</button></article><article class="card feature">'+icon('users')+'<strong>Users &amp; Roles</strong><p>Review role permissions and branch assignments.</p><button class="btn" data-view="users">Manage access</button></article><article class="card feature">'+icon('settings')+'<strong>Account Settings</strong><p>Manage your active account password and session identity. Financial policies are not configurable here.</p><button class="btn" data-view="settings">Open settings</button></article></section>'}
+function organizationPage(){return pageHead('System','Organization','Branches, access roles, and account settings in one workspace.','')+'<section class="grid feature-grid"><article class="card feature">'+icon('branch')+'<strong>Branches</strong><p>Maintain branch codes, operating status, and access scope.</p><button class="btn" data-view="branchesSys">Manage branches</button></article><article class="card feature">'+icon('users')+'<strong>Device &amp; Unit Bisnis</strong><p>Review role permissions and branch assignments.</p><button class="btn" data-view="users">Manage access</button></article><article class="card feature">'+icon('settings')+'<strong>Account Settings</strong><p>Manage your active account password and session identity. Financial policies are not configurable here.</p><button class="btn" data-view="settings">Open settings</button></article></section>'}
 function accountingPage(){return pageHead('Owner · persetujuan terpisah','Jurnal & Mutasi','Laporan ini menampilkan mutasi tercatat, bukan neraca lengkap. Tidak ada posting otomatis. Draft sementara, bukan antrean tersimpan; kedaluwarsa 10 menit dan hilang saat restart.','')+'<section class="accounting-workspace"><article class="card accounting-draft"><div class="card-head"><div><h2>Review draft jurnal</h2><p>Lengkapi sumber dan bukti. Review tidak melakukan posting.</p></div></div><form id="accountingDraft" style="display:grid;gap:12px"><label>Jenis sumber<select name="sourceType"><option>CASH_TRANSACTION</option><option>REVERSAL</option></select></label><label>ID transaksi / jurnal asli<input name="sourceId" required maxlength="128"></label><label>ID dana bernama<input name="fundId" maxlength="128"></label><label>Tanggal akuntansi<input name="accountingDate" type="date" required></label><label>Bukti review<textarea name="evidence" minlength="10" maxlength="2000" required></textarea></label><button class="btn" type="submit">Review draft · belum posting</button></form><div id="accountingReview"></div><p id="accountingStatus" role="status"></p></article><article class="card accounting-trial"><div class="card-head"><div><h2>Trial balance mutasi</h2><p>Pilih periode dan cakupan cabang untuk memuat mutasi.</p></div></div><form id="accountingTrial" style="display:grid;gap:12px"><label>Dari<input name="start" type="date" required></label><label>Sampai<input name="end" type="date" required></label><label>ID cabang historis (kosong = semua)<input name="branchId"></label><button class="btn" type="submit">Muat mutasi aktual</button></form><div id="accountingResult"></div><p>Laporan ini menampilkan mutasi tercatat, bukan neraca lengkap. Posting jurnal tetap memerlukan review Owner atas sumber dan dana; tidak ada inferensi akrual/pajak atau backfill.</p></article></section>';}
 function bindAccounting(){const f=content.querySelector('#accountingDraft');if(!f)return;const status=content.querySelector('#accountingStatus'),review=content.querySelector('#accountingReview'),trial=content.querySelector('#accountingTrial'),result=content.querySelector('#accountingResult'),actor=window.SipekaCurrentUser?.id;let token=null;const alive=()=>f.isConnected&&role==='owner'&&window.SipekaCurrentUser?.id===actor;const clear=()=>{token=null;review.replaceChildren();};f.oninput=clear;
 f.onsubmit=async e=>{e.preventDefault();clear();const button=f.querySelector('button');button.disabled=true;try{const draft=Object.fromEntries(new FormData(f));if(draft.sourceType==='REVERSAL')delete draft.fundId;draft.idempotencyKey=crypto.randomUUID();const d=await window.SipekaAuth.api('/api/accounting/review',{method:'POST',body:draft});if(!alive())return;token=d.reviewToken;review.innerHTML='<h3>Review · belum posting</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere"></pre><p></p><label><input type="checkbox" id="accountingConsent"> Saya Owner menyetujui jurnal secara terpisah; sumber, tanggal, dana telah ditinjau.</label><button class="btn primary" id="accountingApprove" type="button" disabled>Setujui & posting jurnal</button>';review.querySelector('pre').textContent=JSON.stringify({draft:d.draft,source:d.source},null,2);review.querySelector('p').textContent=d.notice;const consent=review.querySelector('input'),approve=review.querySelector('button');consent.onchange=()=>approve.disabled=!consent.checked;approve.onclick=async()=>{if(!alive()||!token||!consent.checked)return;approve.disabled=true;try{const posted=await window.SipekaAuth.api('/api/accounting/approve',{method:'POST',body:{reviewToken:token,approved:true}});if(!alive())return;clear();status.textContent='Diposting · jurnal '+posted.id+' · sumber '+posted.journal.source_id;}catch(err){if(alive()){status.textContent=err.message;approve.disabled=!consent.checked;}}};status.textContent='Draft ditinjau; belum diposting.';}catch(err){if(alive())status.textContent=err.message;}finally{if(alive())button.disabled=false;}};
 trial.onsubmit=async e=>{e.preventDefault();try{const params=new URLSearchParams(new FormData(trial));if(!params.get('branchId'))params.delete('branchId');const d=await window.SipekaAuth.api('/api/accounting/trial-balance?'+params);if(!alive())return;result.innerHTML='<p>Laporan ini menampilkan mutasi tercatat, bukan neraca lengkap</p><pre style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>';result.querySelector('pre').textContent=JSON.stringify(d,null,2);}catch(err){if(alive())result.textContent=err.message;}};
 }
 function render(){
+  queueMicrotask(()=>window.SipekaQuarterly?.bind());
   if(window.SipekaPrivateReceipts){window.SipekaPrivateReceipts.clearUploads();window.SipekaPrivateReceipts.clear('drawer');}
   // F08-fix: paksa view reset ke dashboard jika role saat ini tidak punya akses
   if(!canAccess(view)){view='dashboard';}
   if(role==='owner'&&window.SipekaAdvanceUnavailable&&['cashflow','summary','income','expenses','cost','budget','insights'].includes(view)){content.innerHTML='<article class="card" role="alert"><h2>Sumber advance tidak tersedia</h2><p>Agregat dan grafik diblokir; muat ulang snapshot. Riwayat transaksi biasa tersedia terpisah, bukan snapshot lengkap.</p></article>';return;}
-  syncBranchScope();let html,isDewi=view==='dewi'||view==='insights';content.classList.toggle('dewi-full',isDewi);document.querySelector('.app').classList.toggle('dewi-focus',isDewi);if(isDewi)document.querySelector('.app').classList.add('dewi-collapsed');if(role==='staff'&&view==='dashboard')html=operatorDashboard();else if(view==='dashboard')html=ownerDashboard();else if(view==='calendar')html=calendarPage();else if(role==='staff'&&['transactions','expenses','income'].includes(view))html=operatorTransactionsPage(view);else if(view==='cashflow')html=cashFlowPage();else if(view==='summary')html=summaryPage();else if(view==='ledger'||view==='transactions')html=ledgerPage();else if(view==='expenses'||view==='income')html=categoryPage(view);else if(view==='branches')html=branchPage();else if(view==='branchesSys')html=branchesSystemPage();else if(view==='cost')html=pageHead('Control','Cost Control','Budget, actual dan variance dengan deteksi kebocoran Widya.','<button class="btn" data-download>Export CSV</button>')+costSection();else if(view==='budget')html=budgetPage();else if(view==='vendor')html=vendorPage();else if(view==='approvals')html=approvals();else if(view==='dewi'||view==='insights')html=dewiPage();else if(view==='scan')html=scanPage();else if(view==='audit')html=auditPage();else if(view==='closing')html=closingPage();else if(view==='manual')html=manualPage();else if(view==='users')html=usersPage();else if(view==='reports')html=reportsPage();else if(view==='tax')html=taxPage();else if(view==='export')html=exportPage();else if(view==='settings')html=settingsPage();else if(view==='organization')html=organizationPage();else if(view==='accounting'&&role==='owner')html=accountingPage();else if(view==='payslip')html=payslipPage();else html=generic(view.replace(/([A-Z])/g,' $1').replace(/^./,x=>x.toUpperCase()),'Controlled workspace for branch accounting and audit-ready financial operations.');content.innerHTML=sectionNav()+html;document.querySelectorAll('.nav-link').forEach(b=>b.classList.toggle('active',b.dataset.view===navRoot(view)));bindDynamic();if(window.SipekaReports)window.SipekaReports.bind(content);window.scrollTo(0,0)
+  syncBranchScope();let html,isDewi=view==='dewi'||view==='insights';content.classList.toggle('dewi-full',isDewi);document.querySelector('.app').classList.toggle('dewi-focus',isDewi);if(isDewi)document.querySelector('.app').classList.add('dewi-collapsed');if(role==='staff'&&view==='dashboard')html=operatorDashboard();else if(view==='dashboard')html=ownerDashboard();else if(view==='calendar')html=calendarPage();else if(role==='staff'&&['transactions','expenses','income'].includes(view))html=operatorTransactionsPage(view);else if(view==='cashflow')html=cashFlowPage();else if(view==='summary')html=summaryPage();else if(view==='ledger'||view==='transactions')html=ledgerPage();else if(view==='expenses'||view==='income')html=categoryPage(view);else if(view==='branches')html=branchPage();else if(view==='branchesSys')html=branchesSystemPage();else if(view==='cost')html=pageHead('Control','Cost Control','Budget, actual dan variance dengan deteksi kebocoran Widya.','<button class="btn" data-download>Export CSV</button>')+costSection();else if(view==='budget')html=budgetPage();else if(view==='vendor')html=vendorPage();else if(view==='approvals')html=approvals();else if(view==='dewi'||view==='insights')html=dewiPage();else if(view==='scan')html=scanPage();else if(view==='audit')html=auditPage();else if(view==='closing')html=closingPage();else if(view==='manual')html=manualPage();else if(view==='users')html=usersPage();else if(view==='reports')html=reportsPage();else if(view==='tax')html=taxPage();else if(view==='export')html=exportPage();else if(view==='settings')html=settingsPage();else if(view==='organization')html=organizationPage();else if(view==='accounting'&&role==='owner')html=accountingPage();else html=generic(view.replace(/([A-Z])/g,' $1').replace(/^./,x=>x.toUpperCase()),'Controlled workspace for branch accounting and audit-ready financial operations.');content.innerHTML=(window.SipekaDeviceStaff?.selector()||'')+sectionNav()+html;document.querySelectorAll('.nav-link').forEach(b=>b.classList.toggle('active',b.dataset.view===navRoot(view)));bindDynamic();if(window.SipekaReports)window.SipekaReports.bind(content);window.scrollTo(0,0)
 }
 // F10-fix: expose render global agar bootstrap/closing/users dapat memanggil
 window.render=function(){render();}
@@ -2180,7 +2264,7 @@ window.SipekaOwnerNotifications=(function(){
  window.addEventListener('pagehide',stop);window.addEventListener('pageshow',syncRefresh);
  return {sync,refresh,stop};
 })();
-let toastTimer;function showToast(t){toast.textContent=t;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2200)}function downloadCSV(){
+let toastTimer;function showToast(t){toast.textContent=t;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2200)}async function downloadCSV(){
   if(!window.SipekaReports){showToast('Modul laporan belum tersedia');return;}
   if(view==='vendor'){showToast('Dataset vendor belum terhubung. Gunakan Reports & Export untuk laporan yang tersedia.');return;}
   const categories={cashflow:'cash-flow',summary:'profit-loss',branches:'branch-performance',branchesSys:'branch-performance',cost:'budget-actual',budget:'budget-actual',audit:'audit-evidence'};
@@ -2189,12 +2273,15 @@ let toastTimer;function showToast(t){toast.textContent=t;toast.classList.add('sh
   try{
     const ledgerView=view==='ledger'||view==='transactions',raw=ledgerView?ledgerRawRows():[],dates=raw.map(r=>realDataDate(r.created_at)).sort();
     if(['profit-loss','cash-flow','audit-evidence'].includes(id)){window.SipekaReports.downloadCsv(id,{branch:unit?String(unit.id):'all'}).catch(e=>showToast(e.message));return;}
+    const exportUser=window.SipekaCurrentUser?.id,exportView=view,metadata=await window.SipekaDocumentIdentity.request({branch:unit?String(unit.id):'all',lockBranch:true});if(!metadata||exportUser!==window.SipekaCurrentUser?.id||exportView!==view)return;
     const report=window.SipekaReports.buildReport(id,ledgerView?{branch:unit?String(unit.id):'all',dateFrom:ledgerFilters.dateFrom||dates[0]||ledgerFilters.dateTo||getTodayWIB(),dateTo:ledgerFilters.dateTo||dates[dates.length-1]||ledgerFilters.dateFrom||getTodayWIB()}:{branch:unit?String(unit.id):'all'});
     if(ledgerView){const ids=new Set(raw.map(r=>String(r.id)));report.rows=report.rows.filter(r=>ids.has(String(r.id)));report.filters.status=ledgerFilters.status;report.filters.payment=ledgerFilters.payment;}
     if(view==='income'||view==='expenses'){const type=view==='income'?'INCOME':'EXPENSE';report.rows=report.rows.filter(r=>r.type===type);report.title=view==='income'?'Income':'Expenses';}
+    report.documentIdentity={company_name:metadata.company_name,branch_id:metadata.branch_id,branch_name:metadata.branch_name};
     const blob=new Blob([window.SipekaReports.toCsv(report)],{type:'text/csv;charset=utf-8'}),a=document.createElement('a'),url=URL.createObjectURL(blob);
     a.href=url;a.download='SiPeKA-'+view+'-'+report.filters.branch+'-'+report.filters.dateFrom+'_'+report.filters.dateTo+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-    showToast('CSV diunduh sesuai cabang dan periode laporan aktif');
+    const manifest=new Blob([JSON.stringify(window.SipekaReports.csvManifest(report),null,2)],{type:'application/json;charset=utf-8'}),m=document.createElement('a'),mu=URL.createObjectURL(manifest);m.href=mu;m.download=a.download.replace(/\.csv$/,'.manifest.json');m.click();setTimeout(()=>URL.revokeObjectURL(mu),1000);
+    showToast('CSV dan metadata identitas diunduh sesuai filter aktif');
   }catch(err){showToast(err.message);}
 }
 function dewiAnswer(q){let s=q.toLowerCase(),p=scopeProfile();if(role==='owner'&&selectedBranch!=='all'&&(s.includes('branch')||s.includes('cabang')||s.includes('cash')||s.includes('pengeluaran')||s.includes('expense')||s.includes('biaya')))return'<b>'+scopeName()+'</b> mencatat revenue <span class="money">'+fmtM(p.revenue)+'</span>, pengeluaran <span class="money">'+fmtM(p.expense)+'</span>, dan arus kas bersih <span class="money">'+fmtM(p.net)+'</span>. Expense ratio saat ini <span class="mono">'+realDataRatio(p)+'</span> dengan status <b>'+p.status+'</b>.';if(role==='staff'&&(s.includes('cabang')||s.includes('branch')||s.includes('approval')||s.includes('semua')))return'Akses Staff dibatasi ke transaksi Anda sendiri dan operasional <b>'+escHtml(scopeName())+'</b>. Data cabang lain, laporan konsolidasi, dan approval tidak tersedia dalam peran ini.';if(s.includes('anomali')||s.includes('mencurigakan'))return'Analisis anomali memerlukan data ledger aktual. Buka halaman Widya Audit untuk melihat transaksi yang memerlukan perhatian.';if(s.includes('branch')||s.includes('cabang')||s.includes('banding'))return'Perbandingan cabang tersedia di halaman Branch Performance berdasarkan data transaksi aktual.';if(s.includes('budget')||s.includes('anggaran'))return'Data budget belum terhubung ke sistem. Hubungi Owner untuk mengatur anggaran per kategori.';if(s.includes('approval'))return'Cek halaman Approval Center untuk daftar transaksi pending dengan jumlah dan status aktual.';if(s.includes('pengeluaran')||s.includes('expense')||s.includes('biaya'))return'Detail pengeluaran tersedia di halaman Expenses berdasarkan data transaksi aktual periode ini.';return'Mohon tanyakan pertanyaan yang lebih spesifik tentang transaksi atau data keuangan Anda. Saya menganalisis dari ledger aktual, bukan estimasi.'}function cleanDewiText(q){return q.replace(/[<>&]/g,x=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[x]))}let dewiChatHistory=[];
@@ -2278,7 +2365,7 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
   localStorage.removeItem('sipeka_token');localStorage.removeItem('sipeka_user');
   let perfCache=[];
   let bootVersion=0;
-  function invalidate(){bootVersion++;perfCache=[];payrollDraft=null;window.SipekaOwnerNotifications?.stop();}
+  function invalidate(){window.SipekaDeviceStaff?.reset();bootVersion++;perfCache=[];window.SipekaOwnerNotifications?.stop();}
   function generation(){return bootVersion}
   function fmtMoney(n){n=Number(n)||0;return n>=1e6?('Rp '+(n/1e6).toFixed(2).replace('.',',')+'M'):('Rp '+n.toLocaleString('id-ID'))}
   // F14-fix: fmtWhen konversi UTC SQLite timestamps ke WIB (tambah Z untuk UTC parsing)
@@ -2295,9 +2382,9 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
 
   async function api(path,opts){
     opts=opts||{};const requestGeneration=bootVersion;
-    const r=await fetch(path,{method:opts.method||'GET',credentials:'same-origin',headers:Object.assign({'Content-Type':'application/json'},opts.headers||{}),body:opts.body?JSON.stringify(opts.body):undefined,signal:opts.signal});
+    const r=await fetch(path,{method:opts.method||'GET',credentials:'same-origin',headers:Object.assign({'Content-Type':'application/json'},window.SipekaDeviceStaff?.headers(path,opts.method||'GET')||{},opts.headers||{}),body:opts.body?JSON.stringify(opts.body):undefined,signal:opts.signal});
     const d=await r.json().catch(()=>({}));
-    if((path.startsWith('/api/payroll')||path.startsWith('/api/widya')) && requestGeneration!==bootVersion)throw new Error('Sesi berubah; buka ulang Slip Gaji');
+    if((path.startsWith('/api/payroll')||path.startsWith('/api/widya')) && requestGeneration!==bootVersion)throw new Error('Sesi berubah; muat ulang halaman');
     if(!r.ok){const error=new Error(d.error||('HTTP '+r.status));error.status=r.status;error.receipt_key=d.receipt_key||null;throw error;}
     return d;
   }
@@ -2340,6 +2427,7 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
     window.SipekaAdvanceUnavailable=advances.unavailable===true||!Array.isArray(advances.rows);
     window.SipekaUnits=units;
     window.SipekaCurrentUser=Object.assign({},user,{assigned_branch_name:(units.find(u=>String(u.id)===String(user.branch_id))||{}).name||''});
+    await window.SipekaDeviceStaff?.load(user);if(!alive())return;
     if(window.SipekaReports)window.SipekaReports.setSnapshot({rows,advanceRows:_r==='owner'?advances.rows:[],advanceAvailable:_r==='owner'&&!advances.unavailable,units,user:window.SipekaCurrentUser});
     const _tx=rows.filter(x=>_r!=='staff'||String(x.user_id)===String(user.id)&&String(x.branch_id)===String(user.branch_id)&&window.SipekaRealData.date(x.created_at)===window.SipekaTodayWIB()).map(x=>[
       fmtWhen(x.created_at),
@@ -2481,7 +2569,7 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
     } catch (err) {
       if (msg) { msg.style.color = "var(--red)"; msg.textContent = err.message || "Gagal menambah staff"; }
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = "+ Daftarkan Staff"; }
+      if (btn) { btn.disabled = false; btn.textContent = "+ Daftarkan Device"; }
     }
   };
 
@@ -2539,43 +2627,6 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
       await api('/api/advances/'+encodeURIComponent(form.dataset.advanceForm)+'/'+suffix,{method:'POST',body:payload});if(window.SipekaCurrentUser?.id===identity)await bootstrap(window.SipekaCurrentUser);
     }catch(err){if(window.SipekaCurrentUser?.id===identity&&msg.isConnected)msg.textContent=err.message;}finally{buttons.forEach(b=>b.disabled=false);}
   });
-  let payrollDraft=null;
-  const payrollText=(id,text)=>{const el=document.getElementById(id);if(el)el.textContent=text;};
-  const payrollSafe=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  async function payrollSelf(){const user=window.SipekaCurrentUser?.id;const [s,email]=await Promise.all([api('/api/payroll/telegram/status'),api('/api/payroll/email/status')]);const el=document.getElementById('payrollSelf');if(!el||window.SipekaCurrentUser?.id!==user)return;el.innerHTML='<p>Email: '+payrollSafe(email.email||'Belum tersedia')+' · '+(email.registered?'Terdaftar oleh akun aktif; bukan bukti kepemilikan mailbox.':'Belum terdaftar')+'</p><label>Email pribadi<input class="settings-input" id="payrollEmailCandidate" type="email" autocomplete="email" value="'+payrollSafe(email.email||'')+'"></label><button class="btn" data-payroll-email-issue>Bind Email</button><p>Telegram: '+(s.verified?'Chat privat terbukti; aktif.':s.pending?'Start berhasil; menunggu pemeriksaan Owner.':'Belum terhubung.')+'</p><label>Username Telegram<input class="settings-input" id="payrollTelegramCandidate" placeholder="@username" value="'+payrollSafe(s.username?'@'+s.username:'')+'"></label><button class="btn" data-payroll-link="">Bind Telegram</button>';}
-  async function payrollContacts(){const [rows,pending]=await Promise.all([api('/api/payroll/contacts'),api('/api/payroll/telegram/bindings')]);const el=document.getElementById('payrollContacts');if(!el)return;el.innerHTML=rows.map(u=>'<div data-payroll-contact-form="'+payrollSafe(u.id)+'"><h3>'+payrollSafe(u.full_name)+' (@'+payrollSafe(u.username)+')</h3><p>'+payrollSafe(u.id)+' · '+(u.telegram_verified?'Telegram terverifikasi: '+payrollSafe(u.telegram_user_id)+' · '+payrollSafe(u.telegram_username?'@'+u.telegram_username:'handle belum tersedia')+' · '+payrollSafe(u.telegram_full_name||'nama Telegram belum tersedia'):'Belum terverifikasi')+' · Email: '+payrollSafe(u.email||'Belum tersedia')+' · '+(u.email_registration_id?'Terdaftar oleh akun; bukan bukti mailbox':u.email_verified?'Bukti historis':'Belum terdaftar')+'</p><p>Staff mengikat kontak sendiri melalui Settings.</p>'+(u.telegram_user_id?'<button class="btn" data-payroll-revoke="'+payrollSafe(u.id)+'" data-chat="'+payrollSafe(u.telegram_user_id)+'">Cabut Telegram</button>':'')+'</div>').join('')||'<p class="composition-empty">Belum ada Staff terdaftar. Tidak ada penerima contoh.</p>';for(const b of pending){const card=document.createElement('div');card.setAttribute('data-payroll-contact-form',b.user_id);const label=document.createElement('p');label.textContent='@'+b.username+' ('+b.user_id+') · chat privat '+b.chat_id+' · menunggu pemeriksaan identitas';card.append(label);for(const [attr,title]of [['payrollConfirm','Konfirmasi identitas & aktifkan'],['payrollReject','Tolak pengikatan']]){const button=document.createElement('button');button.className='btn';button.textContent=title;button.dataset[attr]=b.id;button.dataset.user=b.user_id;button.dataset.username=b.username;button.dataset.chat=b.chat_id;card.append(button);}el.append(card);}}
-  async function payrollBatches(){const rows=await api('/api/payroll/batches');const el=document.getElementById('payrollBatches');if(el)el.innerHTML=rows.map(b=>'<p>'+payrollSafe(b.period)+' · '+payrollSafe(b.status)+' <button class="btn" data-payroll-open="'+payrollSafe(b.id)+'">Preview</button> <button class="btn" data-payroll-status="'+payrollSafe(b.id)+'">Status</button></p>').join('')||'<p>Belum ada batch.</p>';}
-  function payrollSendControls(r,d){
-    if(d.status!=='PUBLISHED'||window.SipekaCurrentUser?.role!=='OWNER')return '';
-    return '<div class="payroll-send-actions">'+['telegram','email'].map(channel=>{const c=r.delivery?.[channel],job=c?.job,reason=!c?.eligible?(c?.reason==='PAYROLL_CONTACT_UNVERIFIED'?'Kontak belum terverifikasi':c?.reason||'Kontak tidak tersedia'):job?'Pengiriman sudah tercatat; tidak dikirim ulang.':'';return '<div><p>'+payrollSafe(channel==='email'?'Email: '+(c?.address||'Belum tersedia'):'Telegram privat: '+(c?.address||'Belum tersedia')+(c?.telegram_username?' (@'+c.telegram_username+'; terbukti melalui bot)':' (ID privat; handle belum tersedia)'))+' · '+(channel==='email'?(c?.registered?'Terdaftar oleh akun; bukan bukti mailbox':c?.verified?'Bukti historis':'Belum terdaftar'):(c?.verified?'Chat privat terbukti':'Belum terverifikasi'))+'</p><button class="btn" data-payroll-send="'+payrollSafe(r.entry_id)+'" data-channel="'+channel+'" '+(!c?.eligible||job?'disabled':'')+'>Kirim ke '+(channel==='email'?'Email':'Telegram')+'</button><small>'+payrollSafe(job?({pending:'Antrean',processing:'Sedang diproses',sending:'Sedang dikirim',sent:'Diterima penyedia',uncertain:'Status tidak pasti; jangan kirim ulang',blocked:'Diblokir',failed:'Gagal'}[job.status]||job.status)+(c?.reason?' · '+c.reason:''):reason||'Belum diantrekan')+'</small></div>';}).join('')+'</div>';
-  }
-  function payrollPreview(d){payrollDraft=d;const el=document.getElementById('payrollPreview');if(!el)return;el.innerHTML='<h3>'+payrollSafe(d.period)+' · '+payrollSafe(d.status)+'</h3><div class="table-wrap"><table><thead><tr><th>Staff</th><th>Pokok</th><th>Tunjangan</th><th>Potongan</th><th>PPh 21</th><th>Bersih</th></tr></thead><tbody>'+d.rows.map(r=>'<tr><td>'+payrollSafe(r.full_name)+' · @'+payrollSafe(r.username)+' ('+payrollSafe(r.user_id)+') <button class="btn" data-payroll-slip="'+payrollSafe(r.user_id)+'">Preview Slip</button> <button class="btn" data-payroll-download="'+payrollSafe(r.entry_id)+'">Unduh PDF</button></td>'+['basic_salary','allowances','deductions','pph21','net_salary'].map(k=>'<td>'+payrollSafe(BigInt(r[k]).toLocaleString('id-ID'))+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'+(d.status==='PUBLISHED'?'<div class="payroll-slip-cards">'+d.rows.map(r=>'<article><h3>'+payrollSafe(r.full_name)+'</h3><p>@'+payrollSafe(r.username)+' · '+payrollSafe(d.period)+'</p>'+payrollSendControls(r,d)+'</article>').join('')+'</div>':'')+'<p id="payrollIndividual" role="status"></p>'+(d.status==='DRAFT'?'<label><input type="checkbox" id="payrollApprove"> Saya memeriksa nominal dan identitas penerima.</label><button class="btn primary" data-payroll-publish>Approve & Publish</button>':'');}
-  async function payrollStatus(id){const rows=await api('/api/payroll/'+id+'/delivery'),el=document.getElementById('payrollDelivery');if(el)el.innerHTML=rows.map(r=>'<p>'+payrollSafe(r.user_id)+' · '+payrollSafe(r.channel)+' · '+payrollSafe(r.delivery_enabled===false?'Belum dikonfigurasi ('+r.status+')':r.status)+' · '+payrollSafe(r.error_code||'')+(['blocked','failed'].includes(r.status)?' <button class="btn" data-payroll-retry="'+payrollSafe(r.id)+'" data-batch="'+payrollSafe(id)+'">Retry</button>':'')+'</p>').join('')||'<p>Belum diantrekan. Publikasi tidak mengirim otomatis.</p>';}
-  document.addEventListener('submit',async e=>{
-    if(e.target.id==='payrollImportForm'){e.preventDefault();const btn=e.target.querySelector('button');btn.disabled=true;try{const file=document.getElementById('payrollCsv').files[0];if(!file||file.size>1048576)throw Error('CSV maksimal 1 MiB');const generationUser=window.SipekaCurrentUser?.id;const d=await api('/api/payroll/import',{method:'POST',body:{csv:await file.text()}});if(window.SipekaCurrentUser?.id!==generationUser)return;payrollPreview(d);payrollText('payrollMsg','Preview tersimpan. Belum ada pengiriman.');await payrollBatches();}catch(err){payrollText('payrollMsg',err.message);}finally{btn.disabled=false;}}
-
-  });
-  document.addEventListener('click',async e=>{const b=e.target.closest('[data-payroll-email-issue],[data-payroll-send],[data-payroll-refresh],[data-payroll-open],[data-payroll-status],[data-payroll-publish],[data-payroll-retry],[data-payroll-contacts],[data-payroll-link],[data-payroll-confirm],[data-payroll-reject],[data-payroll-revoke],[data-payroll-self],[data-payroll-slip],[data-payroll-own],[data-payroll-download]');if(!b||b.disabled)return;b.disabled=true;try{
-    if(b.dataset.payrollSend){const entry=b.dataset.payrollSend,channel=b.dataset.channel,row=payrollDraft?.rows.find(r=>r.entry_id===entry),batch=payrollDraft?.id;if(window.SipekaCurrentUser?.role!=='OWNER'||!row||payrollDraft.status!=='PUBLISHED')throw Error('Hanya Owner dapat mengirim slip final');const c=row.delivery?.[channel];if(!c?.eligible||c.job)throw Error('Kontak belum layak atau pengiriman sudah tercatat');if(!confirm('Kirim slip '+payrollDraft.period+' untuk '+row.full_name+' (@'+row.username+') ke '+(channel==='email'?'email ':'Telegram privat ')+c.address+(channel==='telegram'&&c.telegram_username?' (@'+c.telegram_username+')':'')+'? '+(channel==='email'?'Alamat terdaftar oleh akun, bukan bukti kepemilikan mailbox. ':'')+'Pengiriman memuat PDF gaji pribadi.'))return;const result=await api('/api/payroll/entries/'+entry+'/send',{method:'POST',body:{channels:[channel],confirmation:{user_id:row.user_id,period:payrollDraft.period,username:c.username,full_name:c.full_name,channel,address:c.address,binding_key:c.binding_key}}});payrollText('payrollMsg',result.jobs.some(j=>j.status==='sent')?'Diterima penyedia; bukan bukti dibaca.':'Permintaan tercatat. Belum berarti diterima atau dibaca; periksa status.');payrollPreview(await api('/api/payroll/'+batch+'/preview'));await payrollStatus(batch);}
-    if(b.dataset.payrollDownload){const user=window.SipekaCurrentUser?.id,response=await fetch('/api/payroll/entries/'+encodeURIComponent(b.dataset.payrollDownload)+'/pdf',{credentials:'same-origin'});if(!response.ok)throw Error('Slip tidak tersedia');const blob=await response.blob();if(window.SipekaCurrentUser?.id!==user)return;if(blob.type!=='application/pdf'||blob.size>262144)throw Error('PDF tidak valid');const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=response.headers.get('content-disposition')?.match(/filename="([A-Za-z0-9_.-]+)"/)?.[1]||'SiPeKA-slip.pdf';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);}
-    if(b.hasAttribute('data-payroll-own')){const user=window.SipekaCurrentUser?.id,rows=await api('/api/payroll/own-slips');if(window.SipekaCurrentUser?.id!==user)return;const el=document.getElementById('payrollOwnSlips');if(el)el.innerHTML=rows.map(r=>'<p>'+payrollSafe(r.period)+' <button class="btn" data-payroll-download="'+payrollSafe(r.id)+'">Unduh PDF</button></p>').join('')||'<p>Belum ada slip dipublikasikan.</p>';}
-    if(b.hasAttribute('data-payroll-refresh'))await payrollBatches();
-    if(b.dataset.payrollOpen)payrollPreview(await api('/api/payroll/'+b.dataset.payrollOpen+'/preview'));
-    if(b.dataset.payrollStatus){await payrollStatus(b.dataset.payrollStatus);if(payrollDraft?.id===b.dataset.payrollStatus)payrollPreview(await api('/api/payroll/'+b.dataset.payrollStatus+'/preview'));}
-    if(b.hasAttribute('data-payroll-publish')){if(!document.getElementById('payrollApprove')?.checked)throw Error('Konfirmasi pemeriksaan wajib');if(!payrollDraft||!confirm('Publikasikan slip final? Tidak dapat dibatalkan. Tidak ada pengiriman otomatis; kirim tiap slip melalui tombol setelah publikasi.'))return;await api('/api/payroll/'+payrollDraft.id+'/publish',{method:'POST',body:{preview_token:payrollDraft.preview_token}});payrollPreview(await api('/api/payroll/'+payrollDraft.id+'/preview'));payrollText('payrollMsg','Dipublikasikan. Belum dikirim; pilih tombol kirim pada slip Staff.');await payrollBatches();await payrollStatus(payrollDraft.id);}
-    if(b.dataset.payrollRetry){await api('/api/payroll/delivery/'+b.dataset.payrollRetry+'/retry',{method:'POST',body:{}});await payrollStatus(b.dataset.batch);}
-    if(b.hasAttribute('data-payroll-contacts'))await payrollContacts();
-    if(b.hasAttribute('data-payroll-self'))await payrollSelf();
-    if(b.hasAttribute('data-payroll-email-issue')){await api('/api/payroll/email/bind',{method:'POST',body:{email:document.getElementById('payrollEmailCandidate').value}});await payrollSelf();payrollText('payrollMsg','Email terdaftar untuk akun aktif. Bukan bukti kepemilikan mailbox.');}
-
-
-
-    if(b.hasAttribute('data-payroll-link')){const d=await api('/api/payroll/telegram/link',{method:'POST',body:{username:document.getElementById('payrollTelegramCandidate').value}});const a=document.createElement('a');a.href=d.start_url;a.target='_blank';a.rel='noopener noreferrer';a.referrerPolicy='no-referrer';a.textContent='Buka bot gaji, tekan Start. Pribadi; berlaku 10 menit; jangan bagikan.';b.parentElement.querySelector('[data-payroll-start]')?.remove();a.dataset.payrollStart='';b.parentElement.append(a);}
-    if(b.dataset.payrollConfirm){if(!confirm('Pastikan secara terpisah Staff '+b.dataset.username+' ('+b.dataset.user+') memiliki chat privat '+b.dataset.chat+'. Tautan dapat diteruskan; Start saja tidak membuktikan identitas. Aktifkan?'))return;await api('/api/payroll/telegram/confirm',{method:'POST',body:{binding_id:b.dataset.payrollConfirm,user_id:b.dataset.user,chat_id:b.dataset.chat,confirmed:true}});await payrollContacts();}
-    if(b.dataset.payrollReject){await api('/api/payroll/telegram/reject',{method:'POST',body:{binding_id:b.dataset.payrollReject}});await payrollContacts();}
-    if(b.dataset.payrollRevoke){if(!confirm('Cabut kontak Telegram Staff '+b.dataset.payrollRevoke+'?'))return;if(!confirm('Konfirmasi kedua: pencabutan chat '+b.dataset.chat+' menghentikan pengiriman berikutnya. Lanjutkan?'))return;await api('/api/payroll/telegram/revoke',{method:'POST',body:{user_id:b.dataset.payrollRevoke,chat_id:b.dataset.chat,confirmed:true}});await payrollContacts();}
-    if(b.dataset.payrollSlip){const r=payrollDraft?.rows.find(r=>r.user_id===b.dataset.payrollSlip);if(!r)throw Error('Preview tidak tersedia');document.getElementById('payrollIndividual').textContent='@'+r.username+' ('+r.user_id+') · '+payrollDraft.period+' · '+[['basic_salary','Pokok'],['allowances','Tunjangan'],['deductions','Potongan'],['pph21','PPh 21'],['net_salary','Bersih']].map(([key,label])=>label+' Rp '+BigInt(r[key]).toLocaleString('id-ID')).join(' · ');}
-  }catch(err){payrollText('payrollMsg',err.message);if(b.dataset.payrollSend){payrollDraft=null;payrollText('payrollPreview','Permintaan atau sumber tidak pasti. Jangan kirim ulang; muat Preview dan periksa Status.');}if(b.hasAttribute('data-payroll-contacts'))payrollText('payrollContacts','Sumber tidak tersedia. Kontak tidak dapat digunakan; coba Muat Kontak lagi.');if(b.hasAttribute('data-payroll-refresh'))payrollText('payrollBatches','Sumber tidak tersedia. Daftar batch tidak dapat dimuat; coba Refresh lagi.');if(b.dataset.payrollOpen||b.dataset.payrollStatus){payrollDraft=null;payrollText('payrollPreview','Sumber tidak tersedia. Preview dan tombol kirim dinonaktifkan; muat ulang.');payrollText('payrollDelivery','Status tidak tersedia; jangan menganggap pesan diterima.');}if(b.hasAttribute('data-payroll-self'))payrollText('payrollSelf','Sumber tidak tersedia. Kontak belum dapat diperiksa.');}finally{b.disabled=false;}});
   window.SipekaCreateBranch = async function() {
     const name = document.getElementById("nbName")?.value || "";
     const code = document.getElementById("nbCode")?.value || "";
@@ -2979,5 +3030,41 @@ window.SipekaAuth.bootstrap=bootstrap;
 document.addEventListener('click',()=>setTimeout(()=>{if(window.__filterRestrictedUI)window.__filterRestrictedUI();},60),true);
 window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedUI)window.__filterRestrictedUI();},80));
 })();
+</script>
+<style>.device-staff{margin-bottom:20px}.device-staff-form{display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:14px 0;border-bottom:1px solid var(--line)}.device-staff-form label{display:grid;gap:6px;flex:1;min-width:160px}.device-staff-form input,.device-staff-form select{width:100%}.device-staff>select{max-width:100%}</style>
+<script>
+/* Device identity is authentication; the on-duty person is explicit per-tab attribution. */
+(()=>{'use strict';
+ let rows=[],choice=null,identity=null,error='';
+ const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const api=(...args)=>window.SipekaAuth.api(...args);
+ const redraw=()=>window.__sipekaApplyState(window.__sipekaRole,window.__sipekaBranch);
+ async function load(user){
+  const key=user.id+':'+user.branch_id;if(identity!==key){choice=null;identity=key;}error='';
+  try{rows=await api('/api/operational-staff');if(identity!==key)return;
+   if(choice&&!rows.some(r=>r.id===choice.id&&r.revision===choice.revision&&r.active)){choice=null;error='Daftar Staff berubah. Pilih ulang sebelum melanjutkan.';}
+  }catch(e){rows=[];choice=null;error='Direktori Staff tidak tersedia. Operasi diblokir.';}
+ }
+ function selector(){if(window.SipekaCurrentUser?.role!=='STAFF')return '';
+  return '<section class="card device-staff" aria-label="Staff bertugas"><label for="onDutyStaff">Staff bertugas di unit ini</label><select id="onDutyStaff" class="control" required><option value="">Pilih Staff sebelum transaksi</option>'+rows.filter(r=>r.active).map(r=>'<option value="'+esc(r.id)+'"'+(choice?.id===r.id?' selected':'')+'>'+esc(r.name)+'</option>').join('')+'</select><p role="status">'+esc(error||(!rows.length?'Owner perlu menambahkan Staff aktif untuk unit ini.':choice?'Bertugas: '+choice.name+'. Pilihan hanya berlaku di tab ini.':'Akun ini adalah device unit. Pilih nama Anda; pergantian hanya memengaruhi operasi berikutnya.'))+'</p></section>';
+ }
+ function branches(selected){return (window.SipekaUnits||[]).map(u=>'<option value="'+esc(u.id)+'"'+(u.id===selected?' selected':'')+'>'+esc(u.name)+'</option>').join('');}
+ function form(r){return '<form data-staff-edit="'+esc(r?.id||'')+'" class="device-staff-form"><label>Nama Staff<input name="name" class="control" maxlength="120" required value="'+esc(r?.name||'')+'"></label><label>Unit bisnis<select name="branch_id" class="control" required>'+branches(r?.branch_id)+'</select></label><label>Status<select name="active" class="control"><option value="true">Aktif</option><option value="false"'+(r&&!r.active?' selected':'')+'>Nonaktif</option></select></label><button class="btn" type="submit">'+(r?'Simpan Staff':'Tambah Staff')+'</button></form>';}
+ function directory(){if(window.SipekaCurrentUser?.role!=='OWNER')return '';
+  return '<section class="card device-staff"><h2>Direktori Staff per Unit Bisnis</h2><p>Staff tidak memiliki akun login. Nama saat operasi disimpan permanen; perubahan dan nonaktif tidak mengubah riwayat.</p>'+form(null)+rows.map(form).join('')+'<p role="status" id="staffDirectoryMessage">'+esc(error)+'</p><h2>Konfigurasi Device</h2><p>Akun lama tetap dapat digunakan sebagai device. Username, password, dan ID tidak berubah.</p>'+(window.SipekaAllUsersList||[]).filter(u=>u.role==='STAFF').map(u=>'<form data-device-edit="'+esc(u.id)+'" class="device-staff-form"><strong>@'+esc(u.username)+'</strong><label>Label device<input class="control" name="name" maxlength="120" required value="'+esc(u.full_name)+'"></label><label>Unit bisnis<select class="control" name="branch_id">'+branches(u.assigned_branch_id)+'</select></label><button class="btn">Simpan Device</button></form>').join('')+'</section>';
+ }
+ function headers(path,method){if(method!=='POST'||window.SipekaCurrentUser?.role!=='STAFF'||!(/^\/api\/(transactions|closing|approvals|receipts\/upload)$/.test(path)||path.startsWith('/api/advances/')))return {};
+  if(!choice)throw Error('Pilih Staff bertugas sebelum mengirim operasi.');
+  return {'X-Operational-Staff':choice.id,'X-Operational-Revision':String(choice.revision)};
+ }
+ document.addEventListener('change',e=>{if(e.target.id!=='onDutyStaff')return;choice=rows.find(r=>r.id===e.target.value)||null;error='';window.SipekaPrivateReceipts?.clearUploads();redraw();});
+ document.addEventListener('submit',async e=>{const form=e.target;if(!form.matches('[data-staff-edit],[data-device-edit]'))return;e.preventDefault();const button=form.querySelector('button');button.disabled=true;
+  try{const body=Object.fromEntries(new FormData(form));let path='/api/operational-staff';if(form.hasAttribute('data-device-edit')){path='/api/devices/configure';body.device_id=form.dataset.deviceEdit;}else{body.active=body.active==='true';if(form.dataset.staffEdit){body.id=form.dataset.staffEdit;body.revision=rows.find(r=>r.id===body.id)?.revision;}}
+   await api(path,{method:'POST',body});await window.SipekaAuth.bootstrap(window.SipekaCurrentUser);redraw();
+  }catch(e){document.getElementById('staffDirectoryMessage').textContent=e.message;}finally{button.disabled=false;}
+ });
+ window.SipekaDeviceStaff={load,selector,directory,headers,reset(){identity=null;choice=null;rows=[];error='';}};
+})();
+
 </script>
 </body></html>

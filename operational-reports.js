@@ -15,7 +15,9 @@ function exact(v){if(!/^[0-9]+$/.test(String(v)))fail('REPORT_INVALID_AMOUNT',50
 function total(rows){let income=0n,expense=0n;for(const r of rows){if(r.tx_type==='INCOME')income+=exact(r.amount);else if(r.tx_type==='EXPENSE')expense+=exact(r.amount);else fail('REPORT_INVALID_TYPE',503);}return {income:String(income),expense:String(expense),net:String(income-expense),count:rows.length};}
 async function read(pool,actor,token,id,params,{readAdvances=require('./advance-service').snapshot}={}){
  if(actor?.role!=='OWNER')fail('REPORT_OWNER_ONLY',403);
- if(!['profit-loss','cash-flow','fund-requests','daily-closings','audit-evidence'].includes(id))fail('REPORT_NOT_FOUND',404);
+ if(id==='quarterly-owner')return require('./quarterly-owner').read(pool,actor,token,params,{readAdvances});
+ if(['fund-position','recorded-income-expense'].includes(id))return require('./informational-statements').read(pool,actor,token,id,params,{readAdvances});
+ if(!['profit-loss','cash-flow','fund-requests','daily-closings','audit-evidence','quarterly-data'].includes(id))fail('REPORT_NOT_FOUND',404);
  const f=filters(params);
  const units=(await pool.query('SELECT id,name,category,is_active FROM business_units ORDER BY id')).rows;
  if(f.branch!=='all'&&!units.some(u=>u.id===f.branch))fail('REPORT_BRANCH_NOT_FOUND',404);
@@ -29,6 +31,10 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
  if(id==='fund-requests')return register(transactions.filter(r=>r.tx_intent==='PENGAJUAN_DANA'));
  const advances=await readAdvances(pool,token);
  if(!Array.isArray(advances?.rows))fail('REPORT_ADVANCE_UNAVAILABLE',503);
+ if(id==='quarterly-data'){
+  const pending=(await pool.query("SELECT count(*)::text n FROM ledger_transactions WHERE status='PENDING_APPROVAL' AND tx_intent='PENGAJUAN_DANA' AND ($1::text='all' OR branch_id=$1)",[f.branch])).rows[0];
+  return {...require('./quarterly-owner').aggregate(transactions,advances.rows,f),pendingRequests:Number(pending.n)};
+ }
  const events=[];for(const a of advances.rows){if(f.branch!=='all'&&a.branchId!==f.branch)continue;for(const e of a.events||[]){const date=Date.parse(e.createdAt);if(!Number.isFinite(date))fail('REPORT_INVALID_EVENT_DATE',503);if(date<Date.parse(f.utcFrom)||date>=Date.parse(f.utcToExclusive))continue;if(id==='cash-flow'){if(['DISBURSE','RETURN'].includes(e.action))events.push({id:e.id,branch_id:a.branchId,tx_type:e.action==='RETURN'?'INCOME':'EXPENSE',amount:String(exact(e.amount)),payment_method:'CASH_DRAWER',status:'APPROVED',tx_intent:'ADVANCE_'+e.action,account_code:'ADVANCE',account_name:'Mutasi advance'});continue;}if(e.action!=='APPROVE')continue;if(!Array.isArray(e.lines)||!e.lines.length||e.lines.reduce((n,l)=>n+exact(l.amount),0n)!==exact(e.amount))fail('REPORT_SETTLEMENT_INCOMPLETE',503);for(const l of e.lines)events.push({id:e.id+':'+l.receiptKey,branch_id:a.branchId,user_id:a.userId,coa_id:l.coaId,tx_type:'EXPENSE',amount:String(exact(l.amount)),payment_method:'CASH_DRAWER',status:'APPROVED',tx_intent:'ADVANCE_APPROVE',receipt_key:l.receiptKey,created_at:e.createdAt,account_code:l.coaId,account_name:'Settlement advance'});}}
  if(id==='audit-evidence'){
   const scoped=transactions.concat(events),keys=[...new Set(scoped.map(r=>String(r.receipt_key||'').replace(/^\/api\/receipts\//,'')).filter(Boolean))];

@@ -1,13 +1,15 @@
 'use strict';
-const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),net=require('node:net'),{spawn}=require('node:child_process');
-test('actual cookie HTTP PDF: Owner any entry, Staff self published only, no cross-user or public access',{timeout:60000},async t=>{
- assert.ok(process.env.REPORTS_TEST_PGLITE);const port=await new Promise(r=>{const s=net.createServer().listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>r(p));});}),base='http://127.0.0.1:'+port;
- const child=spawn(process.execPath,[path.join(__dirname,'fixtures/payroll-integrated-pglite.cjs')],{cwd:path.resolve(__dirname,'..'),stdio:['ignore','pipe','pipe','ipc'],env:{...process.env,TZ:'UTC',DATABASE_URL:'postgresql://fixture-invalid/no-network',PORT:String(port),PUBLIC_ORIGIN:base,NODE_ENV:'test',REQUIRE_OWNER_2FA:'0',ALLOW_PRIVATE_QA_BEARER:'0',PAYROLL_DELIVERY_ENABLED:'0',SIPEKA_WIDYA_ENABLED:'0',PAYROLL_ENCRYPTION_KEY:'a'.repeat(64)}});let logs='';child.stderr.on('data',s=>logs+=s);t.after(async()=>{if(child.exitCode===null){child.kill();await new Promise(r=>child.once('exit',r));}});
- for(let i=0;i<300;i++){if(child.exitCode!==null)throw Error(logs);try{if((await fetch(base+'/api/ready')).ok)break;}catch{}await new Promise(r=>setTimeout(r,50));}
- const api=(route,user='owner',body)=>fetch(base+route,{method:body===undefined?'GET':'POST',headers:{...(user?{Cookie:'sipeka_session=fixture-'+user}:{}),Origin:base,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
- const draft=await api('/api/payroll/import','owner',{csv:'period,username,basic_salary,allowances,deductions,pph21\n2026-10,fixture-staff,1000,100,50,10\n2026-10,fixture-staff2,2000,200,100,20'});assert.equal(draft.status,201,await draft.clone().text()+' '+logs);const b=await draft.json();assert.equal((await api('/api/payroll/own-slips','staff')).status,200);assert.deepEqual(await (await api('/api/payroll/own-slips','staff')).json(),[]);
- assert.equal((await api('/api/payroll/'+b.id+'/publish','owner',{preview_token:b.preview_token})).status,200);
- const [own]=await (await api('/api/payroll/own-slips','staff')).json();const [other]=await (await api('/api/payroll/own-slips','staff2')).json();assert.ok(own&&other);const route='/api/payroll/entries/'+own.id+'/pdf';
- for(const user of ['owner','staff']){const r=await api(route,user);assert.equal(r.status,200);assert.match(r.headers.get('cache-control'),/no-store/);assert.equal(r.headers.get('content-type'),'application/pdf');const bytes=Buffer.from(await r.arrayBuffer());assert.equal(bytes.subarray(0,8).toString(),'%PDF-1.4');assert.match(bytes.toString(),/1\.040/);assert.match(bytes.toString(),/Laundry/);assert.ok(!bytes.toString().includes('2.080'));}
- assert.equal((await api(route,'staff2')).status,404);assert.equal((await api(route,null)).status,401);assert.equal((await api(route,'setup')).status,403);assert.equal((await api('/api/payroll/entries/'+other.id+'/pdf','staff')).status,404);
+// Payroll HTTP success is intentionally retired by the device model. The real
+// PostgreSQL fixture verifies every retired route returns 410, even with the
+// delivery environment flag enabled. No crypto/history assertions are removed.
+const test=require('node:test'),assert=require('node:assert/strict'),{execFile}=require('node:child_process'),{promisify}=require('node:util'),path=require('node:path');
+test('device model: actual PostgreSQL HTTP/browser attribution and payroll denial',{timeout:120000},async()=>{
+ const root=path.resolve(__dirname,'..');
+ assert.ok(root.startsWith('/home/ubuntu/sipeka-'),'Run only in retained isolated VPS QA checkout');
+ const result=await promisify(execFile)(process.execPath,['tests/device-unit-vps.cjs'],{cwd:root,timeout:110000,maxBuffer:1024*1024});
+ const proof=JSON.parse(require('node:fs').readFileSync(path.join(root,'device-proof.json')));
+ assert.equal(proof.failed,0);assert.equal(proof.productionWrites,false);assert.equal(proof.providersCalled,false);
+ assert.ok(proof.checks.some(x=>x.includes('/api/payroll/own-slips 410')));
+ assert.ok(proof.checks.some(x=>x.includes('browser PDF recorded-income-expense')));
+ assert.match(result.stdout,/"failed":0/);
 });
