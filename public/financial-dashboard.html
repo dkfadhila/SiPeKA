@@ -2185,49 +2185,76 @@ function manualPage(){
   + '</p>'
   + '</div></article>';
 }
+function getArchivedDevices(){try{return JSON.parse(localStorage.getItem('sipeka_archived_devices')||'[]');}catch{return[];}}
+function setArchivedDevices(list){try{localStorage.setItem('sipeka_archived_devices',JSON.stringify(list));}catch{}}
+function isDeviceArchived(uid){return getArchivedDevices().includes(String(uid));}
+function toggleArchiveDevice(uid,uname){
+  const list=getArchivedDevices();
+  const idStr=String(uid);
+  if(list.includes(idStr)){
+    setArchivedDevices(list.filter(x=>x!==idStr));
+    if(typeof showToast==='function')showToast('Device @'+uname+' dipulihkan ke daftar');
+  }else{
+    if(!confirm('Sembunyikan/arsipkan device @'+uname+' dari tampilan operasional? Akun dan data transaksi di database tetap aman.'))return;
+    list.push(idStr);
+    setArchivedDevices(list);
+    if(typeof showToast==='function')showToast('Device @'+uname+' diarsipkan dari frontend');
+  }
+  if(typeof window.render==='function')window.render();
+}
+window.SipekaToggleArchiveDevice=toggleArchiveDevice;
+
 function usersPage(){
   const perf = (window.SipekaAuth && window.SipekaAuth.perf) || [];
   const allUsersList = (window.SipekaAllUsersList) || [];
   const branchOptions = branches.map(b => "<option value=\"" + b[1] + "\">" + b[0] + " (" + b[1] + ")</option>").join("");
+  const archivedIds = getArchivedDevices();
 
-  const staffCards = (allUsersList.length ? allUsersList : perf).map(u => {
+  const activeStaff = (allUsersList.length ? allUsersList : perf).filter(u => !archivedIds.includes(String(u.id)));
+  const archivedStaff = (allUsersList.length ? allUsersList : perf).filter(u => archivedIds.includes(String(u.id)));
+
+  const renderUserRow = (u, isArchived) => {
     const isStaff = (u.role === "STAFF");
-    // F01-fix: escape semua user data sebelum dimasukkan ke HTML
     const uname = (typeof escHtml==='function'?escHtml:String)(u.username||'');
     const uid = String(u.id||'');
     const bName = (typeof escHtml==='function'?escHtml:String)(u.branch_name || "Semua Cabang");
     const fullNameEsc = (typeof escHtml==='function'?escHtml:String)(u.full_name||'');
-    return "<div class=\"field\" style=\"display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--surface);border-radius:8px;margin-bottom:6px;\">"
-      + "<div>"
-      + "  <strong style=\"font-size:14px;color:var(--ink);\">" + fullNameEsc + "</strong> <small style=\"color:var(--muted);margin-left:4px;\">@" + uname + "</small>"
-      + "  <div style=\"font-size:12px;color:var(--sub);margin-top:4px;\"><span class=\"tag " + (isStaff ? "" : "ok") + "\">" + (isStaff ? "DEVICE" : "OWNER") + "</span> · Cabang: <b>" + bName + "</b></div>"
+    return "<div class=\"user-card-item " + (isArchived ? "is-archived" : "") + "\">"
+      + "<div class=\"user-card-info\">"
+      + "  <div class=\"user-card-title\"><strong class=\"user-name\">" + fullNameEsc + "</strong><span class=\"user-handle\">@" + uname + "</span></div>"
+      + "  <div class=\"user-card-meta\"><span class=\"tag " + (isStaff ? "tag-device" : "tag-owner") + "\">" + (isStaff ? "DEVICE" : "OWNER") + "</span><span class=\"meta-dot\">·</span><span>Cabang: <b>" + bName + "</b></span>" + (isArchived ? "<span class=\"tag tag-archived\">DIARSIPKAN</span>" : "") + "</div>"
       + "</div>"
-      + "<div style=\"display:flex;align-items:center;gap:6px;\">"
-      + (isStaff ? ("<button class=\"btn btn-sm sipeka-reset-pwd\" type=\"button\" data-uid='" + uid + "'  data-uname='" + uname + "' style=\"font-size:12px;padding:6px 12px;\">Reset Sandi</button>") : "")
+      + "<div class=\"user-card-actions\">"
+      + (isStaff ? ("<button class=\"btn btn-sm btn-outline sipeka-reset-pwd\" type=\"button\" data-uid='" + uid + "' data-uname='" + uname + "'>Reset Sandi</button><button class=\"btn btn-sm " + (isArchived ? "btn-restore" : "btn-archive") + "\" type=\"button\" onclick=\"window.SipekaToggleArchiveDevice('" + uid + "','" + uname + "')\">" + (isArchived ? "Pulihkan" : "Arsipkan") + "</button>") : "")
       + "</div>"
       + "</div>";
-  }).join("");
+  };
 
-  return (window.SipekaDeviceStaff?.directory()||'')+pageHead("System control", "Device & Unit Bisnis", "Akun operasional milik device; nama Staff dikelola terpisah.")
-  + "<section class=\"grid two-col\">"
-  + "<article class=\"card\">"
-  + "  <div class=\"card-head\"><div><h2>Daftar Akun Device & Owner</h2><p>Akun login operasional per unit bisnis</p></div><button class=\"btn btn-sm\" type=\"button\" onclick=\"window.SipekaLoadAllUsers()\">Refresh</button></div>"
-  + "  <div class=\"fields\" id=\"usersListContainer\" style=\"display:flex;flex-direction:column;gap:0;padding:12px 16px;\">"
-  + (staffCards || "<div class=\"field\"><span>Belum ada device terdaftar</span><strong>—</strong></div>")
+  const staffCards = activeStaff.map(u => renderUserRow(u, false)).join("");
+  const archivedCards = archivedStaff.map(u => renderUserRow(u, true)).join("");
+
+  return pageHead("System control", "Device & Unit Bisnis", "Kelola akun login device operasional dan nama staf bertugas per cabang.")
+  + (window.SipekaDeviceStaff?.directory()||'')
+  + "<section class=\"grid two-col users-grid-layout\" style=\"margin-top:20px;\">"
+  + "<article class=\"card users-card\">"
+  + "  <div class=\"card-head\"><div><h2>Akun Device Operasional</h2><p>Daftar akun login per unit bisnis aktif</p></div><button class=\"btn btn-sm\" type=\"button\" onclick=\"window.SipekaLoadAllUsers()\">Refresh</button></div>"
+  + "  <div class=\"users-list-wrap\">"
+  + (staffCards || "<div class=\"empty-users\">Belum ada device aktif terdaftar.</div>")
+  + (archivedCards ? ("<details class=\"archived-accordion\"><summary>Lihat Device Terarsip (" + archivedStaff.length + ")</summary><div class=\"archived-list\">" + archivedCards + "</div></details>") : "")
   + "  </div>"
   + "</article>"
-  + "<article class=\"card\">"
-  + "  <div class=\"card-head\"><div><h2>Tambah Device Baru</h2><p>Daftarkan akun login device baru dan hubungkan ke unit</p></div></div>"
-  + "  <form id=\"newUserForm\" onsubmit=\"event.preventDefault(); if(window.SipekaCreateStaff) window.SipekaCreateStaff();\" style=\"display:flex;flex-direction:column;gap:14px;padding:16px 20px;\">"
-  + "    <div class=\"fields\" style=\"padding:0;display:grid;gap:12px;\">"
-  + "      <div class=\"field\" style=\"border:0;padding:0;display:grid;grid-template-columns:1fr;gap:6px;\"><span style=\"font-size:12px;font-weight:600;text-transform:uppercase;\">Username</span><input type=\"text\" id=\"nuUsername\" class=\"control\" placeholder=\"misal: laundry_pusat_2\" style=\"width:100%;height:44px;\" required></div>"
-  + "      <div class=\"field\" style=\"border:0;padding:0;display:grid;grid-template-columns:1fr;gap:6px;\"><span style=\"font-size:12px;font-weight:600;text-transform:uppercase;\">Label Device</span><input type=\"text\" id=\"nuFullName\" class=\"control\" placeholder=\"misal: Device Laundry Pusat 2\" style=\"width:100%;height:44px;\" required></div>"
-  + "      <div class=\"field\" style=\"border:0;padding:0;display:grid;grid-template-columns:1fr;gap:6px;\"><span style=\"font-size:12px;font-weight:600;text-transform:uppercase;\">Cabang Penugasan</span><select id=\"nuBranch\" class=\"control\" style=\"width:100%;height:44px;\">" + branchOptions + "</select></div>"
-  + "      <div class=\"field\" style=\"border:0;padding:0;display:grid;grid-template-columns:1fr;gap:6px;\"><span style=\"font-size:12px;font-weight:600;text-transform:uppercase;\">Password Awal</span><input type=\"password\" id=\"nuPassword\" class=\"control\" placeholder=\"Min 6 kar, min 1 huruf kapital A-Z\" minlength=\"6\" maxlength=\"1024\" pattern=\"[\\s\\S]*[A-Z][\\s\\S]*\" style=\"width:100%;height:44px;\" required></div>"
+  + "<article class=\"card users-card\">"
+  + "  <div class=\"card-head\"><div><h2>Tambah Device Baru</h2><p>Daftarkan akun login device baru dan hubungkan ke unit cabang</p></div></div>"
+  + "  <form id=\"newUserForm\" onsubmit=\"event.preventDefault(); if(window.SipekaCreateStaff) window.SipekaCreateStaff();\" class=\"new-device-form\">"
+  + "    <div class=\"form-fields\">"
+  + "      <label class=\"form-group\"><span>Username Akun</span><input type=\"text\" id=\"nuUsername\" class=\"control\" placeholder=\"misal: laundry_device_1\" required></label>"
+  + "      <label class=\"form-group\"><span>Label Nama Device</span><input type=\"text\" id=\"nuFullName\" class=\"control\" placeholder=\"misal: Device Kasir Laundry 1\" required></label>"
+  + "      <label class=\"form-group\"><span>Cabang Penugasan</span><select id=\"nuBranch\" class=\"control\">" + branchOptions + "</select></label>"
+  + "      <label class=\"form-group\"><span>Password Awal</span><input type=\"password\" id=\"nuPassword\" class=\"control\" placeholder=\"Min 6 kar, min 1 huruf besar A-Z\" minlength=\"6\" maxlength=\"1024\" pattern=\"[\\s\\S]*[A-Z][\\s\\S]*\" required></label>"
   + "    </div>"
-  + "    <div id=\"nuMsg\" style=\"font-size:12px;min-height:16px;\"></div>"
-  + "    <div style=\"display:flex;justify-content:flex-end;\">"
-  + "      <button type=\"submit\" id=\"nuSubmitBtn\" class=\"btn primary\" style=\"padding:10px 24px;font-weight:600;min-height:44px;\">+ Daftarkan Device</button>"
+  + "    <div id=\"nuMsg\" class=\"form-status-msg\"></div>"
+  + "    <div class=\"form-actions-row\">"
+  + "      <button type=\"submit\" id=\"nuSubmitBtn\" class=\"btn primary\">+ Daftarkan Device</button>"
   + "    </div>"
   + "  </form>"
   + "</article>"
@@ -3232,6 +3259,43 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
 .branch-action-cell .btn{min-height:36px;height:36px;padding:0 12px;font-size:12.5px;border-radius:6px}
 .branch-action-cell input{height:36px;font-size:13px;border-radius:6px;padding:0 8px;width:150px}
 .branch-action-cell select{height:36px;font-size:12px;border-radius:6px}
+
+/* Enhanced Device & Users View */
+.users-card{border-radius:14px;border:1px solid var(--line);background:var(--surface);box-shadow:0 4px 20px rgba(0,0,0,.04);overflow:hidden}
+.users-card>.card-head{padding:18px 22px;margin:0;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.users-card>.card-head h2{margin:0;font-size:16.5px;font-weight:700;color:var(--ink)}
+.users-card>.card-head p{margin:2px 0 0;font-size:12.5px;color:var(--sub)}
+.users-list-wrap{padding:14px 18px;display:flex;flex-direction:column;gap:8px}
+.user-card-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:var(--soft);border:1px solid var(--line);border-radius:10px;transition:all .15s ease}
+.user-card-item:hover{background:color-mix(in srgb,var(--green-bg) 35%,var(--soft));border-color:color-mix(in srgb,var(--green) 30%,var(--line))}
+.user-card-item.is-archived{opacity:.55;background:var(--surface);border-style:dashed}
+.user-card-title{display:flex;align-items:baseline;gap:6px}
+.user-name{font-size:14px;font-weight:700;color:var(--ink)}
+.user-handle{font-size:12.5px;color:var(--muted)}
+.user-card-meta{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--sub);margin-top:4px}
+.meta-dot{color:var(--line2)}
+.tag-device{background:color-mix(in srgb,#3b82f6 14%,var(--surface));color:#2563eb;border-color:color-mix(in srgb,#3b82f6 28%,transparent)}
+.tag-owner{background:color-mix(in srgb,var(--green) 14%,var(--surface));color:var(--green2);border-color:color-mix(in srgb,var(--green) 28%,transparent)}
+.tag-archived{background:var(--line);color:var(--muted)}
+.user-card-actions{display:flex;align-items:center;gap:6px}
+.user-card-actions .btn{min-height:32px;height:32px;padding:0 12px;font-size:12px;font-weight:600;border-radius:6px}
+.btn-outline{background:var(--surface);border:1px solid var(--line);color:var(--ink)}
+.btn-outline:hover{background:var(--soft);border-color:var(--line2)}
+.btn-archive{background:color-mix(in srgb,var(--red) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--red) 25%,var(--line));color:var(--red)}
+.btn-archive:hover{background:var(--red);color:#fff}
+.btn-restore{background:var(--surface);border:1px solid var(--green);color:var(--green)}
+.btn-restore:hover{background:var(--green);color:#fff}
+.empty-users{padding:24px;text-align:center;color:var(--muted);font-size:13px}
+.archived-accordion{margin-top:10px;padding:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:8px;font-size:12.5px}
+.archived-accordion summary{cursor:pointer;font-weight:600;color:var(--sub);outline:none}
+.archived-list{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.new-device-form{display:flex;flex-direction:column;gap:14px;padding:18px 22px}
+.form-fields{display:grid;gap:12px}
+.form-group{display:flex;flex-direction:column;gap:6px}
+.form-group>span{font-size:12px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.03em}
+.form-group .control{width:100%;height:44px;min-height:44px;font-size:14px;border-radius:8px;padding:0 12px}
+.form-actions-row{display:flex;justify-content:flex-end;margin-top:4px}
+.form-actions-row .btn{min-height:44px;padding:0 24px;border-radius:8px;font-size:14px;font-weight:700}
 </style>
 <script>
 /* Device identity is authentication; the on-duty person is explicit per-tab attribution. */
@@ -3252,7 +3316,7 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
  function branches(selected){return (window.SipekaUnits||[]).map(u=>'<option value="'+esc(u.id)+'"'+(u.id===selected?' selected':'')+'>'+esc(u.name)+'</option>').join('');}
  function form(r){return '<form data-staff-edit="'+esc(r?.id||'')+'" class="device-staff-form"><label>Nama Staff<input name="name" class="control" maxlength="120" required value="'+esc(r?.name||'')+'"></label><label>Unit bisnis<select name="branch_id" class="control" required>'+branches(r?.branch_id)+'</select></label><label>Status<select name="active" class="control"><option value="true">Aktif</option><option value="false"'+(r&&!r.active?' selected':'')+'>Nonaktif</option></select></label><button class="btn" type="submit">'+(r?'Simpan Staff':'Tambah Staff')+'</button></form>';}
  function directory(){if(window.SipekaCurrentUser?.role!=='OWNER')return '';
-  return '<section class="card device-staff"><h2>Direktori Staff per Unit Bisnis</h2><p>Staff tidak memiliki akun login. Nama saat operasi disimpan permanen; perubahan dan nonaktif tidak mengubah riwayat.</p>'+form(null)+rows.map(form).join('')+'<p role="status" id="staffDirectoryMessage">'+esc(error)+'</p><h2>Konfigurasi Device</h2><p>Akun lama tetap dapat digunakan sebagai device. Username, password, dan ID tidak berubah.</p>'+(window.SipekaAllUsersList||[]).filter(u=>u.role==='STAFF').map(u=>'<form data-device-edit="'+esc(u.id)+'" class="device-staff-form"><strong>@'+esc(u.username)+'</strong><label>Label device<input class="control" name="name" maxlength="120" required value="'+esc(u.full_name)+'"></label><label>Unit bisnis<select class="control" name="branch_id">'+branches(u.assigned_branch_id)+'</select></label><button class="btn">Simpan Device</button></form>').join('')+'</section>';
+  return '<section class="card device-staff"><div class="card-head" style="padding:0;margin-bottom:14px;"><div><h2>Direktori Staff Bertugas per Unit</h2><p>Staff tidak memiliki akun login. Nama staf dipilih oleh Device saat operasional transaksi.</p></div></div><div class="staff-add-box" style="margin-bottom:16px;">'+form(null)+'</div><div class="staff-list-grid" style="display:grid;gap:8px;">'+rows.map(form).join('')+'</div><p role="status" id="staffDirectoryMessage" style="font-size:12.5px;color:var(--sub);margin-top:10px;">'+esc(error)+'</p></section>';
  }
  function headers(path,method){if(method!=='POST'||window.SipekaCurrentUser?.role!=='STAFF'||!(/^\/api\/(transactions|closing|approvals|receipts\/upload)$/.test(path)||path.startsWith('/api/advances/')))return {};
   if(!choice)throw Error('Pilih Staff bertugas sebelum mengirim operasi.');
