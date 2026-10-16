@@ -2309,19 +2309,15 @@ function branchesSystemPage(){
   + "</section>"
   + "<article class=\"card table-card branches-table-card\" style=\"margin-top:20px;\">"
   + '  <div class="card-head"><div><h2>Daftar Cabang Operasional Aktif</h2><p>Kelola nama unit usaha atau arsipkan dari alur kerja aktif</p></div></div>'
-  + '  <div class="table-wrap"><table class="responsive branches-table"><thead><tr><th style="width:24%;">Nama Cabang</th><th style="width:14%;">Kode</th><th style="width:18%;">Tipe Usaha</th><th>Kelola & Pengalihan Staf</th></tr></thead><tbody>'
+  + '  <div class="table-wrap"><table class="responsive branches-table"><thead><tr><th style="width:28%;">Nama Cabang</th><th style="width:16%;">Kode</th><th style="width:20%;">Tipe Usaha</th><th style="text-align:right;">Aksi</th></tr></thead><tbody>'
   + (window.SipekaUnits||[]).map(u=>'<tr>'
     + '<td data-label="Nama Cabang"><strong class="branch-name-title">'+escapeHtml(u.name)+'</strong></td>'
     + '<td data-label="Kode"><span class="badge-code">'+escapeHtml(u.code)+'</span></td>'
     + '<td data-label="Tipe Usaha"><span class="tag tag-branch-cat">'+escapeHtml(u.category||'Operasional')+'</span></td>'
-    + '<td data-label="Tindakan" class="branch-action-cell">'
-    + '  <div class="branch-action-group">'
-    + '    <input class="control branch-input-rename" aria-label="Nama baru cabang" maxlength="120" data-rename-name="'+escapeHtml(u.id)+'" value="'+escapeHtml(u.name)+'">'
-    + '    <button class="btn btn-sm btn-outline" data-rename-unit="'+escapeHtml(u.id)+'">Simpan Nama</button>'
-    + '  </div>'
-    + '  <div class="branch-archive-group">'
-    + '    <label class="reassign-label"><span class="reassign-hint">Alihkan ke:</span><select class="control reassign-select" data-replacement-unit="'+escapeHtml(u.id)+'"><option value="">Tanpa pengganti</option>'+(window.SipekaUnits||[]).filter(x=>x.id!==u.id).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join('')+'</select></label>'
-    + '    <button class="btn btn-sm btn-archive-branch danger" data-remove-unit="'+escapeHtml(u.id)+'">Arsipkan Cabang</button>'
+    + '<td data-label="Aksi" style="text-align:right;">'
+    + '  <div class="branch-btn-group">'
+    + '    <button class="btn btn-sm btn-outline" type="button" onclick="window.SipekaPromptRenameBranch(\''+escapeHtml(u.id)+'\',\''+escapeHtml(u.name)+'\')">Edit Nama</button>'
+    + '    <button class="btn btn-sm btn-archive-branch danger" type="button" onclick="window.SipekaPromptArchiveBranch(\''+escapeHtml(u.id)+'\',\''+escapeHtml(u.name)+'\')">Arsipkan</button>'
     + '  </div>'
     + '</td></tr>').join('')
   + '</tbody></table></div><p id="branchRemoveMsg" role="status" style="padding:12px 18px;margin:0;font-size:13px;"></p>'
@@ -2821,18 +2817,42 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
     }
   };
 
-  document.addEventListener('click',async event=>{
-    const rename=event.target.closest('[data-rename-unit]');
-    if(rename){const id=rename.dataset.renameUnit,name=document.querySelector('[data-rename-name="'+CSS.escape(id)+'"]')?.value;rename.disabled=true;try{await api('/api/units/rename',{method:'POST',body:{branch_id:id,name}});await bootstrap(window.SipekaCurrentUser);}catch(e){const msg=document.getElementById('branchRemoveMsg');if(msg)msg.textContent=e.message;}finally{rename.disabled=false;}return;}
-    const button=event.target.closest('[data-remove-unit]');if(!button)return;
-    const id=button.dataset.removeUnit,unit=(window.SipekaUnits||[]).find(u=>u.id===id);
-    if(!unit||!confirm('Arsipkan cabang '+unit.name+' dari operasional? Riwayat tetap disimpan. Staff di cabang ini perlu ditugaskan ulang.'))return;if(!confirm('Konfirmasi kedua: cabang '+unit.name+' ('+id+') akan dinonaktifkan dari operasional. Riwayat keuangan dan audit tetap disimpan. Lanjutkan arsip cabang ini?'))return;
-    button.disabled=true;
-    const replacement=document.querySelector('[data-replacement-unit="'+CSS.escape(id)+'"]')?.value||null;
-    try{await api('/api/units/'+encodeURIComponent(id),{method:'DELETE',body:{reassign_to:replacement}});await bootstrap(window.SipekaCurrentUser);}
-    catch(e){const msg=document.getElementById('branchRemoveMsg');if(msg)msg.textContent=e.message;}
-    finally{button.disabled=false;}
-  });
+  window.SipekaPromptRenameBranch = async function(id, currentName) {
+    const newName = prompt('Ubah nama cabang:', currentName);
+    if (!newName || newName.trim() === '' || newName.trim() === currentName) return;
+    try {
+      await api('/api/units/rename', { method: 'POST', body: { branch_id: id, name: newName.trim() } });
+      await bootstrap(window.SipekaCurrentUser);
+      if (typeof showToast === 'function') showToast('Nama cabang berhasil diubah ke ' + newName.trim());
+    } catch (e) {
+      alert('Gagal mengubah nama cabang: ' + e.message);
+    }
+  };
+
+  window.SipekaPromptArchiveBranch = async function(id, name) {
+    const otherUnits = (window.SipekaUnits || []).filter(u => u.id !== id);
+    let promptMsg = 'Arsipkan cabang ' + name + ' dari operasional?\nRiwayat transaksi tetap tersimpan aman di database.';
+    let replacement = null;
+    if (otherUnits.length > 0) {
+      const optList = otherUnits.map((u, i) => (i + 1) + '. ' + u.name + ' (' + u.code + ')').join('\n');
+      const ans = prompt(promptMsg + '\n\nPilih nomor cabang untuk pengalihan staf (atau ketik 0 jika tanpa pengganti):\n' + optList, '0');
+      if (ans === null) return;
+      const num = parseInt(ans.trim(), 10);
+      if (!isNaN(num) && num > 0 && num <= otherUnits.length) {
+        replacement = otherUnits[num - 1].id;
+      }
+    } else {
+      if (!confirm(promptMsg)) return;
+    }
+    if (!confirm('Konfirmasi kedua: cabang ' + name + ' akan dinonaktifkan dari operasional aktif. Lanjutkan arsip?')) return;
+    try {
+      await api('/api/units/' + encodeURIComponent(id), { method: 'DELETE', body: { reassign_to: replacement } });
+      await bootstrap(window.SipekaCurrentUser);
+      if (typeof showToast === 'function') showToast('Cabang ' + name + ' berhasil diarsipkan');
+    } catch (e) {
+      alert('Gagal mengarsipkan cabang: ' + e.message);
+    }
+  };
 
   // Stable key survives re-render, bound to actor + target + action + exact payload.
   const advanceRetryBindings=new Map();
@@ -3281,18 +3301,15 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
 .policy-item strong{font-size:13.5px;color:var(--ink);display:block;margin-bottom:2px}
 .policy-item p{margin:0;font-size:12px;color:var(--sub);line-height:1.4}
 .branches-table-card{border-radius:14px;border:1px solid var(--line);border-top:4px solid var(--green);background:var(--surface);box-shadow:0 4px 20px rgba(0,0,0,.04);overflow:hidden}
-.branches-table th{background:var(--soft);font-size:12.5px;font-weight:700;color:var(--ink);text-transform:uppercase;letter-spacing:.02em;padding:12px 16px}
-.branches-table td{padding:14px 16px;border-bottom:1px solid var(--line);vertical-align:middle}
-.branch-name-title{font-size:14.5px;color:var(--ink)}
-.badge-code{display:inline-block;padding:3px 8px;font-family:monospace;font-size:12px;font-weight:700;background:var(--soft);border:1px solid var(--line);border-radius:6px;color:var(--ink)}
-.tag-branch-cat{background:color-mix(in srgb,var(--green) 12%,var(--surface));color:var(--green2);border-color:color-mix(in srgb,var(--green) 25%,transparent);font-size:11.5px;font-weight:600}
-.branch-action-cell{display:flex;flex-direction:column;gap:8px}
-.branch-action-group,.branch-archive-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.branch-input-rename{width:160px;height:36px;font-size:13px;border-radius:6px;padding:0 10px}
-.reassign-label{display:inline-flex;align-items:center;gap:6px;font-size:12px}
-.reassign-hint{color:var(--muted);font-weight:600}
-.reassign-select{height:36px;font-size:12.5px;border-radius:6px;padding:0 8px}
-.btn-archive-branch{min-height:36px;height:36px;padding:0 12px;font-size:12px;font-weight:600;border-radius:6px}
+.branches-table th{background:var(--soft);font-size:12px;font-weight:700;color:var(--ink);text-transform:uppercase;letter-spacing:.03em;padding:12px 18px}
+.branches-table td{padding:12px 18px;border-bottom:1px solid var(--line);vertical-align:middle;height:54px}
+.branch-name-title{font-size:14px;font-weight:700;color:var(--ink)}
+.badge-code{display:inline-block;padding:2px 8px;font-family:monospace;font-size:11.5px;font-weight:700;background:var(--soft);border:1px solid var(--line);border-radius:6px;color:var(--ink)}
+.tag-branch-cat{background:color-mix(in srgb,var(--green) 12%,var(--surface));color:var(--green2);border-color:color-mix(in srgb,var(--green) 25%,transparent);font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px}
+.branch-btn-group{display:inline-flex;align-items:center;justify-content:flex-end;gap:8px}
+.branch-btn-group .btn{min-height:32px;height:32px;padding:0 12px;font-size:12px;font-weight:600;border-radius:6px}
+.btn-archive-branch{background:color-mix(in srgb,var(--red) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--red) 25%,var(--line));color:var(--red)}
+.btn-archive-branch:hover{background:var(--red);color:#fff}
 
 /* Enhanced Device & Users View */
 .users-card{border-radius:14px;border:1px solid var(--line);background:var(--surface);box-shadow:0 4px 20px rgba(0,0,0,.04);overflow:hidden}
