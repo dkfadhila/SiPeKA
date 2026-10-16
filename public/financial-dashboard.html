@@ -2282,35 +2282,49 @@ function taxPage(){return window.SipekaReports.render('tax')}
 function exportPage(){return window.SipekaReports.render('export')}
 function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function branchesSystemPage(){
-  return pageHead("System", "Branches", "Kelola unit cabang operasional, kode cabang, dan status aktivasi.")
-  + "<section class=\"grid two-col\">"
-  + "<article class=\"card\">"
-  + "  <div class=\"card-head\"><div><h2>Tambah Cabang Baru</h2><p>Daftarkan unit bisnis baru untuk pelaporan dan penempatan staf</p></div></div>"
-  + "  <form id=\"newBranchForm\" onsubmit=\"event.preventDefault(); if(window.SipekaCreateBranch) window.SipekaCreateBranch();\" style=\"display:flex;flex-direction:column;gap:12px;\">"
-  + "    <div class=\"fields\">"
-  + "      <div class=\"field\"><span>Nama Cabang</span><input type=\"text\" id=\"nbName\" class=\"control\" placeholder=\"misal: Laundry Kemang\" style=\"width:100%;\" required></div>"
-  + "      <div class=\"field\"><span>Kode Cabang</span><input type=\"text\" id=\"nbCode\" class=\"control\" placeholder=\"misal: KMNG atau LC2\" style=\"width:100%;\" required></div>"
-  + "      <div class=\"field\"><span>Kategori Usaha</span><select id=\"nbCategory\" class=\"control\" style=\"width:100%;\"><option value=\"LAUNDRY\">Laundry Service</option><option value=\"CAFE\">Cafe & Resto</option><option value=\"KOS\">Kos & Hospitality</option><option value=\"CAR_WASH\">Car Wash & Autocare</option><option value=\"OTHER\">Bisnis Lainnya</option></select></div>"
+  return pageHead("System control", "Branches & Cabang", "Kelola unit cabang operasional, kode unik cabang, dan hak isolasi data.")
+  + "<section class=\"grid two-col branches-grid-layout\">"
+  + "<article class=\"card branches-card\">"
+  + "  <div class=\"card-head\"><div><h2>Tambah Cabang Baru</h2><p>Daftarkan unit usaha baru ke dalam ekosistem</p></div></div>"
+  + "  <form id=\"newBranchForm\" onsubmit=\"event.preventDefault(); if(window.SipekaCreateBranch) window.SipekaCreateBranch();\" class=\"new-branch-form\">"
+  + "    <div class=\"form-fields\">"
+  + "      <label class=\"form-group\"><span>Nama Cabang</span><input type=\"text\" id=\"nbName\" class=\"control\" placeholder=\"misal: Laundry Kemang\" required></label>"
+  + "      <label class=\"form-group\"><span>Kode Cabang</span><input type=\"text\" id=\"nbCode\" class=\"control\" placeholder=\"misal: KMNG atau LC2\" required></label>"
+  + "      <label class=\"form-group\"><span>Kategori Usaha</span><select id=\"nbCategory\" class=\"control\"><option value=\"LAUNDRY\">Laundry Service</option><option value=\"CAFE\">Cafe & Resto</option><option value=\"KOS\">Kos & Hospitality</option><option value=\"CAR_WASH\">Car Wash & Autocare</option><option value=\"OTHER\">Bisnis Lainnya</option></select></label>"
   + "    </div>"
-  + "    <div id=\"nbMsg\" style=\"font-size:12px;min-height:16px;margin-top:2px;\"></div>"
-  + "    <div style=\"display:flex;justify-content:flex-end;margin-top:4px;\">"
-  + "      <button type=\"submit\" id=\"nbSubmitBtn\" class=\"btn primary\" style=\"padding:8px 20px;font-weight:600;\">+ Tambah Cabang</button>"
+  + "    <div id=\"nbMsg\" class=\"form-status-msg\"></div>"
+  + "    <div class=\"form-actions-row\">"
+  + "      <button type=\"submit\" id=\"nbSubmitBtn\" class=\"btn primary\">+ Tambah Cabang</button>"
   + "    </div>"
   + "  </form>"
   + "</article>"
-  + "<article class=\"card\">"
-  + "  <div class=\"card-head\"><div><h2>Ketentuan Unit Cabang</h2><p>Aturan isolasi data & otorisasi multi-cabang</p></div></div>"
-  + "  <div class=\"fields\">"
-  + "    <div class=\"field\"><span>Isolasi Kasir</span><strong>Staff hanya dapat mencatat di cabang penugasan</strong></div>"
-  + "    <div class=\"field\"><span>Konsolidasi Owner</span><strong>Owner dapat memantau per cabang atau All Branches</strong></div>"
-  + "    <div class=\"field\"><span>Threshold Approval</span><strong class=\"money\">Rp 500.000 / transaksi</strong></div>"
+  + "<article class=\"card branches-card info-card\">"
+  + "  <div class=\"card-head\"><div><h2>Ketentuan Isolasi & Cabang</h2><p>Aturan keamanan transaksi multi-cabang</p></div></div>"
+  + "  <div class=\"branch-policy-list\">"
+  + "    <div class=\"policy-item\"><div class=\"policy-icon\">🛡️</div><div><strong>Isolasi Kasir Device</strong><p>Device hanya diizinkan mencatat operasional pada cabang penugasannya.</p></div></div>"
+  + "    <div class=\"policy-item\"><div class=\"policy-icon\">📊</div><div><strong>Konsolidasi Owner</strong><p>Owner memiliki akses agregat seluruh cabang atau filter per unit bisnis.</p></div></div>"
+  + "    <div class=\"policy-item\"><div class=\"policy-icon\">⚡</div><div><strong>Batas Approval Pengeluaran</strong><p>Pengeluaran di atas Rp 500.000 wajib persetujuan Owner.</p></div></div>"
   + "  </div>"
   + "</article>"
   + "</section>"
-  + "<article class=\"card table-card\" style=\"margin-top:20px;border-top:4px solid var(--green);\">"
-  + '<div class="card-head"><div><h2>Cabang Operasional Aktif</h2><p>Kelola nama unit cabang operasional atau arsipkan dari sistem</p></div></div><div class="table-wrap"><table class="responsive"><thead><tr><th>Nama Cabang</th><th>Kode</th><th>Tipe Usaha</th><th>Tindakan & Pengalihan</th></tr></thead><tbody>'
-  + (window.SipekaUnits||[]).map(u=>'<tr><td data-label="Nama Cabang"><strong>'+escapeHtml(u.name)+'</strong></td><td data-label="Kode"><span class="code">'+escapeHtml(u.code)+'</span></td><td data-label="Tipe Usaha">'+escapeHtml(u.category||'—')+'</td><td data-label="Tindakan" class="branch-action-cell"><input aria-label="Nama baru cabang" maxlength="120" data-rename-name="'+escapeHtml(u.id)+'" value="'+escapeHtml(u.name)+'"><button class="btn" data-rename-unit="'+escapeHtml(u.id)+'">Ganti Nama</button><label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;margin:0 4px;"><span style="color:var(--muted)">ke:</span><select data-replacement-unit="'+escapeHtml(u.id)+'"><option value="">Tanpa pengganti</option>'+(window.SipekaUnits||[]).filter(x=>x.id!==u.id).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join('')+'</select></label><button class="btn danger" data-remove-unit="'+escapeHtml(u.id)+'">Arsipkan</button></td></tr>').join('')
-  + '</tbody></table></div><p id="branchRemoveMsg" role="status" style="padding:10px 18px;margin:0;font-size:13px;"></p>'
+  + "<article class=\"card table-card branches-table-card\" style=\"margin-top:20px;\">"
+  + '  <div class="card-head"><div><h2>Daftar Cabang Operasional Aktif</h2><p>Kelola nama unit usaha atau arsipkan dari alur kerja aktif</p></div></div>'
+  + '  <div class="table-wrap"><table class="responsive branches-table"><thead><tr><th style="width:24%;">Nama Cabang</th><th style="width:14%;">Kode</th><th style="width:18%;">Tipe Usaha</th><th>Kelola & Pengalihan Staf</th></tr></thead><tbody>'
+  + (window.SipekaUnits||[]).map(u=>'<tr>'
+    + '<td data-label="Nama Cabang"><strong class="branch-name-title">'+escapeHtml(u.name)+'</strong></td>'
+    + '<td data-label="Kode"><span class="badge-code">'+escapeHtml(u.code)+'</span></td>'
+    + '<td data-label="Tipe Usaha"><span class="tag tag-branch-cat">'+escapeHtml(u.category||'Operasional')+'</span></td>'
+    + '<td data-label="Tindakan" class="branch-action-cell">'
+    + '  <div class="branch-action-group">'
+    + '    <input class="control branch-input-rename" aria-label="Nama baru cabang" maxlength="120" data-rename-name="'+escapeHtml(u.id)+'" value="'+escapeHtml(u.name)+'">'
+    + '    <button class="btn btn-sm btn-outline" data-rename-unit="'+escapeHtml(u.id)+'">Simpan Nama</button>'
+    + '  </div>'
+    + '  <div class="branch-archive-group">'
+    + '    <label class="reassign-label"><span class="reassign-hint">Alihkan ke:</span><select class="control reassign-select" data-replacement-unit="'+escapeHtml(u.id)+'"><option value="">Tanpa pengganti</option>'+(window.SipekaUnits||[]).filter(x=>x.id!==u.id).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join('')+'</select></label>'
+    + '    <button class="btn btn-sm btn-archive-branch danger" data-remove-unit="'+escapeHtml(u.id)+'">Arsipkan Cabang</button>'
+    + '  </div>'
+    + '</td></tr>').join('')
+  + '</tbody></table></div><p id="branchRemoveMsg" role="status" style="padding:12px 18px;margin:0;font-size:13px;"></p>'
   + "</article>";
 }
 // Drop-in renderer only. Password submission remains in the existing API bridge.
@@ -3255,10 +3269,30 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
 .device-staff-form input,.device-staff-form select{width:100%;height:42px;min-height:42px;font-size:14px;border-radius:8px}
 .device-staff-form .btn{height:42px;min-height:42px;padding:0 16px;border-radius:8px;font-weight:600}
 .device-staff-form strong{display:inline-block;padding:4px 8px;background:var(--surface);border:1px solid var(--line);border-radius:6px;font-size:13px}
-.branch-action-cell{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.branch-action-cell .btn{min-height:36px;height:36px;padding:0 12px;font-size:12.5px;border-radius:6px}
-.branch-action-cell input{height:36px;font-size:13px;border-radius:6px;padding:0 8px;width:150px}
-.branch-action-cell select{height:36px;font-size:12px;border-radius:6px}
+/* Enhanced Branches View */
+.branches-card{border-radius:14px;border:1px solid var(--line);background:var(--surface);box-shadow:0 4px 20px rgba(0,0,0,.04);overflow:hidden}
+.branches-card>.card-head{padding:18px 22px;margin:0;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.branches-card>.card-head h2{margin:0;font-size:16.5px;font-weight:700;color:var(--ink)}
+.branches-card>.card-head p{margin:2px 0 0;font-size:12.5px;color:var(--sub)}
+.new-branch-form{display:flex;flex-direction:column;gap:14px;padding:18px 22px}
+.branch-policy-list{padding:18px 22px;display:flex;flex-direction:column;gap:12px}
+.policy-item{display:flex;gap:12px;align-items:flex-start;padding:10px 12px;background:var(--soft);border:1px solid var(--line);border-radius:8px}
+.policy-icon{font-size:18px;line-height:1}
+.policy-item strong{font-size:13.5px;color:var(--ink);display:block;margin-bottom:2px}
+.policy-item p{margin:0;font-size:12px;color:var(--sub);line-height:1.4}
+.branches-table-card{border-radius:14px;border:1px solid var(--line);border-top:4px solid var(--green);background:var(--surface);box-shadow:0 4px 20px rgba(0,0,0,.04);overflow:hidden}
+.branches-table th{background:var(--soft);font-size:12.5px;font-weight:700;color:var(--ink);text-transform:uppercase;letter-spacing:.02em;padding:12px 16px}
+.branches-table td{padding:14px 16px;border-bottom:1px solid var(--line);vertical-align:middle}
+.branch-name-title{font-size:14.5px;color:var(--ink)}
+.badge-code{display:inline-block;padding:3px 8px;font-family:monospace;font-size:12px;font-weight:700;background:var(--soft);border:1px solid var(--line);border-radius:6px;color:var(--ink)}
+.tag-branch-cat{background:color-mix(in srgb,var(--green) 12%,var(--surface));color:var(--green2);border-color:color-mix(in srgb,var(--green) 25%,transparent);font-size:11.5px;font-weight:600}
+.branch-action-cell{display:flex;flex-direction:column;gap:8px}
+.branch-action-group,.branch-archive-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.branch-input-rename{width:160px;height:36px;font-size:13px;border-radius:6px;padding:0 10px}
+.reassign-label{display:inline-flex;align-items:center;gap:6px;font-size:12px}
+.reassign-hint{color:var(--muted);font-weight:600}
+.reassign-select{height:36px;font-size:12.5px;border-radius:6px;padding:0 8px}
+.btn-archive-branch{min-height:36px;height:36px;padding:0 12px;font-size:12px;font-weight:600;border-radius:6px}
 
 /* Enhanced Device & Users View */
 .users-card{border-radius:14px;border:1px solid var(--line);background:var(--surface);box-shadow:0 4px 20px rgba(0,0,0,.04);overflow:hidden}
