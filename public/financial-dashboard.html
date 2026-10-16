@@ -2197,13 +2197,13 @@ function usersPage(){
     const uid = String(u.id||'');
     const bName = (typeof escHtml==='function'?escHtml:String)(u.branch_name || "Semua Cabang");
     const fullNameEsc = (typeof escHtml==='function'?escHtml:String)(u.full_name||'');
-    return "<div class=\"field\" style=\"display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);\">"
+    return "<div class=\"field\" style=\"display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--surface);border-radius:8px;margin-bottom:6px;\">"
       + "<div>"
-      + "  <strong>" + fullNameEsc + "</strong> <small style=\"color:var(--muted);\">@" + uname + "</small>"
-      + "  <div style=\"font-size:11px;color:var(--sub);margin-top:2px;\"><span class=\"tag " + (isStaff ? "" : "ok") + "\">" + (isStaff ? "DEVICE" : "OWNER") + "</span> · Cabang: <b>" + bName + "</b></div>"
+      + "  <strong style=\"font-size:14px;color:var(--ink);\">" + fullNameEsc + "</strong> <small style=\"color:var(--muted);margin-left:4px;\">@" + uname + "</small>"
+      + "  <div style=\"font-size:12px;color:var(--sub);margin-top:4px;\"><span class=\"tag " + (isStaff ? "" : "ok") + "\">" + (isStaff ? "DEVICE" : "OWNER") + "</span> · Cabang: <b>" + bName + "</b></div>"
       + "</div>"
       + "<div style=\"display:flex;align-items:center;gap:6px;\">"
-      + (isStaff ? ("<button class=\"btn btn-sm sipeka-reset-pwd\" type=\"button\" data-uid='" + uid + "'  data-uname='" + uname + "' style=\"font-size:11px;padding:4px 10px;\">Reset Sandi</button>") : "")
+      + (isStaff ? ("<button class=\"btn btn-sm sipeka-reset-pwd\" type=\"button\" data-uid='" + uid + "'  data-uname='" + uname + "' style=\"font-size:12px;padding:6px 12px;\">Reset Sandi</button>") : "")
       + "</div>"
       + "</div>";
   }).join("");
@@ -2211,31 +2211,27 @@ function usersPage(){
   return (window.SipekaDeviceStaff?.directory()||'')+pageHead("System control", "Device & Unit Bisnis", "Akun operasional milik device; nama Staff dikelola terpisah.")
   + "<section class=\"grid two-col\">"
   + "<article class=\"card\">"
-  + "  <div class=\"card-head\"><div><h2>Daftar Akun Device & Owner</h2><p>Akun lama tetap valid sebagai device unit</p></div><button class=\"btn btn-sm\" type=\"button\" onclick=\"window.SipekaLoadAllUsers()\">Refresh</button></div>"
-  + "  <div class=\"fields\" id=\"usersListContainer\" style=\"display:flex;flex-direction:column;gap:0;\">"
+  + "  <div class=\"card-head\"><div><h2>Daftar Akun Device & Owner</h2><p>Akun login operasional per unit bisnis</p></div><button class=\"btn btn-sm\" type=\"button\" onclick=\"window.SipekaLoadAllUsers()\">Refresh</button></div>"
+  + "  <div class=\"fields\" id=\"usersListContainer\" style=\"display:flex;flex-direction:column;gap:0;padding:12px 16px;\">"
   + (staffCards || "<div class=\"field\"><span>Belum ada device terdaftar</span><strong>—</strong></div>")
   + "  </div>"
   + "</article>"
   + "<article class=\"card\">"
-  + "  <div class=\"card-head\"><div><h2>Tambah Device Baru</h2><p>Daftarkan akun device dan tautkan ke unit bisnis</p></div></div>"
-  + "  <form id=\"newUserForm\" onsubmit=\"event.preventDefault(); if(window.SipekaCreateStaff) window.SipekaCreateStaff();\" style=\"display:flex;flex-direction:column;gap:12px;\">"
-  + "    <div class=\"fields\">"
-  + "      <div class=\"field\"><span>Username</span><input type=\"text\" id=\"nuUsername\" class=\"control\" placeholder=\"misal: laundry_pusat_2\" style=\"width:100%;\" required></div>"
-  + "      <div class=\"field\"><span>Label Device</span><input type=\"text\" id=\"nuFullName\" class=\"control\" placeholder=\"misal: Device Laundry Pusat 2\" style=\"width:100%;\" required></div>"
-  + "      <div class=\"field\"><span>Cabang Penugasan</span><select id=\"nuBranch\" class=\"control\" style=\"width:100%;\">" + branchOptions + "</select></div>"
-  + "      <div class=\"field\"><span>Password Awal</span><input type=\"password\" id=\"nuPassword\" class=\"control\" placeholder=\"Minimal 6 karakter, minimal 1 huruf besar A-Z; angka dan simbol tidak wajib\" minlength=\"6\" maxlength=\"1024\" pattern=\"[\\s\\S]*[A-Z][\\s\\S]*\" style=\"width:100%;\" required></div>"
+  + "  <div class=\"card-head\"><div><h2>Tambah Device Baru</h2><p>Daftarkan akun login device baru dan hubungkan ke unit</p></div></div>"
+  + "  <form id=\"newUserForm\" onsubmit=\"event.preventDefault(); if(window.SipekaCreateStaff) window.SipekaCreateStaff();\" style=\"display:flex;flex-direction:column;gap:14px;padding:16px 20px;\">"
+  + "    <div class=\"fields\" style=\"padding:0;display:grid;gap:12px;\">"
+  + "      <div class=\"field\" style=\"border:0;padding:0;display:grid;grid-template-columns:1fr;gap:6px;\"><span style=\"font-size:12px;font-weight:600;text-transform:uppercase;\">Username</span><input type=\"text\" id=\"nuUsername\" class=\"control\" placeholder=\"misal: laundry_pusat_2\" style=\"width:100%;height:44px;\" required></div>"
+  + "      <div class=\"field\" style=\"border:0;padding:0;display:grid;grid-template-columns:1fr;gap:6px;\"><span style=\"font-size:12px;font-weight:600;text-transform:uppercase;\">Label Device</span><input type=\"text\" id=\"nuFullName\" class=\"control\" placeholder=\"misal: Device Laundry Pusat 2\" style=\"width:100%;height:44px;\" required></div>"
+  + "      <div class=\"field\" style=\"border:0;padding:0;display:grid;grid-template-columns:1fr;gap:6px;\"><span style=\"font-size:12px;font-weight:600;text-transform:uppercase;\">Cabang Penugasan</span><select id=\"nuBranch\" class=\"control\" style=\"width:100%;height:44px;\">" + branchOptions + "</select></div>"
+  + "      <div class=\"field\" style=\"border:0;padding:0;display:grid;grid-template-columns:1fr;gap:6px;\"><span style=\"font-size:12px;font-weight:600;text-transform:uppercase;\">Password Awal</span><input type=\"password\" id=\"nuPassword\" class=\"control\" placeholder=\"Min 6 kar, min 1 huruf kapital A-Z\" minlength=\"6\" maxlength=\"1024\" pattern=\"[\\s\\S]*[A-Z][\\s\\S]*\" style=\"width:100%;height:44px;\" required></div>"
   + "    </div>"
-  + "    <div id=\"nuMsg\" style=\"font-size:12px;min-height:16px;margin-top:2px;\"></div>"
-  + "    <div style=\"display:flex;justify-content:flex-end;margin-top:4px;\">"
-  + "      <button type=\"submit\" id=\"nuSubmitBtn\" class=\"btn primary\" style=\"padding:8px 20px;font-weight:600;\">+ Daftarkan Device</button>"
+  + "    <div id=\"nuMsg\" style=\"font-size:12px;min-height:16px;\"></div>"
+  + "    <div style=\"display:flex;justify-content:flex-end;\">"
+  + "      <button type=\"submit\" id=\"nuSubmitBtn\" class=\"btn primary\" style=\"padding:10px 24px;font-weight:600;min-height:44px;\">+ Daftarkan Device</button>"
   + "    </div>"
   + "  </form>"
   + "</article>"
-  + "</section>"
-  + "<article class=\"card table-card\" style=\"margin-top:16px;\">"
-  + "  <div class=\"card-head\"><div><h2>Audit Transaksi Seluruh Staff</h2><p>Semua catatan transaksi masuk dan keluar dari seluruh staf di semua cabang</p></div><button class=\"btn\" data-view=\"transactions\">Buka Ledger Penuh</button></div>"
-  + transactionTable()
-  + "</article>";
+  + "</section>";
 }
 function advanceLine(){return '<fieldset data-advance-line><label>Foto nota<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" data-advance-upload required></label><input name="receiptKey" type="hidden"><span data-advance-upload-status></span><label>Kategori beban<select name="coaId" required><option value="">Pilih kategori</option>'+(window.SipekaAdvanceCategories||[]).map(c=>'<option value="'+escHtml(c.id)+'">'+escHtml(c.account_code+' · '+c.account_name)+'</option>').join('')+'</select></label><label>Realisasi IDR<input name="lineAmount" pattern="[1-9][0-9]*" required></label><button type="button" data-advance-remove>Hapus baris</button></fieldset>';}
 window.SipekaAdvanceLine=advanceLine;
@@ -2284,10 +2280,10 @@ function branchesSystemPage(){
   + "  </div>"
   + "</article>"
   + "</section>"
-  + "<article class=\"card table-card\" style=\"margin-top:16px;\">"
-  + '<div class="card-head"><div><h2>Cabang Aktif</h2><p>Hapus cabang dari operasional; riwayat transaksi tetap disimpan.</p></div></div><div class="table-wrap"><table><thead><tr><th>Nama</th><th>Kode</th><th>Tipe</th><th>Tindakan</th></tr></thead><tbody>'
-  + (window.SipekaUnits||[]).map(u=>'<tr><td>'+escapeHtml(u.name)+'</td><td>'+escapeHtml(u.code)+'</td><td>'+escapeHtml(u.category||'—')+'</td><td><label>Pindahkan staf ke <select data-replacement-unit="'+escapeHtml(u.id)+'"><option value="">Tanpa pengganti</option>'+(window.SipekaUnits||[]).filter(x=>x.id!==u.id).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join('')+'</select></label><input aria-label="Nama baru cabang" maxlength="120" data-rename-name="'+escapeHtml(u.id)+'" value="'+escapeHtml(u.name)+'"><button class="btn" data-rename-unit="'+escapeHtml(u.id)+'">Ganti Nama</button><button class="btn" data-remove-unit="'+escapeHtml(u.id)+'">Arsipkan Cabang</button></td></tr>').join('')
-  + '</tbody></table></div><p id="branchRemoveMsg" role="status"></p>'
+  + "<article class=\"card table-card\" style=\"margin-top:20px;border-top:4px solid var(--green);\">"
+  + '<div class="card-head"><div><h2>Cabang Operasional Aktif</h2><p>Kelola nama unit cabang operasional atau arsipkan dari sistem</p></div></div><div class="table-wrap"><table class="responsive"><thead><tr><th>Nama Cabang</th><th>Kode</th><th>Tipe Usaha</th><th>Tindakan & Pengalihan</th></tr></thead><tbody>'
+  + (window.SipekaUnits||[]).map(u=>'<tr><td data-label="Nama Cabang"><strong>'+escapeHtml(u.name)+'</strong></td><td data-label="Kode"><span class="code">'+escapeHtml(u.code)+'</span></td><td data-label="Tipe Usaha">'+escapeHtml(u.category||'—')+'</td><td data-label="Tindakan" class="branch-action-cell"><input aria-label="Nama baru cabang" maxlength="120" data-rename-name="'+escapeHtml(u.id)+'" value="'+escapeHtml(u.name)+'"><button class="btn" data-rename-unit="'+escapeHtml(u.id)+'">Ganti Nama</button><label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;margin:0 4px;"><span style="color:var(--muted)">ke:</span><select data-replacement-unit="'+escapeHtml(u.id)+'"><option value="">Tanpa pengganti</option>'+(window.SipekaUnits||[]).filter(x=>x.id!==u.id).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join('')+'</select></label><button class="btn danger" data-remove-unit="'+escapeHtml(u.id)+'">Arsipkan</button></td></tr>').join('')
+  + '</tbody></table></div><p id="branchRemoveMsg" role="status" style="padding:10px 18px;margin:0;font-size:13px;"></p>'
   + "</article>";
 }
 // Drop-in renderer only. Password submission remains in the existing API bridge.
@@ -3223,7 +3219,20 @@ document.addEventListener('click',()=>setTimeout(()=>{if(window.__filterRestrict
 window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedUI)window.__filterRestrictedUI();},80));
 })();
 </script>
-<style>.device-staff{margin-bottom:20px}.device-staff-form{display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:14px 0;border-bottom:1px solid var(--line)}.device-staff-form label{display:grid;gap:6px;flex:1;min-width:160px}.device-staff-form input,.device-staff-form select{width:100%}.device-staff>select{max-width:100%}</style>
+<style>
+.device-staff{margin-bottom:24px;border-radius:14px;border:1px solid color-mix(in srgb,var(--green) 24%,var(--line));border-top:4px solid var(--green);background:var(--surface);box-shadow:0 4px 20px rgba(0,0,0,.04);padding:22px 24px}
+.device-staff h2{margin:0 0 6px;font-size:17px;font-weight:700;color:var(--ink)}
+.device-staff p{margin:0 0 16px;font-size:13px;color:var(--sub)}
+.device-staff-form{display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:14px;margin-bottom:10px;background:var(--soft);border:1px solid var(--line);border-radius:10px}
+.device-staff-form label{display:grid;gap:6px;flex:1 1 160px;min-width:140px;font-size:12px;font-weight:600;color:var(--sub);text-transform:uppercase}
+.device-staff-form input,.device-staff-form select{width:100%;height:42px;min-height:42px;font-size:14px;border-radius:8px}
+.device-staff-form .btn{height:42px;min-height:42px;padding:0 16px;border-radius:8px;font-weight:600}
+.device-staff-form strong{display:inline-block;padding:4px 8px;background:var(--surface);border:1px solid var(--line);border-radius:6px;font-size:13px}
+.branch-action-cell{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.branch-action-cell .btn{min-height:36px;height:36px;padding:0 12px;font-size:12.5px;border-radius:6px}
+.branch-action-cell input{height:36px;font-size:13px;border-radius:6px;padding:0 8px;width:150px}
+.branch-action-cell select{height:36px;font-size:12px;border-radius:6px}
+</style>
 <script>
 /* Device identity is authentication; the on-duty person is explicit per-tab attribution. */
 (()=>{'use strict';
