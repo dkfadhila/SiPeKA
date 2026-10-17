@@ -1942,7 +1942,55 @@ function bindLedgerFilters(){const toggle=content.querySelector('[data-ledger-fi
 function ledgerPage(){return pageHead('Operations','Transactions','Catatan transaksi terverifikasi dan pending · '+scopeName()+'.','<button class="btn" data-ledger-filter-toggle aria-expanded="'+ledgerFilterOpen+'">Filter</button><button class="btn" data-download>Export CSV</button>')+ledgerFilterPanel()+'<article class="card table-card">'+transactionTable(null,ledgerDisplayRows())+'</article>'}
 function operatorTransactionsPage(type){let title=type==='expenses'?'Your Expenses':type==='income'?'Your Income':'Your Transactions',data=transactions.filter(r=>r[2]===scopeName()&&(type!=='expenses'||r[3].startsWith('5-'))&&(type!=='income'||r[3].startsWith('4-')));return pageHead('Assigned unit',title,'Only your entries for the assigned '+scopeName()+' workflow.','<button class="btn primary" data-view="manual">Input Transaksi</button>')+'<article class="card table-card">'+transactionTable(null,data)+'</article>'}
 function branchPage(){return pageHead('Control','Pertanggungjawaban Cabang','Pengajuan, pencairan dan pertanggungjawaban · '+scopeName()+'.','<button class="btn" data-download>Export CSV</button>')+'<article class="card table-card">'+branchTable()+'</article>'}
-function approvals(){const approveIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>',revisionIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h11a5 5 0 0 1 0 10H9"/><path d="m8 3-4 4 4 4"/></svg>',rejectIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg>',items=visibleApprovals().map(r=>r.map(escHtml));return pageHead('Control queue','Approval Center',items.length+' transaksi menunggu otorisasi finansial · '+scopeName()+'.','<span class="scope-pill">'+scopeName()+'</span>')+'<div class="card approval-summary"><div class="approval-summary-copy"><strong>'+items.length+'</strong><span>pending approvals</span></div><div class="approval-summary-meta"><span class="tag red">'+items.filter(r=>r[5]==='WIDYA FLAG').length+' WIDYA FLAGS</span><span class="tag warn">'+items.filter(r=>r[6]==='warn').length+' PRIORITY</span></div></div>'+(items.length?'<section class="approval-list" role="list" aria-label="Daftar approval pending">'+items.map((r,i)=>'<article class="card approval-card" role="listitem"><div class="approval-card-head"><div class="approval-main"><strong>'+r[1]+'</strong><small>'+r[0]+' · '+escHtml(r[8]||'Date unavailable')+'</small></div><span class="tag approval-status '+r[6]+'">'+r[5]+'</span></div><div class="approval-card-body"><div class="approval-branch">'+r[2]+'</div><div class="approval-reason">'+r[4]+'</div><div class="approval-amount">'+r[3]+'</div></div><div class="approval-card-foot"><span>Decision</span><div class="approval-actions"><button class="approval-action primary" data-approval="Approve" data-approval-id="'+r[0]+'" data-approval-txid="'+(r[7]||r[0])+'" aria-label="Approve '+r[0]+'" title="Approve">'+approveIcon+'</button><button class="approval-action danger" data-approval="Reject" data-approval-id="'+r[0]+'" data-approval-txid="'+(r[7]||r[0])+'" aria-label="Reject '+r[0]+'" title="Reject">'+rejectIcon+'</button></div></div></article>').join('')+'</section>':'<article class="card empty-view"><h2>Tidak ada approval pending</h2><p>Antrean '+scopeName()+' sudah bersih untuk periode ini.</p></article>')}
+function approvals(){
+  const approveIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="width:15px;height:15px;margin-right:5px;"><path d="m5 12 4 4L19 6"/></svg>';
+  const rejectIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="width:15px;height:15px;margin-right:5px;"><path d="m6 6 12 12M18 6 6 18"/></svg>';
+  const items=visibleApprovals().map(r=>r.map(escHtml));
+  const widyaFlags = items.filter(r=>r[5]==='WIDYA FLAG').length;
+  const priorityCount = items.filter(r=>r[6]==='warn').length;
+
+  return pageHead('Control queue','Approval Center',items.length+' transaksi menunggu otorisasi finansial · '+scopeName()+'.','<span class="scope-pill">'+scopeName()+'</span>')
+  + '<div class="card approval-hero-banner">'
+  + '  <div class="approval-hero-info">'
+  + '    <div class="approval-hero-count"><strong>'+items.length+'</strong><span>transaksi menunggu approval</span></div>'
+  + '    <p class="approval-hero-desc">Otorisasi transaksi pengeluaran dan penyesuaian dana cabang secara real-time.</p>'
+  + '  </div>'
+  + '  <div class="approval-hero-badges">'
+  + (widyaFlags ? ('<span class="badge-flag-red">⚠️ '+widyaFlags+' Widya Flag</span>') : '')
+  + (priorityCount ? ('<span class="badge-flag-amber">⚡ '+priorityCount+' Prioritas</span>') : '')
+  + '    <span class="badge-flag-green">🛡️ Protected Ledger</span>'
+  + '  </div>'
+  + '</div>'
+  + (items.length ? ('<section class="approval-cards-grid" role="list" aria-label="Daftar approval pending">'
+    + items.map((r,i)=>'<article class="card approval-card-v2" role="listitem">'
+      + '<div class="approval-card-v2-header">'
+      + '  <div class="approval-merchant-block">'
+      + '    <span class="approval-branch-badge">'+r[2]+'</span>'
+      + '    <strong class="approval-merchant-name">'+r[1]+'</strong>'
+      + '    <div class="approval-meta-row"><span class="code">'+r[0]+'</span> · <span class="approval-date">'+escHtml(r[8]||'Tanggal tidak tercatat')+'</span></div>'
+      + '  </div>'
+      + '  <span class="tag approval-tag '+(r[6]==='warn'?'tag-warn':r[6]==='red'?'tag-danger':'tag-neutral')+'">'+r[5]+'</span>'
+      + '</div>'
+      + '<div class="approval-card-v2-body">'
+      + '  <p class="approval-reason-text">'+r[4]+'</p>'
+      + '  <div class="approval-amount-wrap"><span class="amount-label">Nominal Usulan</span><strong class="approval-amount-val">'+r[3]+'</strong></div>'
+      + '</div>'
+      + '<div class="approval-card-v2-actions">'
+      + '  <button class="btn btn-sm btn-reject-action danger" data-approval="Reject" data-approval-id="'+r[0]+'" data-approval-txid="'+(r[7]||r[0])+'" aria-label="Tolak '+r[0]+'">'
+      +      rejectIcon + '<span>Tolak</span>'
+      + '  </button>'
+      + '  <button class="btn btn-sm btn-approve-action primary" data-approval="Approve" data-approval-id="'+r[0]+'" data-approval-txid="'+(r[7]||r[0])+'" aria-label="Setujui '+r[0]+'">'
+      +      approveIcon + '<span>Setujui</span>'
+      + '  </button>'
+      + '</div>'
+      + '</article>').join('')
+    + '</section>')
+    : '<article class="card approval-empty-card" style="padding:48px 24px;text-align:center;border-top:4px solid var(--green);">'
+      + '<div style="font-size:36px;margin-bottom:12px;">✅</div>'
+      + '<h2 style="font-size:18px;font-weight:700;margin:0 0 6px;color:var(--ink);">Antrean Approval Bersih</h2>'
+      + '<p style="margin:0;font-size:13.5px;color:var(--sub);">Tidak ada pengeluaran atau transaksi yang memerlukan otorisasi saat ini pada scope '+scopeName()+'.</p>'
+      + '</article>');
+}
 function dewiPage(){let scope='Cuplikan terbaru maksimal 40 transaksi · semua cabang · bukan laporan periode lengkap',access=role==='owner'?'Owner / CEO · full access':'Staff · transaksi milik sendiri',history=(role==='staff')?'<button class="history-item">Ringkas transaksi saya hari ini</button><button class="history-item">Cek bukti transaksi saya</button><button class="history-item">Jelaskan selisih cash closing</button>':'<button class="history-item">Ringkas pengeluaran pada scope ini</button><button class="history-item">Ringkas cash flow minggu ini</button><button class="history-item">Cari transaksi anomali</button><button class="history-item">Bandingkan semua cabang</button>',quick=(role==='staff')?'<button data-prompt="Ringkas transaksi saya">My transactions</button><button data-prompt="Cek bukti transaksi saya">Check receipts</button><button data-prompt="Jelaskan cash closing">Explain closing</button>':'<button data-prompt="Analyze expenses">Analyze expenses</button><button data-prompt="Find anomalies">Find anomalies</button><button data-prompt="Explain cash flow">Explain cash flow</button><button data-prompt="Compare branches">Compare branches</button><button disabled aria-label="Budget belum tersedia; dataset dan spesifikasi diperlukan">Budget belum tersedia</button>';return '<section class="chat-workspace"><aside class="chat-history"><button class="btn primary" data-new-analysis>+ New Analysis</button><div class="eyebrow">Suggested questions</div>'+history+'</aside><div class="chat-main"><div class="chat-main-head"><div><div class="eyebrow">Financial Intelligence</div><h1>Widya</h1><p>Ask questions about your business finances.</p></div><span class="monitor">Loaded ledger snapshot</span></div><div class="context-bar"><span>Context: <b>'+scope+'</b> · '+access+'</span></div><div class="conversation" id="conversation"><div class="bubble"><strong>Widya · Financial Intelligence</strong><br>Halo! Saya Widya. Tanyakan tentang keuangan bisnis Anda — transaksi, arus kas, persetujuan, atau anomali. Analisis saya berdasarkan data ledger aktual.</div></div><div class="chat-compose"><div class="quick-row">'+quick+'</div><form class="input-wrap" id="dewiForm"><button type="button" data-view="scan">＋</button><input id="dewiInput" placeholder="Tanya Widya about your finances…" autocomplete="off"><button class="send" type="submit">→</button></form></div></div></section>'}
 function scanPage(){
   const curUser = (window.SipekaAuth && window.SipekaAuth.currentUser) || window.SipekaCurrentUser||{};
@@ -2010,7 +2058,23 @@ function scanPage(){
 
   + '</div></article></section>';
 }
-function auditPage(){let items=[];return pageHead('Automated financial control','Widya Audit','Evidence-led anomaly detection across the single ledger.','<button class="btn" data-download>Export findings</button>')+'<section class="grid kpis">'+kpi('TRANSAKSI DIANALISIS','—','Belum tersedia',0,'M1 20 L18 18 L28 12 L45 10 L63 5')+kpi('VERIFIKASI BUKTI','—','Belum tersedia',0,'M1 20 L18 15 L28 16 L45 9 L63 7')+kpi('ANOMALI POTENSIAL','—','Belum tersedia',0,'M1 8 L18 12 L28 10 L45 17 L63 19')+kpi('MENUNGGU REVIEW','—','Belum tersedia',0,'M1 12 L18 9 L28 14 L45 12 L63 18')+'</section><article class="card"><div class="card-head"><div><h2>Anomaly Detection</h2><p>Reason, evidence and recommended action</p></div></div><div class="anomaly-list"><div class="anomaly"><strong>No data · audit findings not connected</strong><p>Ledger approval is not evidence verification. No duplicate, price or category anomaly findings are available.</p></div>'+items.map(x=>'<div class="anomaly"><strong><span>'+x[0]+' · <span class="code">'+x[1]+'</span></span><span class="tag '+(x[3]=='HIGH'?'red':'warn')+'">'+x[3]+'</span></strong><p>'+x[2]+' · Recommended: review source evidence and approval chain.</p></div>').join('')+'</div></article>'}
+function auditPage(){
+  let items=[];
+  return pageHead('Automated financial control','Widya Audit','Pemeriksaan otomatis integritas single ledger, bukti nota, dan deviasi anggaran.','<button class="btn" data-download>Export findings</button>')
+  + '<section class="grid kpis audit-kpis">'
+  + kpi('TRANSAKSI DIANALISIS','—','Siap dianalisis',0,'M1 20 L18 18 L28 12 L45 10 L63 5')
+  + kpi('VERIFIKASI BUKTI','—','Audit aktif',0,'M1 20 L18 15 L28 16 L45 9 L63 7')
+  + kpi('ANOMALI POTENSIAL','0','Aman terkendali',0,'M1 8 L18 12 L28 10 L45 17 L63 19')
+  + kpi('MENUNGGU REVIEW','0','Bersih',0,'M1 12 L18 9 L28 14 L45 12 L63 18')
+  + '</section>'
+  + '<article class="card audit-detection-card" style="border-top:4px solid var(--green);">'
+  + '  <div class="card-head"><div><h2>Anomaly Detection & Integrity Scan</h2><p>Pemeriksaan otomatis duplikasi nota, deviasi harga vendor, dan kepatuhan transaksi</p></div><span class="tag ok">SCAN SELESAI</span></div>'
+  + '  <div class="anomaly-list" style="padding:16px 20px;">'
+  + (items.length ? items.map(x=>'<div class="anomaly-item"><strong><span>'+x[0]+' · <span class="code">'+x[1]+'</span></span><span class="tag '+(x[3]=='HIGH'?'red':'warn')+'">'+x[3]+'</span></strong><p>'+x[2]+' · Rekomendasi: periksa bukti sumber dan otorisasi.</p></div>').join('')
+    : '<div class="anomaly-empty" style="display:flex;align-items:center;gap:16px;padding:20px;background:var(--soft);border:1px solid var(--line);border-radius:10px;"><div style="font-size:28px;">🛡️</div><div><strong style="font-size:14.5px;color:var(--ink);">Seluruh Transaksi Valid & Aman</strong><p style="margin:4px 0 0;font-size:13px;color:var(--sub);line-height:1.45;">Tidak ada anomali harga, indikasi nota ganda, atau ketidaksesuaian saldo yang terdeteksi pada scope operasional '+scopeName()+'.</p></div></div>')
+  + '  </div>'
+  + '</article>';
+}
 let gapRequestGeneration=0;
 function gapIdentity(){return JSON.stringify([window.SipekaAuth?.generation(),window.SipekaCurrentUser?.id,window.SipekaCurrentUser?.branch_id,role,selectedBranch,view]);}
 async function gapFetch(path,opts){const response=await fetch(path,{credentials:'same-origin',headers:{'Content-Type':'application/json'},...opts});const data=await response.json();if(!response.ok)throw Error(data.error||'Data tidak tersedia');return data;}
@@ -2369,10 +2433,111 @@ function settingsPage() {
 }
 function ownerSecurityPanel(){return '';}
 function organizationPage(){return pageHead('System','Organization','Branches, access roles, and account settings in one workspace.','')+'<section class="grid feature-grid"><article class="card feature">'+icon('branch')+'<strong>Branches</strong><p>Maintain branch codes, operating status, and access scope.</p><button class="btn" data-view="branchesSys">Manage branches</button></article><article class="card feature">'+icon('users')+'<strong>Device &amp; Unit Bisnis</strong><p>Review role permissions and branch assignments.</p><button class="btn" data-view="users">Manage access</button></article><article class="card feature">'+icon('settings')+'<strong>Account Settings</strong><p>Manage your active account password and session identity. Financial policies are not configurable here.</p><button class="btn" data-view="settings">Open settings</button></article></section>'}
-function accountingPage(){return pageHead('Owner · persetujuan terpisah','Jurnal & Mutasi','Laporan ini menampilkan mutasi tercatat, bukan neraca lengkap. Tidak ada posting otomatis. Draft sementara, bukan antrean tersimpan; kedaluwarsa 10 menit dan hilang saat restart.','')+'<section class="accounting-workspace"><article class="card accounting-draft"><div class="card-head"><div><h2>Review draft jurnal</h2><p>Lengkapi sumber dan bukti. Review tidak melakukan posting.</p></div></div><form id="accountingDraft" style="display:grid;gap:12px"><label>Jenis sumber<select name="sourceType"><option>CASH_TRANSACTION</option><option>REVERSAL</option></select></label><label>ID transaksi / jurnal asli<input name="sourceId" required maxlength="128"></label><label>ID dana bernama<input name="fundId" maxlength="128"></label><label>Tanggal akuntansi<input name="accountingDate" type="date" required></label><label>Bukti review<textarea name="evidence" minlength="10" maxlength="2000" required></textarea></label><button class="btn" type="submit">Review draft · belum posting</button></form><div id="accountingReview"></div><p id="accountingStatus" role="status"></p></article><article class="card accounting-trial"><div class="card-head"><div><h2>Trial balance mutasi</h2><p>Pilih periode dan cakupan cabang untuk memuat mutasi.</p></div></div><form id="accountingTrial" style="display:grid;gap:12px"><label>Dari<input name="start" type="date" required></label><label>Sampai<input name="end" type="date" required></label><label>ID cabang historis (kosong = semua)<input name="branchId"></label><button class="btn" type="submit">Muat mutasi aktual</button></form><div id="accountingResult"></div><p>Laporan ini menampilkan mutasi tercatat, bukan neraca lengkap. Posting jurnal tetap memerlukan review Owner atas sumber dan dana; tidak ada inferensi akrual/pajak atau backfill.</p></article></section>';}
-function bindAccounting(){const f=content.querySelector('#accountingDraft');if(!f)return;const status=content.querySelector('#accountingStatus'),review=content.querySelector('#accountingReview'),trial=content.querySelector('#accountingTrial'),result=content.querySelector('#accountingResult'),actor=window.SipekaCurrentUser?.id;let token=null;const alive=()=>f.isConnected&&role==='owner'&&window.SipekaCurrentUser?.id===actor;const clear=()=>{token=null;review.replaceChildren();};f.oninput=clear;
-f.onsubmit=async e=>{e.preventDefault();clear();const button=f.querySelector('button');button.disabled=true;try{const draft=Object.fromEntries(new FormData(f));if(draft.sourceType==='REVERSAL')delete draft.fundId;draft.idempotencyKey=crypto.randomUUID();const d=await window.SipekaAuth.api('/api/accounting/review',{method:'POST',body:draft});if(!alive())return;token=d.reviewToken;review.innerHTML='<h3>Review · belum posting</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere"></pre><p></p><label><input type="checkbox" id="accountingConsent"> Saya Owner menyetujui jurnal secara terpisah; sumber, tanggal, dana telah ditinjau.</label><button class="btn primary" id="accountingApprove" type="button" disabled>Setujui & posting jurnal</button>';review.querySelector('pre').textContent=JSON.stringify({draft:d.draft,source:d.source},null,2);review.querySelector('p').textContent=d.notice;const consent=review.querySelector('input'),approve=review.querySelector('button');consent.onchange=()=>approve.disabled=!consent.checked;approve.onclick=async()=>{if(!alive()||!token||!consent.checked)return;approve.disabled=true;try{const posted=await window.SipekaAuth.api('/api/accounting/approve',{method:'POST',body:{reviewToken:token,approved:true}});if(!alive())return;clear();status.textContent='Diposting · jurnal '+posted.id+' · sumber '+posted.journal.source_id;}catch(err){if(alive()){status.textContent=err.message;approve.disabled=!consent.checked;}}};status.textContent='Draft ditinjau; belum diposting.';}catch(err){if(alive())status.textContent=err.message;}finally{if(alive())button.disabled=false;}};
-trial.onsubmit=async e=>{e.preventDefault();try{const params=new URLSearchParams(new FormData(trial));if(!params.get('branchId'))params.delete('branchId');const d=await window.SipekaAuth.api('/api/accounting/trial-balance?'+params);if(!alive())return;result.innerHTML='<p>Laporan ini menampilkan mutasi tercatat, bukan neraca lengkap</p><pre style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>';result.querySelector('pre').textContent=JSON.stringify(d,null,2);}catch(err){if(alive())result.textContent=err.message;}};
+function accountingPage(){
+  return pageHead('Owner · persetujuan terpisah','Jurnal & Mutasi','Laporan mutasi tercatat dan trial balance akun. Review tidak melakukan posting otomatis. Kedaluwarsa 10 menit.','')
+  + '<section class="grid two-col accounting-workspace-v2">'
+  + '<article class="card accounting-panel" style="border-top:4px solid var(--amber);">'
+  + '  <div class="card-head"><div><h2>Review Draft Jurnal</h2><p>Lengkapi sumber dan bukti validasi sebelum otorisasi posting</p></div><span class="tag warn">DRAFT</span></div>'
+  + '  <form id="accountingDraft" class="accounting-form">'
+  + '    <div class="form-fields">'
+  + '      <label class="form-group"><span>Jenis Sumber Transaksi</span><select name="sourceType" class="control"><option value="CASH_TRANSACTION">CASH_TRANSACTION (Transaksi Kas)</option><option value="REVERSAL">REVERSAL (Pembalik / Koreksi)</option></select></label>'
+  + '      <label class="form-group"><span>ID Transaksi / Jurnal Asli</span><input name="sourceId" class="control" required maxlength="128" placeholder="misal: TX-20261015-001"></label>'
+  + '      <label class="form-group"><span>ID Dana Bernama (Opsional)</span><input name="fundId" class="control" maxlength="128" placeholder="misal: FUND-OPS-01"></label>'
+  + '      <label class="form-group"><span>Tanggal Akuntansi</span><input name="accountingDate" type="date" class="control" required></label>'
+  + '      <label class="form-group" style="grid-column:1/-1;"><span>Bukti Review & Catatan Otorisasi</span><textarea name="evidence" class="control" minlength="10" maxlength="2000" rows="3" placeholder="Catatan hasil verifikasi bukti fisik dan dasar pencatatan jurnal..." required></textarea></label>'
+  + '    </div>'
+  + '    <div class="form-actions-row" style="margin-top:8px;">'
+  + '      <button class="btn primary" type="submit" style="min-height:44px;padding:0 24px;font-weight:700;">Review Draft Jurnal</button>'
+  + '    </div>'
+  + '  </form>'
+  + '  <div id="accountingReview"></div>'
+  + '  <p id="accountingStatus" role="status" style="margin:10px 0 0;font-size:13px;color:var(--sub);"></p>'
+  + '</article>'
+  + '<article class="card accounting-panel" style="border-top:4px solid var(--blue);">'
+  + '  <div class="card-head"><div><h2>Trial Balance Mutasi</h2><p>Periksa saldo mutasi per periode dan cakupan unit cabang</p></div><span class="tag">MUTASI</span></div>'
+  + '  <form id="accountingTrial" class="accounting-form">'
+  + '    <div class="form-fields">'
+  + '      <label class="form-group"><span>Dari Tanggal</span><input name="start" type="date" class="control" required></label>'
+  + '      <label class="form-group"><span>Sampai Tanggal</span><input name="end" type="date" class="control" required></label>'
+  + '      <label class="form-group" style="grid-column:1/-1;"><span>ID Cabang Historis (Kosong = Semua Cabang)</span><input name="branchId" class="control" placeholder="Kosongkan untuk menampilkan agregat seluruh cabang"></label>'
+  + '    </div>'
+  + '    <div class="form-actions-row" style="margin-top:8px;">'
+  + '      <button class="btn" type="submit" style="min-height:44px;padding:0 24px;font-weight:700;">Muat Mutasi Aktual</button>'
+  + '    </div>'
+  + '  </form>'
+  + '  <div id="accountingResult"></div>'
+  + '  <p style="margin:14px 0 0;font-size:12px;color:var(--muted);line-height:1.5;">Laporan menampilkan mutasi tercatat, bukan neraca penuh. Posting jurnal tetap membutuhkan verifikasi Owner atas bukti sumber.</p>'
+  + '</article>'
+  + '</section>';
+}
+function bindAccounting(){
+  const f=content.querySelector('#accountingDraft');if(!f)return;
+  const status=content.querySelector('#accountingStatus'),review=content.querySelector('#accountingReview'),trial=content.querySelector('#accountingTrial'),result=content.querySelector('#accountingResult'),actor=window.SipekaCurrentUser?.id;
+  let token=null;
+  const alive=()=>f.isConnected&&role==='owner'&&window.SipekaCurrentUser?.id===actor;
+  const clear=()=>{token=null;review.replaceChildren();};
+  f.oninput=clear;
+  f.onsubmit=async e=>{
+    e.preventDefault();clear();
+    const button=f.querySelector('button');button.disabled=true;
+    try{
+      const draft=Object.fromEntries(new FormData(f));
+      if(draft.sourceType==='REVERSAL')delete draft.fundId;
+      draft.idempotencyKey=crypto.randomUUID();
+      const d=await window.SipekaAuth.api('/api/accounting/review',{method:'POST',body:draft});
+      if(!alive())return;
+      token=d.reviewToken;
+      review.innerHTML='<div class="review-result-card" style="margin-top:16px;padding:16px;background:var(--soft);border:1px solid var(--line);border-radius:10px;">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;"><strong style="font-size:14.5px;color:var(--ink);">Ringkasan Draft Jurnal</strong><span class="tag warn">SIAP POSTING</span></div>'
+        + '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:13px;margin-bottom:12px;">'
+        + '  <div><span style="color:var(--muted)">Tipe Sumber:</span> <b style="color:var(--ink)">'+escapeHtml(d.source?.type||draft.sourceType)+'</b></div>'
+        + '  <div><span style="color:var(--muted)">ID Sumber:</span> <span class="code">'+escapeHtml(d.source?.id||draft.sourceId)+'</span></div>'
+        + '  <div><span style="color:var(--muted)">Tanggal:</span> <b style="color:var(--ink)">'+escapeHtml(d.draft?.accountingDate||draft.accountingDate)+'</b></div>'
+        + '</div>'
+        + '<p style="margin:0 0 14px;padding:10px 12px;background:color-mix(in srgb,var(--amber) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--amber) 25%,var(--line));border-radius:6px;font-size:12.5px;color:var(--ink);">'
+        + '  ℹ️ '+escapeHtml(d.notice||'Review berhasil. Data siap diposting ke ledger mutasi.')
+        + '</p>'
+        + '<label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:14px;cursor:pointer;"><input type="checkbox" id="accountingConsent" style="width:18px;height:18px;"> Saya Owner menyetujui jurnal secara terpisah; sumber, tanggal, dana telah ditinjau.</label>'
+        + '<button class="btn primary" id="accountingApprove" type="button" disabled style="width:100%;height:44px;font-weight:700;">Setujui & Posting Jurnal</button>'
+        + '</div>';
+      const consent=review.querySelector('input'),approve=review.querySelector('#accountingApprove');
+      consent.onchange=()=>approve.disabled=!consent.checked;
+      approve.onclick=async()=>{
+        if(!alive()||!token||!consent.checked)return;
+        approve.disabled=true;
+        try{
+          const posted=await window.SipekaAuth.api('/api/accounting/approve',{method:'POST',body:{reviewToken:token,approved:true}});
+          if(!alive())return;
+          clear();
+          status.innerHTML='<span style="color:var(--green);font-weight:600;">✓ Berhasil diposting · ID Jurnal: '+escapeHtml(posted.id)+' · Sumber: '+escapeHtml(posted.journal?.source_id||posted.id)+'</span>';
+        }catch(err){if(alive()){status.textContent=err.message;approve.disabled=!consent.checked;}}
+      };
+      status.textContent='Draft berhasil ditinjau. Konfirmasi checklist di atas untuk posting.';
+    }catch(err){if(alive())status.textContent=err.message;}finally{if(alive())button.disabled=false;}
+  };
+  trial.onsubmit=async e=>{
+    e.preventDefault();
+    try{
+      const params=new URLSearchParams(new FormData(trial));
+      if(!params.get('branchId'))params.delete('branchId');
+      const d=await window.SipekaAuth.api('/api/accounting/trial-balance?'+params);
+      if(!alive())return;
+      const rows = d.rows || d.entries || d.accounts || [];
+      let tableHtml = '';
+      if(Array.isArray(rows) && rows.length > 0){
+        tableHtml = '<div class="table-wrap" style="margin-top:12px;"><table class="responsive"><thead><tr><th>Akun</th><th>Keterangan</th><th class="right">Debit</th><th class="right">Kredit</th></tr></thead><tbody>'
+          + rows.map(r=>'<tr><td><span class="code">'+escapeHtml(r.code||r.account||'—')+'</span></td><td>'+escapeHtml(r.name||r.label||'—')+'</td><td class="right mono">'+escapeHtml(r.debit||'0')+'</td><td class="right mono">'+escapeHtml(r.credit||'0')+'</td></tr>').join('')
+          + '</tbody></table></div>';
+      } else {
+        tableHtml = '<div style="padding:14px;background:var(--soft);border-radius:8px;margin-top:12px;font-size:12.5px;color:var(--sub);font-family:monospace;white-space:pre-wrap;max-height:260px;overflow:auto;">'+escapeHtml(JSON.stringify(d,null,2))+'</div>';
+      }
+      result.innerHTML='<div class="trial-result-card" style="margin-top:16px;padding:16px;background:var(--soft);border:1px solid var(--line);border-radius:10px;">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><strong style="font-size:14.5px;color:var(--ink);">Ringkasan Mutasi Aktual</strong><span class="tag ok">TERVERIFIKASI</span></div>'
+        + '<p style="font-size:12.5px;color:var(--sub);margin:0 0 10px;">Mutasi transaksi tercatat pada rentang tanggal terpilih.</p>'
+        + tableHtml
+        + '</div>';
+    }catch(err){if(alive())result.textContent=err.message;}
+  };
 }
 function render(){
   queueMicrotask(()=>window.SipekaQuarterly?.bind());
@@ -3347,6 +3512,51 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
 .form-group .control{width:100%;height:44px;min-height:44px;font-size:14px;border-radius:8px;padding:0 12px}
 .form-actions-row{display:flex;justify-content:flex-end;margin-top:4px}
 .form-actions-row .btn{min-height:44px;padding:0 24px;border-radius:8px;font-size:14px;font-weight:700}
+
+/* Enhanced Approvals UI */
+.approval-hero-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 24px;margin-bottom:20px;border-radius:14px;background:var(--surface);border:1px solid var(--line);border-top:4px solid var(--amber);box-shadow:0 4px 20px rgba(0,0,0,.04);flex-wrap:wrap}
+.approval-hero-info{display:flex;flex-direction:column;gap:4px}
+.approval-hero-count{display:flex;align-items:baseline;gap:8px}
+.approval-hero-count strong{font-size:24px;font-weight:800;color:var(--ink);font-family:'JetBrains Mono',monospace}
+.approval-hero-count span{font-size:14px;color:var(--sub);font-weight:600}
+.approval-hero-desc{margin:0;font-size:12.5px;color:var(--muted)}
+.approval-hero-badges{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.badge-flag-red{display:inline-flex;align-items:center;padding:4px 10px;background:color-mix(in srgb,var(--red) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--red) 28%,transparent);border-radius:6px;font-size:12px;font-weight:700;color:var(--red)}
+.badge-flag-amber{display:inline-flex;align-items:center;padding:4px 10px;background:color-mix(in srgb,var(--amber) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--amber) 28%,transparent);border-radius:6px;font-size:12px;font-weight:700;color:var(--amber)}
+.badge-flag-green{display:inline-flex;align-items:center;padding:4px 10px;background:color-mix(in srgb,var(--green) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--green) 28%,transparent);border-radius:6px;font-size:12px;font-weight:700;color:var(--green2)}
+
+.approval-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px}
+.approval-card-v2{padding:18px 20px;border-radius:12px;border:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;gap:14px;box-shadow:0 2px 12px rgba(0,0,0,.03);transition:transform .15s ease,box-shadow .15s ease}
+.approval-card-v2:hover{border-color:var(--line2);box-shadow:0 6px 20px rgba(0,0,0,.06)}
+.approval-card-v2-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.approval-merchant-block{display:flex;flex-direction:column;gap:3px;min-width:0}
+.approval-branch-badge{display:inline-block;font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.03em}
+.approval-merchant-name{font-size:15px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.approval-meta-row{font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:6px;margin-top:2px}
+.approval-card-v2-body{padding:12px 14px;background:var(--soft);border-radius:8px;display:flex;flex-direction:column;gap:8px}
+.approval-reason-text{margin:0;font-size:12.5px;color:var(--sub);line-height:1.45}
+.approval-amount-wrap{display:flex;align-items:baseline;justify-content:space-between;border-top:1px solid var(--line);padding-top:8px;margin-top:2px}
+.amount-label{font-size:11px;text-transform:uppercase;font-weight:700;color:var(--muted);letter-spacing:.02em}
+.approval-amount-val{font-size:16px;font-weight:800;color:var(--ink);font-family:'JetBrains Mono',monospace}
+.approval-card-v2-actions{display:flex;gap:8px;justify-content:flex-end}
+.btn-approve-action{min-height:36px;height:36px;padding:0 16px;border-radius:8px;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;background:var(--green);color:#fff;border:0}
+.btn-approve-action:hover{background:var(--green2)}
+.btn-reject-action{min-height:36px;height:36px;padding:0 14px;border-radius:8px;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;background:color-mix(in srgb,var(--red) 12%,var(--surface));color:var(--red);border:1px solid color-mix(in srgb,var(--red) 28%,transparent)}
+.btn-reject-action:hover{background:var(--red);color:#fff}
+
+/* Enhanced Accounting & Trial View */
+.accounting-workspace-v2{gap:20px;align-items:start}
+.accounting-panel{border-radius:14px;border:1px solid var(--line);background:var(--surface);box-shadow:0 4px 20px rgba(0,0,0,.04);overflow:hidden}
+.accounting-panel>.card-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.accounting-panel>.card-head h2{margin:0;font-size:16.5px;font-weight:700;color:var(--ink)}
+.accounting-panel>.card-head p{margin:2px 0 0;font-size:12.5px;color:var(--sub)}
+.accounting-form{display:flex;flex-direction:column;gap:14px;padding:18px 22px}
+
+/* Enhanced Audit Detection View */
+.audit-detection-card{border-radius:14px;border:1px solid var(--line);background:var(--surface);box-shadow:0 4px 20px rgba(0,0,0,.04);overflow:hidden}
+.audit-detection-card>.card-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.audit-detection-card>.card-head h2{margin:0;font-size:16.5px;font-weight:700;color:var(--ink)}
+.audit-detection-card>.card-head p{margin:2px 0 0;font-size:12.5px;color:var(--sub)}
 </style>
 <script>
 /* Device identity is authentication; the on-duty person is explicit per-tab attribution. */
