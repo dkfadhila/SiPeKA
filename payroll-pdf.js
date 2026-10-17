@@ -12,7 +12,8 @@ function renderSlipPdf(row,{publishedAt,simulation=false,documentIdentity}={}){
  const literal=value=>plain(value,180).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/\u2014/g,'\x97').replace(/[^\x20-\x7e\x97]/g,'?').replace(/([\\()])/g,'\\$1');
  const text=(s,x,y,size=11,bold=false,color='0.18 0.23 0.28')=>commands.push(`${color} rg BT /${bold?'F2':'F1'} ${size} Tf 1 0 0 1 ${x} ${y} Tm (${literal(s)}) Tj ET`);
  const line=y=>commands.push(`0.84 0.87 0.88 RG 0.6 w 48 ${y} m 547 ${y} l S`);
- text('SiPeKA',48,documentIdentity?779:784,documentIdentity?14:17,true,'0.08 0.28 0.32');text('SLIP GAJI',48,746,26,true);text('RAHASIA / HANYA UNTUK PENERIMA',48,722,9);
+ const compName = documentIdentity ? require('./report-identity').companyName(documentIdentity.company_name) : 'SLIP GAJI KARYAWAN';
+ text(compName,48,documentIdentity?779:784,documentIdentity?13:15,true,'0.08 0.28 0.32');text('SLIP GAJI',48,746,26,true);text('RAHASIA / HANYA UNTUK PENERIMA',48,722,9);
  if(simulation)text('CONTOH — DATA SIMULASI',320,784,11,true,'0.6 0.22 0.13');
  if(documentIdentity){const name=require('./report-identity').companyName(documentIdentity.company_name);const parts=name.match(/.{1,45}/g);parts.forEach((s,i)=>text(s,48,812-i*12,10,true));}
  line(701);text('Periode',48,675,10);text(row.period,170,675,12,true);
@@ -34,7 +35,7 @@ function renderSlipPdf(row,{publishedAt,simulation=false,documentIdentity}={}){
  text('Slip diterbitkan oleh Owner; bukan bukti pembayaran.',48,267,9);
  // Reserved image region remains completely blank, no box, fake autograph or ttd.
  text('Raditya Martanegara',365,150,12,true);text('Penanggung jawab',365,132,10);text('Tanggal: '+publicationDate(publishedAt),365,114,10);
- line(79);text('Dokumen pribadi. Simpan dengan aman dan jangan bagikan kepada pihak lain.',48,60,9);
+ line(79);text('Dokumen pribadi. Diterbitkan melalui SiPeKA. Simpan dengan aman.',48,60,8,false,'0.45 0.5 0.55');
  const stream=Buffer.from(commands.join('\n'),'latin1');
  const objects=[Buffer.from('<< /Type /Catalog /Pages 2 0 R >>'),Buffer.from('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'),Buffer.from('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>'),Buffer.from('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>'),Buffer.from('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>'),Buffer.concat([Buffer.from(`<< /Length ${stream.length} >>\nstream\n`),stream,Buffer.from('\nendstream')])];
  const chunks=[Buffer.from('%PDF-1.4\n')],offsets=[0];let length=chunks[0].length;

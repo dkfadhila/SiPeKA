@@ -1074,7 +1074,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   function csvManifest(report){return {document_identity:report.documentIdentity||null,schema_version:'1.0',report_id:report.id,title:report.title,branch:report.branch,filters:report.filters,timezone:'Asia/Jakarta',currency:'IDR',generated_at:report.generatedAt,readiness:report.readiness,source_row_count:report.sourceCount,export_row_count:report.rows.length,provenance:report.provenance,complete:report.complete,coverage:report.coverage||null,snapshot:report.snapshot||null,subtitle:report.subtitle||null,neracaComplete:false,reconciliationComplete:false,endBalance:null,missing_datasets:report.missingDatasets,notices:report.notices,columns:report.columns.map(c=>({header:operationalIds.has(report.id)?c.key:csvHeader(c),source_key:c.key,type:c.type,unit:c.type==='currency'?'IDR':['rate','share','ratio'].includes(c.key)?'percent':null}))};}
   async function downloadManifest(id){const r=await exportReport(id);if(!r)return null;requireSource(r);if(!host.document)throw new Error('Manifest membutuhkan browser.');const blob=new host.Blob([JSON.stringify(csvManifest(r),null,2)],{type:'application/json;charset=utf-8'}),url=host.URL.createObjectURL(blob),a=host.document.createElement('a');a.href=url;a.download=filename(r,'manifest.json');host.document.body.appendChild(a);a.click();a.remove();host.setTimeout(()=>host.URL.revokeObjectURL(url),1000);notify('Manifest metadata diunduh.');return r;}
   const slug=s=>String(s).normalize('NFKD').replace(/[^a-zA-Z0-9_-]+/g,'-').replace(/^-|-$/g,'').slice(0,70)||'cabang';
-  const filename=(r,ext)=>`SiPeKA-${r.id}-${r.filters.branch==='all'?'all':slug(r.branch)+'-'+slug(r.filters.branch)}-${r.filters.dateFrom}_${r.filters.dateTo}.${ext}`;
+  const filename=(r,ext)=>{
+    const compSlug=r.documentIdentity?.company_name?slug(r.documentIdentity.company_name):'laporan';
+    return `${compSlug}-${r.id}-${r.filters.branch==='all'?'all':slug(r.branch)+'-'+slug(r.filters.branch)}-${r.filters.dateFrom}_${r.filters.dateTo}.${ext}`;
+  };
   function notify(s) {message=s;if(host.document)host.document.querySelectorAll('[data-sr-status]').forEach(e=>{e.textContent=s;});}
   async function exportReport(id,input) {
     const epoch=generation,account=identity(),f=filters(input);
@@ -1112,16 +1115,25 @@ async function downloadPdf(id,input) {
   doc.setProperties({title:'SiPeKA · '+r.title,subject:category+' | '+id+' | '+state,author:text(snapshot.user.full_name || 'SiPeKA'),creator:'SiPeKA PDF template '+version,keywords:'SiPeKA, '+id+', WIB, template '+version});
   const font = (size, bold, color=ink) => {doc.setFont('helvetica',bold ? 'bold' : 'normal');doc.setFontSize(size);doc.setTextColor(...color);};
   const line = y => {doc.setDrawColor(...rule);doc.setLineWidth(0.25);doc.line(M,y,W-M,y);};
+  const drawPageBg = () => {
+    try {
+      if (window.__sipekaPdfBg) {
+        doc.addImage(window.__sipekaPdfBg, 'PNG', 0, 0, W, H, undefined, 'FAST');
+      }
+    } catch (_) {}
+  };
+  drawPageBg();
   const wrapped = (value,x,y,width,size=9,bold=false,color=ink) => {font(size,bold,color);const lines=doc.splitTextToSize(text(value),width);doc.text(lines,x,y,{lineHeightFactor:1.25});return y+lines.length*size*0.3528*1.25;};
   const continuation = () => {
-    font(13,true,green);doc.text('SiPeKA',M,13);font(8,false,muted);doc.text('LANJUTAN · '+id,W-M,13,{align:'right'});line(17);
-    let y=wrapped(r.documentIdentity.company_name,M,23,usable,10,true);
-    y=wrapped(r.title,M,y+1,usable,10,true);
+    drawPageBg();
+    font(12,true,green);doc.text(text(r.documentIdentity?.company_name||'LAPORAN OPERASIONAL'),M,13);font(8,false,muted);doc.text('LANJUTAN · '+id,W-M,13,{align:'right'});line(17);
+    let y=wrapped(r.title,M,23,usable,10,true);
     y=wrapped('Cabang: '+r.branch+' | Periode: '+r.filters.dateFrom+' / '+r.filters.dateTo+' WIB',M,y+1,usable,8,false,muted);
     return y+5;
   };
-  font(23,true,green);doc.text('SiPeKA',M,19);font(8,true,muted);doc.text(category,W-M,18,{align:'right'});line(24);
-  let y=wrapped(r.documentIdentity.company_name,M,32,usable,12,true)+3;
+  let y=wrapped(r.documentIdentity.company_name,M,19,usable-60,16,true);
+  font(8,true,muted);doc.text(category,W-M,18,{align:'right'});line(24);
+  y=Math.max(y+4, 28);
   y=wrapped(r.title,M,y,usable,20,true)+4;
   if(r.subtitle)y=wrapped(r.subtitle,M,y,usable,10,true)+4;
   const metaWidth=(usable-10)/2;
@@ -1210,7 +1222,7 @@ async function downloadPdf(id,input) {
   y=wrapped('CATATAN LAPORAN & BATASAN SUMBER',M,y,usable,8,true,green)+4;
   noteLines.forEach(lines=>{lines.forEach(s=>{if(y>H-18){doc.addPage();y=continuation()+2;y=wrapped('CATATAN LAPORAN · LANJUTAN',M,y,usable,9,true,green)+4;}font(9,false,muted);doc.text(s,M,y);y+=4;});y+=2;});
   const pages=doc.internal.getNumberOfPages();
-  for(let p=1;p<=pages;p++) {doc.setPage(p);line(H-13);font(7,false,muted);doc.text('SiPeKA · '+id+' · v'+version,M,H-8);doc.text('Halaman '+p+' / '+pages,W-M,H-8,{align:'right'});}
+  for(let p=1;p<=pages;p++) {doc.setPage(p);line(H-13);font(7,false,muted);doc.text('Diterbitkan melalui SiPeKA · '+id+' · v'+version,M,H-8);doc.text('Halaman '+p+' / '+pages,W-M,H-8,{align:'right'});}
   doc.save(filename(r,'pdf'));
   notify('PDF diunduh · '+state+(r.template ? ' · Template.' : '.'));
   return doc;
@@ -1237,6 +1249,10 @@ async function downloadPdf(id,input) {
     });
   }
   const api={loadOperational,invalidateOperational,render,bind,setSnapshot,catalog,buildReport,toCsv,csvManifest,downloadCsv,downloadManifest,downloadPdf};host.SipekaReports=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
+  // Pre-load base64 PDF abstract background
+  try {
+    fetch('/pdf_bg_base64.txt').then(r=>r.text()).then(b64=>{ if(b64&&b64.startsWith('data:image/')) host.__sipekaPdfBg=b64.trim(); }).catch(()=>{});
+  } catch(_) {}
 })(typeof window!=='undefined'?window:globalThis);
 
 </script>
@@ -2668,8 +2684,9 @@ let toastTimer;function showToast(t){toast.textContent=t;toast.classList.add('sh
     if(ledgerView){const ids=new Set(raw.map(r=>String(r.id)));report.rows=report.rows.filter(r=>ids.has(String(r.id)));report.filters.status=ledgerFilters.status;report.filters.payment=ledgerFilters.payment;}
     if(view==='income'||view==='expenses'){const type=view==='income'?'INCOME':'EXPENSE';report.rows=report.rows.filter(r=>r.type===type);report.title=view==='income'?'Income':'Expenses';}
     report.documentIdentity={company_name:metadata.company_name,branch_id:metadata.branch_id,branch_name:metadata.branch_name};
+    const compSlug=metadata.company_name?metadata.company_name.toLowerCase().replace(/[^a-z0-9_-]+/g,'-').replace(/^-|-$/g,''):'laporan';
     const blob=new Blob([window.SipekaReports.toCsv(report)],{type:'text/csv;charset=utf-8'}),a=document.createElement('a'),url=URL.createObjectURL(blob);
-    a.href=url;a.download='SiPeKA-'+view+'-'+report.filters.branch+'-'+report.filters.dateFrom+'_'+report.filters.dateTo+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    a.href=url;a.download=compSlug+'-'+view+'-'+report.filters.branch+'-'+report.filters.dateFrom+'_'+report.filters.dateTo+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     const manifest=new Blob([JSON.stringify(window.SipekaReports.csvManifest(report),null,2)],{type:'application/json;charset=utf-8'}),m=document.createElement('a'),mu=URL.createObjectURL(manifest);m.href=mu;m.download=a.download.replace(/\.csv$/,'.manifest.json');m.click();setTimeout(()=>URL.revokeObjectURL(mu),1000);
     showToast('CSV dan metadata identitas diunduh sesuai filter aktif');
   }catch(err){showToast(err.message);}
