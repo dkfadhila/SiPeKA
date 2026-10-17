@@ -1924,7 +1924,23 @@ function operationalSummary(branchId){
  // OWN intentionally excludes resolved advances. Never present Staff totals as lifetime totals.
  return window.SipekaOperations.summarize({rows:role==='staff'?rows.filter(r=>r.status!=='APPROVED'||advances.some(a=>String(a.advanceId)===String(r.id))):rows,advances,available:!!window.SipekaCurrentUser&&!window.SipekaAdvanceUnavailable&&!window.SipekaTransactionUnavailable});
 }
-function operationalCards(){const m=operationalSummary(),money=n=>n===null?'Tidak tersedia':'Rp '+BigInt(n).toLocaleString('id-ID');return '<p role="status">'+(m.complete?(role==='staff'?'Pengajuan milik Anda; pencairan, belanja dan pengembalian hanya advance belum selesai.':'Snapshot pengajuan tunai yang tersedia dalam lingkup cabang; bukan total sepanjang waktu.'):'Data belum lengkap · sumber transaksi / lifecycle tidak tersedia. Muat ulang; jangan anggap nol.')+'</p><section class="grid kpis operational-kpis">'+kpi('Pengajuan menunggu approval',m.pendingCount===null?'Tidak tersedia':m.pendingCount+' pengajuan','Belum disetujui Owner',0,'')+kpi('Disetujui, belum dicairkan',money(m.approvedUndisbursed),'Approval pengajuan bukan penyerahan dana',0,'')+kpi('Dana dicairkan',money(m.disbursed),'Event DISBURSE · bukan belanja',0,'')+kpi('Belanja settlement disetujui',money(m.settled),'Event APPROVE nota · bukan nota biasa / verifikasi file',0,'')+kpi('Pertanggungjawaban outstanding',money(m.outstanding),'Dicairkan − settlement disetujui − dikembalikan',1,'')+kpi('Dana dikembalikan',money(m.returned),'Event RETURN · sisa perlu dikembalikan: '+money(m.returnDue),0,'')+'</section><p class="hint">Lifecycle tersedia untuk pengajuan kas laci tunai. Nota biasa terpisah; tidak masuk belanja settlement. Bukan saldo akhir atau laba/rugi.</p>';}
+function operationalCards(){
+  const m=operationalSummary(),money=n=>n===null?'Tidak tersedia':'Rp '+BigInt(n).toLocaleString('id-ID');
+  const prof=scopeProfile();
+  const revStr='Rp '+Math.round(Number(prof.revenue||0)*1e6).toLocaleString('id-ID');
+  const expStr='Rp '+Math.round(Number(prof.expense||0)*1e6).toLocaleString('id-ID');
+  const netStr='Rp '+Math.round(Number(prof.net||0)*1e6).toLocaleString('id-ID');
+
+  return '<section class="grid kpis operational-kpis">'
+    + kpi('Total Pemasukan Realisasi',revStr,prof.delta||'Omzet tercatat',0,'')
+    + kpi('Total Pengeluaran Realisasi',expStr,'Belanja nota operasional',0,'')
+    + kpi('Mutasi Kas Bersih (Net)',netStr,'Surplus / defisit operasional',prof.net<0,1,'')
+    + kpi('Pengajuan menunggu approval',m.pendingCount===null?'Tidak tersedia':m.pendingCount+' pengajuan','Belum disetujui Owner',0,'')
+    + kpi('Dana kasbon dicairkan',money(m.disbursed),'Kas operasional laci kasir',0,'')
+    + kpi('Pertanggungjawaban outstanding',money(m.outstanding),'Sisa kasbon belum settlement',1,'')
+    + '</section>'
+    + '<p class="hint">Ringkasan menggabungkan realisasi transaksi (Setor Nota) dan perputaran kas operasional (Pengajuan Kasbon). Bukan saldo akhir atau laba akrual.</p>';
+}
 function quarterlyOwnerSection(){return window.SipekaQuarterly?.render()||'';}
 function ownerDashboard(){return '<div class="owner-overview">'+pageHead('Operasional','Pengajuan & Pertanggungjawaban','Review pengajuan, pencairan dana, nota dan pengembalian · '+escHtml(scopeName())+'.','<span class="scope-pill">'+escHtml(scopeName())+'</span><button class="btn" data-view="reports">View report</button><button class="btn primary" data-view="approvals">Review approval</button>')+operationalCards()+quarterlyOwnerSection()+advancePanel()+'<article class="card table-card">'+transactionTable(6)+'</article></div>';}
 
