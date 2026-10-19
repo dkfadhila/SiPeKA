@@ -370,6 +370,7 @@ const server = http.createServer(async (req, res) => {
     } else await handleRequest(req, res, url, p);
   } catch (err) {
     if (res.headersSent) return;
+    if(err.code==='23505'&&p==='/api/operational-staff'){res._deferJSON=false;return json(res,409,{error:'Email sudah digunakan karyawan lain'});}
     res.removeHeader('Set-Cookie'); // Never send a session cookie from a rolled-back request.
     if (err.message === 'RECEIPT_RESERVED_FOR_ADVANCE') {
       res._deferJSON = false;
@@ -423,6 +424,34 @@ async function handleRequest(req, res, url, p) {
   if (p.startsWith('/api/') && me && (me.session_purpose !== 'full' || me.password_change_required) && p !== '/api/change-password')
     return json(res, 403, { error: 'Ganti password untuk mengamankan akun', setup_required: true });
 
+  if(p.startsWith('/api/employee-payroll')){
+    if(me.role!=='OWNER')return json(res,403,{error:'PAYROLL_OWNER_ONLY'});
+    if(!process.env.DATABASE_URL)return json(res,503,{error:'PAYROLL_POSTGRES_REQUIRED'});
+    const token=security.cookieToken(req);if(!token)return json(res,401,{error:'PAYROLL_COOKIE_REQUIRED'});
+    const svc=require('./employee-payroll').service({pool:require('./db-postgres').getPool()});
+    try{
+      if(p==='/api/employee-payroll'&&req.method==='GET')return json(res,200,await svc.list(token));
+      if(p==='/api/employee-payroll/template'&&req.method==='GET'){
+        res.writeHead(200,{'Content-Type':'text/csv;charset=utf-8','Content-Disposition':'attachment; filename="template-gaji-karyawan.csv"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end('\uFEFF'+require('./employee-payroll').HEADER+'\r\n');
+      }
+      if(p==='/api/employee-payroll/import'&&req.method==='POST')return json(res,201,await svc.importCsv(token,(await readBody(req)).csv));
+      if(p==='/api/employee-payroll/publish'&&req.method==='POST')return json(res,200,await svc.publish(token,await readBody(req)));
+      const match=p.match(/^\/api\/employee-payroll\/entries\/([a-f0-9-]{36})\/(slip.pdf|send)$/);
+      if(match&&match[2]==='slip.pdf'&&req.method==='GET'){
+        const pdf=await svc.pdf(token,match[1]);res.writeHead(200,{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="slip-gaji.pdf"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end(pdf);
+      }
+      if(match&&match[2]==='send'&&req.method==='POST')return json(res,200,await svc.send(token,match[1],await readBody(req)));
+      return json(res,404,{error:'PAYROLL_NOT_FOUND'});
+    }catch(e){const code=e.code==='23505'?'PAYROLL_DUPLICATE_PERIOD_STAFF':/^PAYROLL_[A-Z_0-9]+$/.test(e.message||'')?e.message:'PAYROLL_UNAVAILABLE';return json(res,e.code==='42501'?403:e.code==='23505'?409:e.status||(['PAYROLL_UNAVAILABLE','PAYROLL_DECRYPT_FAILED'].includes(code)?503:400),{error:code});}
+  }
+  if(p==='/api/company'&&['GET','POST'].includes(req.method)){
+    if(!process.env.DATABASE_URL)return json(res,503,{error:'OPERATIONAL_POSTGRES_REQUIRED'});
+    if(req.method==='POST'&&me.role!=='OWNER')return json(res,403,{error:'OPERATIONAL_OWNER_REQUIRED'});
+    const body=req.method==='POST'?await readBody(req):null;
+    if(body)try{require('./report-identity').companyName(body.name);}catch{return json(res,400,{error:'Nama perusahaan wajib diisi, maksimal 80 karakter'});}
+    const result=await require('./db-postgres').query('SELECT company_profile_access($1,$2::jsonb) result',[security.cookieToken(req),body===null?null:JSON.stringify(body)]);
+    return json(res,200,result.rows[0].result);
+  }
   if (p==='/api/operational-staff' || p==='/api/devices/configure') {
     if(!process.env.DATABASE_URL)return json(res,503,{error:'OPERATIONAL_POSTGRES_REQUIRED'});
     if(req.method==='GET'&&p==='/api/operational-staff')return json(res,200,await deviceStaff.directory(security.cookieToken(req)));
@@ -482,7 +511,8 @@ async function handleRequest(req, res, url, p) {
     }
   }
 
-  if(p==='/api/advance-categories'&&req.method==='GET')return json(res,200,(await q.allCoa.all()).filter(c=>c.account_type==='EXPENSE'));
+  if(p==='/api/coa'&&req.method==='GET')return json(res,200,require('./coa-catalog').inputAccounts(await q.allCoa.all()));
+  if(p==='/api/advance-categories'&&req.method==='GET')return json(res,200,require('./coa-catalog').inputAccounts(await q.allCoa.all()).filter(c=>c.account_type==='EXPENSE'));
   if (p.startsWith('/api/advances') || p==='/api/reports/advance-movements') {
     const match=p.match(/^\/api\/advances\/([^/]+)\/(disburse|return|settlements)(?:\/([^/]+)\/(approve|reject))?$/);
     const staffRoute=p==='/api/advances/own-unresolved'||match&&match[2]==='settlements'&&!match[4];
@@ -681,9 +711,11 @@ async function handleRequest(req, res, url, p) {
     const unit = (await q.unitByIdActive.get(branchId));
     if (!unit) return json(res, 400, { error: "Unit bisnis tidak ditemukan" });
 
-    const coaId = b.coa_id || "5101";
+    const coaId = b.coa_id;
+    if(typeof coaId!=='string'||!coaId.trim())return json(res,400,{error:'Pilih kode akun COA sesuai transaksi'});
     const coaEntry = (await q.coaById.get(String(coaId)));
     if (!coaEntry) return json(res, 400, { error: "COA tidak ditemukan" });
+    if(coaEntry.account_code==='6-3000')return json(res,400,{error:'Penyusutan dicatat lewat jurnal non-kas, bukan input nota'});
     if (txType === "INCOME" && coaEntry.account_type !== "REVENUE")
       return json(res, 400, { error: "COA untuk transaksi INCOME harus bertipe REVENUE" });
     if (txType === "EXPENSE" && coaEntry.account_type !== "EXPENSE")

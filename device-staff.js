@@ -18,7 +18,7 @@ async function annotate(pool,type,rows) {
   const linked=(await pool.query("SELECT e.entity_id review_id,a.* FROM operational_attributions e JOIN operational_attributions a ON a.entity_type='advance_events' AND a.entity_id=e.source_entity_id WHERE e.entity_type='advance_events' AND e.entity_id=ANY($1::text[])",[eventIds])).rows;
   for(const r of settlements){const a=linked.find(a=>a.review_id===r.id.split(':')[0]);if(a)byId.set(r.id,a);}
  }
- return rows.map(r=>{const a=byId.get(r.id||r.filename);return {...r,staff_id:a?.staff_id||null,staff_name:a?.staff_name||'Staff legacy (akun historis)',device_id:a?.device_id||r.user_id||r.actor_id,attribution:a?'RECORDED':'LEGACY',...(r.user_name!==undefined?{device_name:r.user_name,user_name:a?.staff_name||r.user_name+' · Staff legacy'}:{})};});
+ return rows.map(r=>{const a=byId.get(r.id||r.filename);return {...r,staff_id:a?.staff_id||null,staff_name:a?.staff_name||'Staff legacy (akun historis)',department:a?.staff_department||null,device_id:a?.device_id||r.user_id||r.actor_id,attribution:a?'RECORDED':'LEGACY',...(r.user_name!==undefined?{device_name:r.user_name,user_name:a?.staff_name||r.user_name+' · Staff legacy'}:{})};});
 }
 async function advances(pool,result){
  for(const row of result.rows||[]){

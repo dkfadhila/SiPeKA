@@ -943,7 +943,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   let applied = {branch:'all',dateFrom:nowDay.slice(0,7)+'-01',dateTo:day(new Date(Date.UTC(Number(nowDay.slice(0,4)),Number(nowDay.slice(5,7)),0,12)))};
   let snapshot = {rows:[],units:[],user:{}}, loaded = false, message = '';
   const money = n => {const value=String(n);if(!/^-?\d+$/.test(value))throw Error('Nominal rupiah tidak valid.');return 'Rp '+(value.startsWith('-')?'-':'')+value.replace(/^-/, '').replace(/\B(?=(\d{3})+(?!\d))/g,'.');};
-  const operationalIds=new Set(['profit-loss','cash-flow','fund-requests','daily-closings','audit-evidence','fund-position','recorded-income-expense']);
+  const operationalIds=new Set(['company-profit-loss','compare-profit-loss','profit-loss','cash-flow','fund-requests','daily-closings','audit-evidence','fund-position','recorded-income-expense']);
   const currencyKeys=new Set(['amount','income','expense','net','system_balance','physical_cash','difference']);
   let generation=0;const operational=new Map();
   function identity(){const u=host.SipekaCurrentUser||snapshot.user;return JSON.stringify([u?.id,u?.role,u?.branch_id]);}
@@ -963,9 +963,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       if(!current())throw Error('Lingkup/akun berubah; respons lama dibuang.');
       if(r.id!==id||r.complete!==true||!Array.isArray(r.columns)||!r.columns.length||!Array.isArray(r.rows)||!Array.isArray(r.notices)||!Array.isArray(r.missingDatasets)||r.missingDatasets.length||r.filters?.branch!==f.branch||r.filters?.dateFrom!==f.dateFrom||r.filters?.dateTo!==f.dateTo||r.filters?.timezone!=='Asia/Jakarta')throw Error('Sumber operasional tidak lengkap; ekspor diblokir.');
       for(const c of r.columns){if(typeof c.key!=='string'||typeof c.label!=='string')throw Error('Schema laporan tidak valid.');}
-      for(const row of r.rows)for(const c of r.columns)if(currencyKeys.has(c.key)&&row[c.key]!=null&&(typeof row[c.key]!=='string'||!/^ -?\d+$/.test(' '+row[c.key])))throw Error('Nominal sumber tidak valid; ekspor diblokir.');
+      for(const row of r.rows)for(const c of r.columns)if((currencyKeys.has(c.key)||/^unit_\d+$/.test(c.key))&&row[c.key]!=null&&(typeof row[c.key]!=='string'||!/^ -?\d+$/.test(' '+row[c.key])))throw Error('Nominal sumber tidak valid; ekspor diblokir.');
       if(r.totals)for(const k of ['income','expense','net'])if(!(r.coverage&&r.totals[k]===null)&&(typeof r.totals[k]!=='string'||!/^ -?\d+$/.test(' '+r.totals[k])))throw Error('Total sumber tidak valid.');
-      const item=catalog.find(x=>x.id===id);entry.report={...r,title:item.title,description:item.description,columns:r.columns.map(c=>({...c,type:currencyKeys.has(c.key)?'currency':c.key==='count'?'number':'text'})),filters:f,branch:pendingReport(id,f).branch,generatedAt:r.generated_at,template:false,approvedCount:r.totals?.count||0,readiness:r.readiness==='empty'?'Tidak ada data':'Sumber operasional tersedia'};return entry.report;
+      const item=catalog.find(x=>x.id===id);entry.report={...r,title:item.title,description:item.description,columns:r.columns.map(c=>({...c,type:(currencyKeys.has(c.key)||/^unit_\d+$/.test(c.key))?'currency':c.key==='count'?'number':'text'})),filters:f,branch:pendingReport(id,f).branch,generatedAt:r.generated_at,template:false,approvedCount:r.totals?.count||0,readiness:r.readiness==='empty'?'Tidak ada data':'Sumber operasional tersedia'};return entry.report;
     }catch(error){if(current()){entry.error=error.message;delete entry.report;}throw error;}finally{delete entry.promise;}})();return entry.promise;
   }
   function saveBlob(blob,r,ext){const url=host.URL.createObjectURL(blob),a=host.document.createElement('a');a.href=url;a.download=filename(r,ext);host.document.body.appendChild(a);a.click();a.remove();host.setTimeout(()=>host.URL.revokeObjectURL(url),1000);}
@@ -977,6 +977,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   const defs = [
     ['fund-position','reports','Ringkasan Posisi Dana (Neraca Terbatas)','Informasi internal; bukan laporan keuangan lengkap',[['item','Keterangan'],['amount','Nominal (Rp)','currency'],['status','Ketersediaan'],['basis','Dasar data']],[]],
     ['recorded-income-expense','reports','Ringkasan Pendapatan & Beban Tercatat','Informasi internal; bukan laporan keuangan lengkap',[['item','Keterangan'],['amount','Nominal (Rp)','currency'],['status','Ketersediaan'],['basis','Dasar data']],[]],
+    ['company-profit-loss','reports','Laba Rugi Perusahaan / Unit','Format akun mengikuti contoh Excel. Pilih semua unit untuk gabungan satu perusahaan, atau satu unit.',[['account_code','Kode'],['account_name','Uraian'],['amount','Total (Rp)','currency']],[]],
+    ['compare-profit-loss','reports','Perbandingan Laba Rugi Antar Unit','Akun yang sama dibandingkan antar unit pada periode yang sama, dengan total perusahaan.',[['account_code','Kode'],['account_name','Uraian'],['amount','Total (Rp)','currency']],[]],
     ['profit-loss','reports','Profit & Loss','Mutasi operasional: beban settlement pada tanggal review; bukan arus kas atau laba akrual.', [...base,['account_code','Kode Akun'],['account_name','Nama Akun'],['income','Pemasukan (Rp)','currency'],['expense','Pengeluaran (Rp)','currency'],['net','Mutasi Bersih (Rp)','currency']],[]],
     ['cash-flow','reports','Cash Flow','Mutasi kas tercatat per wadah pembayaran; bukan saldo akhir.',[...base,['method','Wadah Pembayaran'],['income','Kas Masuk (Rp)','currency'],['expense','Kas Keluar (Rp)','currency'],['net','Mutasi Bersih (Rp)','currency'],['count','Transaksi','number']],[]],
     ['expense-breakdown','reports','Expense Breakdown','Pengeluaran approved per cabang dan akun.',[...base,['account_code','Kode Beban'],['account_name','Nama Beban'],['count','Transaksi','number'],['expense','Pengeluaran (Rp)','currency'],['share','Porsi Beban Cabang (%)','number']],[]],
@@ -1101,7 +1103,8 @@ async function downloadPdf(id,input) {
   const r = await exportReport(id,input);if(!r)return null;requireSource(r);const Ctor = host.jspdf?.jsPDF;
   if (!Ctor) throw new Error('PDF belum tersedia: muat jsPDF dan plugin autoTable inline.');
   const version = '2.0.0';
-  const landscape = r.columns.length > 8 || ['ppn','pph21','pph4','pbjt','umkm','tax-checklist','general-ledger','management-report','audit-evidence'].includes(id);
+  const pnlLayout=['company-profit-loss','compare-profit-loss'].includes(id);
+  const landscape = id==='compare-profit-loss'&&r.columns.length>5 || r.columns.length > 8 || ['ppn','pph21','pph4','pbjt','umkm','tax-checklist','general-ledger','management-report','audit-evidence'].includes(id);
   const doc = new Ctor({orientation:landscape ? 'landscape' : 'portrait',unit:'mm',format:'a4',compress:true});
   if (typeof doc.autoTable !== 'function') throw new Error('PDF belum tersedia: plugin autoTable belum dimuat.');
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 14, usable = W - M * 2;
@@ -1163,7 +1166,7 @@ async function downloadPdf(id,input) {
   // Wrapped names enlarge the reserved approval area; never force a signature-only page.
   font(8,false);const prepared=doc.splitTextToSize(text(snapshot.user.full_name || 'Nama penyusun'),usable/2-12);
   const signatureHeight=32+prepared.length*3.6;
-  const bottomReserve=Math.max(60,signatureHeight+26);
+  const bottomReserve=pnlLayout?18:Math.max(60,signatureHeight+26);
   const continuationY=(() => {
     font(10,true);const a=doc.splitTextToSize(text(r.title),usable).length*10*0.3528*1.25;
     font(8,false);const b=doc.splitTextToSize('Cabang: '+r.branch+' | Periode: '+r.filters.dateFrom+' / '+r.filters.dateTo+' WIB',usable).length*8*0.3528*1.25;
@@ -1171,12 +1174,12 @@ async function downloadPdf(id,input) {
     return 23+companyHeight+1+a+1+b+5;
   })();
   const allColumns=r.columns;
-  const groups=allColumns.length>8 ? [allColumns.slice(0,7),...Array.from({length:Math.ceil((allColumns.length-7)/6)},(_,i)=>[allColumns[0],...allColumns.slice(7+i*6,13+i*6)])] : [allColumns];
+  const groups=id==='compare-profit-loss' ? Array.from({length:Math.max(1,Math.ceil((allColumns.length-3)/4))},(_,i)=>[...allColumns.slice(0,2),...allColumns.slice(2+i*4,Math.min(6+i*4,allColumns.length-1)),allColumns.at(-1)]) : allColumns.length>8 ? [allColumns.slice(0,7),...Array.from({length:Math.ceil((allColumns.length-7)/6)},(_,i)=>[allColumns[0],...allColumns.slice(7+i*6,13+i*6)])] : [allColumns];
   const renderedTables=[];
   groups.forEach((columns,groupIndex)=>{
   r.columns=columns;
   if(groupIndex){doc.addPage();y=continuation()+2;y=wrapped('LAMPIRAN RINCIAN · Hubungkan melalui '+allColumns[0].label,M,y,usable,10,true)+5;}
-  const weights=r.columns.map(c=> c.type==='currency' ? 1.55 : c.type==='number' ? 0.85 : ['memo','receipt','evidence','requirement','counterparty','account_name','branch','user_name','coverage','object'].includes(c.key) ? 1.65 : ['when','period','invoice_date','deadline','readiness','status','filing'].includes(c.key) ? 1.25 : 0.95);
+  const weights=r.columns.map(c=> pnlLayout&&c.key==='account_name'?3:pnlLayout&&c.key==='account_code'?.8:c.type==='currency' ? 1.55 : c.type==='number' ? 0.85 : ['memo','receipt','evidence','requirement','counterparty','account_name','branch','user_name','coverage','object'].includes(c.key) ? 1.65 : ['when','period','invoice_date','deadline','readiness','status','filing'].includes(c.key) ? 1.25 : 0.95);
   const sum=weights.reduce((a,b)=>a+b,0), columnStyles={};
   r.columns.forEach((c,i)=>{columnStyles[i]={cellWidth:usable*weights[i]/sum,halign:c.type==='text' ? 'left' : 'right'};});
   const body=r.rows.map(row=>r.columns.map(c=>{
@@ -1194,17 +1197,17 @@ async function downloadPdf(id,input) {
   if(y>H-bottomReserve-20){doc.addPage();continuation();y=continuationY;}
   const startPage=doc.internal.getCurrentPageInfo().pageNumber;
   doc.autoTable({head:[r.columns.map(c=>c.label)],body,startY:y,margin:{top:continuationY,left:M,right:M,bottom:bottomReserve},tableWidth:usable,
-    theme:'plain',styles:{font:'helvetica',fontSize:9,cellPadding:{top:2.4,right:1.4,bottom:2.4,left:1.4},overflow:'linebreak',textColor:ink,lineWidth:0},
+    theme:'plain',styles:{font:'helvetica',fontSize:pnlLayout?8.5:9,cellPadding:{top:pnlLayout?1.8:2.4,right:1.4,bottom:pnlLayout?1.8:2.4,left:1.4},overflow:'linebreak',textColor:ink,lineWidth:0},
     headStyles:{fillColor:[239,245,241],textColor:green,fontStyle:'bold',fontSize:9,cellPadding:{top:3,right:1.4,bottom:3,left:1.4}},
     columnStyles,showHead:'everyPage',rowPageBreak:'avoid',
-    didParseCell:data=>{if(data.section==='head')data.cell.styles.halign=r.columns[data.column.index]?.type==='text'?'left':'right';if(data.section==='body' && ['net','variance','balance'].includes(r.columns[data.column.index]?.key))data.cell.styles.fontStyle='bold';},
+    didParseCell:data=>{if(pnlLayout&&data.section==='body'&&!r.rows[data.row.index]?.account_code){data.cell.styles.fontStyle='bold';data.cell.styles.fillColor=[246,249,247];}if(data.section==='head')data.cell.styles.halign=r.columns[data.column.index]?.type==='text'?'left':'right';if(data.section==='body' && ['net','variance','balance'].includes(r.columns[data.column.index]?.key))data.cell.styles.fontStyle='bold';},
     didDrawPage:()=>{if(doc.internal.getCurrentPageInfo().pageNumber!==startPage || startPage>1)continuation();}
   });
   renderedTables.push({columns:[...columns],table:doc.lastAutoTable});
   });
   r.columns=allColumns;
   doc.sipekaTables=renderedTables;
-  y=doc.lastAutoTable.finalY+7;line(y);y+=6;
+  y=doc.lastAutoTable.finalY+7;if(pnlLayout&&y+signatureHeight+18>H-18){doc.addPage();y=continuation()+2;}line(y);y+=6;
   y=wrapped('PENUTUP · '+r.rows.length+' baris sumber · '+state,M,y,usable,9,true)+3;
   const approvalX=M+usable/2+6;
   font(8,true);doc.text('Disusun oleh',M,y);doc.text('Diperiksa / disetujui',approvalX,y);
@@ -1281,9 +1284,10 @@ async function request({branch='all',entryId,lockBranch=false}={}){
   if(branch!=='all'&&!units.some(u=>u.id===branch))throw Error('Cabang sudah berubah; muat ulang laporan.');
   dialog=host.document.createElement('dialog');dialog.className='sipeka-document-identity';
   dialog.setAttribute('aria-labelledby','documentIdentityTitle');dialog.setAttribute('aria-describedby','documentIdentityHelp');
-  dialog.innerHTML='<form novalidate><h2 id="documentIdentityTitle">Identitas dokumen</h2><p id="documentIdentityHelp">Isi identitas untuk unduhan ini. Nama perusahaan tidak disimpan ke master perusahaan.</p><label for="documentCompany">Nama Perusahaan</label><input id="documentCompany" name="company" required maxlength="80" autocomplete="off" aria-describedby="documentIdentityError"><label for="documentBranch">Cabang</label><select id="documentBranch" name="branch" required></select><p data-identity-note></p><p id="documentIdentityError" role="alert" aria-live="assertive"></p><div class="document-identity-actions"><button type="button" data-identity-cancel>Batal</button><button type="submit">Unduh dokumen</button></div></form>';
+  dialog.innerHTML='<form novalidate><h2 id="documentIdentityTitle">Identitas dokumen</h2><p id="documentIdentityHelp">Nama perusahaan mengikuti pengaturan perusahaan. Pilih cakupan dokumen yang diperlukan.</p><label for="documentCompany">Nama Perusahaan</label><input id="documentCompany" name="company" required maxlength="80" autocomplete="off" aria-describedby="documentIdentityError"><label for="documentBranch">Cabang</label><select id="documentBranch" name="branch" required></select><p data-identity-note></p><p id="documentIdentityError" role="alert" aria-live="assertive"></p><div class="document-identity-actions"><button type="button" data-identity-cancel>Batal</button><button type="submit">Unduh dokumen</button></div></form>';
   const form=dialog.querySelector('form'),select=form.elements.branch;
-  if(all)select.add(new Option('Semua Cabang','all'));
+  form.elements.company.value=host.SipekaCompany?.name||'';form.elements.company.readOnly=!!host.SipekaCompany?.name;
+  if(all)select.add(new Option('Satu Perusahaan — Seluruh Cabang / Unit','all'));
   units.forEach(u=>select.add(new Option(u.name,u.id)));
   select.value=branch==='all'&&!all?units[0].id:branch;select.disabled=!!entryId||lockBranch;
   dialog.querySelector('[data-identity-note]').textContent=entryId?'Cabang mengikuti Staff penerima dan diperiksa kembali oleh server.':lockBranch?'Cabang mengikuti filter tabel yang sedang diekspor.':'Data laporan akan difilter sesuai cabang yang dipilih.';
@@ -2061,14 +2065,7 @@ function scanPage(){
 
   + '<div class="field"><span>2. Unit Bisnis</span><textarea class="control identity-value" id="scUnitName" readonly rows="1" aria-label="Unit Bisnis" style="background:var(--soft);">'+escHtml(unitName)+'</textarea></div>'
 
-  + '<div class="field"><span>3. Kategori Pengeluaran</span><select class="control" id="scCoa">'
-  + '<option value="5101">Beban Chemical / Supplies</option>'
-  + '<option value="5102">Beban Utilitas</option>'
-  + '<option value="5310">Beban Maintenance & Perbaikan</option>'
-  + '<option value="5120">Beban Amenities</option>'
-  + '<option value="5400">Pengeluaran Lapangan / Lain-lain</option>'
-  + '<option value="4101">Pendapatan Operasional</option>'
-  + '</select></div>'
+  + '<div class="field"><span>3. Kode Akun / Jenis Transaksi (COA)</span><select class="control" id="scCoa" required>'+coaOptions()+'</select><small>Pilih sesuai isi nota. Produksi dan operasional umum memakai akun berbeda.</small></div>'
 
   + '<div class="field"><span>4. Nominal Uang (Rp)</span><input class="control mono" id="scAmount" inputmode="numeric" placeholder="0" style="font-size:16px;font-weight:700;"></div>'
 
@@ -2240,14 +2237,7 @@ function manualPage(){
 
   + '<div class="field"><span>2. Unit Bisnis</span><textarea class="control identity-value" id="mnUnitName" readonly rows="1" aria-label="Unit Bisnis" style="background:var(--soft);">'+escHtml(unitName)+'</textarea></div>'
 
-  + '<div class="field"><span>3. Kategori Pengeluaran</span><select class="control" id="mnCoa">'
-  + '<option value="5101">Beban Chemical / Supplies</option>'
-  + '<option value="5102">Beban Utilitas (Listrik / Air / Internet)</option>'
-  + '<option value="5310">Beban Maintenance & Perbaikan Kerusakan</option>'
-  + '<option value="5120">Beban Amenities & Operasional Toko</option>'
-  + '<option value="5400">Pengeluaran Lapangan / Lain-lain</option>'
-  + '<option value="4101">Pemasukan Operasional / Kasir</option>'
-  + '</select></div>'
+  + '<div class="field"><span>3. Kode Akun / Jenis Transaksi (COA)</span><select class="control" id="mnCoa" required>'+coaOptions()+'</select><small>Pilih sesuai isi nota. Produksi dan operasional umum memakai akun berbeda.</small></div>'
 
   + '<div class="field"><span>4. Nominal Uang (Rp)</span><input class="control mono" id="mnAmount" inputmode="numeric" placeholder="0" style="font-size:16px;font-weight:700;"></div>'
 
@@ -2584,8 +2574,11 @@ window.render=function(){render();}
 window.SipekaRefreshUsersView=function(){if(view==='users'&&role==='owner')render();};
 window.SipekaShowSecurity=function(user){window.SipekaCurrentUser=user;role=user.role==='OWNER'?'owner':'staff';view='settings';renderNav();render();};
 function bindClosingTabs(){const tabs=[...content.querySelectorAll('[role=tab][data-closing-tab]')];const select=key=>{tabs.forEach(t=>{const active=t.dataset.closingTab===key;t.setAttribute('aria-selected',String(active));t.tabIndex=active?0:-1;t.classList.toggle('active',active);document.getElementById(t.getAttribute('aria-controls')).hidden=!active;});};content.querySelectorAll('[data-closing-tab]').forEach(b=>b.onclick=()=>select(b.dataset.closingTab));tabs.forEach((b,i)=>b.onkeydown=e=>{let n;if(e.key==='ArrowRight')n=(i+1)%tabs.length;else if(e.key==='ArrowLeft')n=(i+tabs.length-1)%tabs.length;else if(e.key==='Home')n=0;else if(e.key==='End')n=tabs.length-1;else return;e.preventDefault();select(tabs[n].dataset.closingTab);tabs[n].focus();});}
-function syncFundRequestScope(prefix){const intent=document.getElementById(prefix+'Intent'),coa=document.getElementById(prefix+'Coa'),method=document.getElementById(prefix+'Method');if(!intent||!coa||!method)return;const fund=intent.value==='PENGAJUAN_DANA';[...coa.options].forEach(o=>o.disabled=fund&&o.value.startsWith('4'));if(fund&&coa.value.startsWith('4'))coa.value='5101';[...method.options].forEach(o=>o.disabled=fund&&o.value!=='CASH_DRAWER');if(fund)method.value='CASH_DRAWER';method.disabled=fund;intent.onchange=()=>syncFundRequestScope(prefix);}
-function bindDynamic(){syncFundRequestScope('mn');syncFundRequestScope('sc');bindLedgerFilters();bindClosingTabs();bindClosingHistory();bindAccounting();content.querySelectorAll('[data-view]').forEach(bindView);content.querySelectorAll('[data-toast]').forEach(b=>b.onclick=()=>showToast(b.dataset.toast));content.querySelectorAll('[data-download]').forEach(b=>b.onclick=downloadCSV);content.querySelectorAll('[data-transaction]').forEach(r=>r.onclick=()=>openTransaction(+r.dataset.transaction));content.querySelectorAll('[data-approval]').forEach(b=>b.onclick=()=>confirmAction(b.dataset.approval,b.dataset.approvalId,b.dataset.approvalTxid));content.querySelectorAll('.tabs button').forEach(b=>{b.classList.toggle('active',b.textContent.trim()===selectedChartPeriod);b.onclick=()=>{selectedChartPeriod=b.textContent.trim();render();};});content.querySelectorAll('.legend-btn').forEach(b=>b.onclick=()=>{let visible=b.getAttribute('aria-pressed')==='true';b.setAttribute('aria-pressed',String(!visible));let series=content.querySelector('.chart-series.'+b.dataset.series);if(series)series.classList.toggle('is-hidden',visible)});let form=document.getElementById('dewiForm');if(form)form.onsubmit=e=>{e.preventDefault();let i=document.getElementById('dewiInput');sendDewi(i.value);i.value=''};content.querySelectorAll('[data-prompt]').forEach(b=>b.onclick=()=>sendDewi(b.dataset.prompt));content.querySelectorAll('.history-item').forEach(b=>b.onclick=()=>sendDewi(b.textContent));let newAnalysis=content.querySelector('[data-new-analysis]');if(newAnalysis)newAnalysis.onclick=()=>{resetWidyaChat();let c=document.getElementById('conversation');if(c)c.innerHTML='<div class="bubble"><strong>Widya · Financial Intelligence</strong><br>Analisis baru siap. Tanyakan tentang pengeluaran, arus kas, budget, approval, atau anomali.</div>';document.getElementById('dewiInput')?.focus()};content.querySelectorAll('[data-calendar-date]').forEach(b=>b.onclick=()=>{selectedCalendarDate=b.dataset.calendarDate;let d=new Date(selectedCalendarDate+'T00:00:00Z');calendarYear=d.getUTCFullYear();calendarMonth=d.getUTCMonth();render()});// F01-fix: event delegation untuk .sipeka-reset-pwd (ganti inline onclick)
+function coaOptions(){const rows=window.SipekaCoa||[];return '<option value="">'+(rows.length?'Pilih kode akun sesuai transaksi':'Daftar akun tidak tersedia — muat ulang')+'</option>'+rows.map(r=>'<option value="'+escHtml(r.id)+'" data-account-type="'+escHtml(r.account_type)+'">'+escHtml(r.account_code+' · '+r.account_name)+'</option>').join('');}
+function selectedCoaType(prefix){const select=document.getElementById(prefix+'Coa'),option=select?.selectedOptions[0];if(!select?.value||!['REVENUE','EXPENSE'].includes(option?.dataset.accountType))throw Error('Pilih kode akun COA sesuai transaksi');return option.dataset.accountType==='REVENUE'?'INCOME':'EXPENSE';}
+function syncFundRequestScope(prefix){const intent=document.getElementById(prefix+'Intent'),coa=document.getElementById(prefix+'Coa'),method=document.getElementById(prefix+'Method');if(!intent||!coa||!method)return;const fund=intent.value==='PENGAJUAN_DANA';[...coa.options].forEach(o=>o.disabled=fund&&o.dataset.accountType==='REVENUE');if(coa.selectedOptions[0]?.disabled)coa.value='';[...method.options].forEach(o=>o.disabled=fund&&o.value!=='CASH_DRAWER');if(fund)method.value='CASH_DRAWER';method.disabled=fund;intent.onchange=()=>syncFundRequestScope(prefix);}
+
+function bindDynamic(){window.SipekaEmployeePayroll?.bind(content);syncFundRequestScope('mn');syncFundRequestScope('sc');bindLedgerFilters();bindClosingTabs();bindClosingHistory();bindAccounting();content.querySelectorAll('[data-view]').forEach(bindView);content.querySelectorAll('[data-toast]').forEach(b=>b.onclick=()=>showToast(b.dataset.toast));content.querySelectorAll('[data-download]').forEach(b=>b.onclick=downloadCSV);content.querySelectorAll('[data-transaction]').forEach(r=>r.onclick=()=>openTransaction(+r.dataset.transaction));content.querySelectorAll('[data-approval]').forEach(b=>b.onclick=()=>confirmAction(b.dataset.approval,b.dataset.approvalId,b.dataset.approvalTxid));content.querySelectorAll('.tabs button').forEach(b=>{b.classList.toggle('active',b.textContent.trim()===selectedChartPeriod);b.onclick=()=>{selectedChartPeriod=b.textContent.trim();render();};});content.querySelectorAll('.legend-btn').forEach(b=>b.onclick=()=>{let visible=b.getAttribute('aria-pressed')==='true';b.setAttribute('aria-pressed',String(!visible));let series=content.querySelector('.chart-series.'+b.dataset.series);if(series)series.classList.toggle('is-hidden',visible)});let form=document.getElementById('dewiForm');if(form)form.onsubmit=e=>{e.preventDefault();let i=document.getElementById('dewiInput');sendDewi(i.value);i.value=''};content.querySelectorAll('[data-prompt]').forEach(b=>b.onclick=()=>sendDewi(b.dataset.prompt));content.querySelectorAll('.history-item').forEach(b=>b.onclick=()=>sendDewi(b.textContent));let newAnalysis=content.querySelector('[data-new-analysis]');if(newAnalysis)newAnalysis.onclick=()=>{resetWidyaChat();let c=document.getElementById('conversation');if(c)c.innerHTML='<div class="bubble"><strong>Widya · Financial Intelligence</strong><br>Analisis baru siap. Tanyakan tentang pengeluaran, arus kas, budget, approval, atau anomali.</div>';document.getElementById('dewiInput')?.focus()};content.querySelectorAll('[data-calendar-date]').forEach(b=>b.onclick=()=>{selectedCalendarDate=b.dataset.calendarDate;let d=new Date(selectedCalendarDate+'T00:00:00Z');calendarYear=d.getUTCFullYear();calendarMonth=d.getUTCMonth();render()});// F01-fix: event delegation untuk .sipeka-reset-pwd (ganti inline onclick)
 content.querySelectorAll('.sipeka-reset-pwd').forEach(b=>{b.onclick=function(){const uid=this.getAttribute('data-uid');const uname=this.getAttribute('data-uname');if(window.SipekaPromptResetStaffPassword)window.SipekaPromptResetStaffPassword(uid,uname);};});
 content.querySelectorAll('[data-calendar-nav]').forEach(b=>b.onclick=()=>{calendarMonth+=Number(b.dataset.calendarNav);if(calendarMonth<0){calendarMonth=11;calendarYear--}if(calendarMonth>11){calendarMonth=0;calendarYear++}selectedCalendarDate=calendarYear+'-'+String(calendarMonth+1).padStart(2,'0')+'-01';render()});let todayButton=content.querySelector('[data-calendar-today]');
 // F13-fix: today button gunakan tanggal aktual WIB, bukan hardcode 2026-09-29
@@ -2745,7 +2738,7 @@ async function doLogout(){
   window.SipekaPrivateReceipts.clearAll();
   if(window.SipekaAuth)window.SipekaAuth.invalidate();
   if(window.SipekaReports)window.SipekaReports.setSnapshot({});
-  window.SipekaCurrentUser=null;window.SipekaRawRows=[];window.SipekaUnits=[];window.SipekaAdvanceRows=[];window.SipekaAdvanceUnavailable=false;window.SipekaTransactionUnavailable=true;window.SipekaClosingData=null;
+  window.SipekaCurrentUser=null;window.SipekaCompany={};window.SipekaCoa=[];window.SipekaRawRows=[];window.SipekaUnits=[];window.SipekaAdvanceRows=[];window.SipekaAdvanceUnavailable=false;window.SipekaTransactionUnavailable=true;window.SipekaClosingData=null;
   drawerBody.innerHTML='';
   content.innerHTML='';loginGate.classList.remove('is-hidden');
   document.getElementById('appShell').setAttribute('inert','');document.getElementById('appShell').setAttribute('aria-hidden','true');
@@ -2755,7 +2748,7 @@ async function doLogout(){
   try{await fetch('/api/logout',{method:'POST',credentials:'same-origin'});}catch(e){}
   // F07/F08-fix: bersihkan semua state dan cache
   if(window.SipekaReports)window.SipekaReports.setSnapshot({});
-  window.SipekaCurrentUser=null;window.SipekaRawRows=[];window.SipekaUnits=[];window.SipekaAdvanceRows=[];window.SipekaAdvanceUnavailable=false;window.SipekaTransactionUnavailable=true;
+  window.SipekaCurrentUser=null;window.SipekaCompany={};window.SipekaCoa=[];window.SipekaRawRows=[];window.SipekaUnits=[];window.SipekaAdvanceRows=[];window.SipekaAdvanceUnavailable=false;window.SipekaTransactionUnavailable=true;
   window.SipekaClosingData=null;window.SipekaAllUsersList=[];window.SipekaAuth&&(window.SipekaAuth.perf=[]);
   window.__lastReceiptKey=null; // F07-fix
   localStorage.removeItem('sipeka_token');localStorage.removeItem('sipeka_user');
@@ -2830,11 +2823,12 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
         const alive=()=>version===bootVersion;
     window.SipekaPrivateReceipts.clearAll();
     if(window.SipekaReports)window.SipekaReports.setSnapshot({});
-    window.SipekaCurrentUser=null;window.SipekaRawRows=[];window.SipekaUnits=[];window.SipekaAdvanceRows=[];window.SipekaAdvanceUnavailable=false;window.SipekaTransactionUnavailable=true;window.SipekaClosingData=null;
+    window.SipekaCurrentUser=null;window.SipekaCompany={};window.SipekaCoa=[];window.SipekaRawRows=[];window.SipekaUnits=[];window.SipekaAdvanceRows=[];window.SipekaAdvanceUnavailable=false;window.SipekaTransactionUnavailable=true;window.SipekaClosingData=null;
     perfCache=[];
     const _r=user.role==='OWNER'?'owner':'staff';
     const units=await api('/api/units');
     if(!alive())return;
+    let company={};try{company=await api('/api/company');}catch{}if(!alive())return;window.SipekaCompany=company;
     let _br='all';
     if(_r==='staff'){
       _br=(units.find(u=>String(u.id)===String(user.branch_id))||{}).name||'—';
@@ -2846,6 +2840,7 @@ document.addEventListener('click',e=>{if(notificationPopover.classList.contains(
     let advances={rows:[]};try{advances=await api(_r==='staff'?'/api/advances/own-unresolved':'/api/advances');}catch(e){advances={rows:[],unavailable:true};}
     if(!alive())return;window.SipekaAdvanceRows=advances.rows||[];
     try{window.SipekaAdvanceCategories=await api('/api/advance-categories');}catch{window.SipekaAdvanceCategories=[];}if(!alive())return;
+    let coa=[];try{coa=await api('/api/coa');if(!Array.isArray(coa))coa=[];}catch{}if(!alive())return;window.SipekaCoa=coa;
     window.SipekaRawRows=rows;
     window.SipekaAdvanceUnavailable=advances.unavailable===true||!Array.isArray(advances.rows);
     window.SipekaUnits=units;
@@ -3270,7 +3265,7 @@ window.SipekaAuth.bootstrap=bootstrap;
           }
           if(res.account_id){
             const coaEl=document.getElementById('mnCoa');
-            if(coaEl)coaEl.value=String(res.account_id);
+            if(coaEl&&[...coaEl.options].some(o=>o.value===String(res.account_id)))coaEl.value=String(res.account_id);
           }
           toast('Foto bukti terunggah ✓');
         }catch(err){
@@ -3300,10 +3295,11 @@ window.SipekaAuth.bootstrap=bootstrap;
       if(amount===null){toast('Nominal harus angka bulat positif dalam batas aman');return;}
       const intent=(document.getElementById('mnIntent')||{}).value||'SETOR_NOTA';
       const memo=(document.getElementById('mnMemo')||{}).value.trim()||(intent==='PENGAJUAN_DANA'?'Pengajuan dana lapangan':'Setor nota operasional');
-      const coa=(document.getElementById('mnCoa')||{}).value||'5101';
+      const coa=(document.getElementById('mnCoa')||{}).value;
+      let txType;try{txType=selectedCoaType('mn');}catch(err){toast(err.message);return;}
       const method=(document.getElementById('mnMethod')||{}).value||'CASH_DRAWER';
       // F06-fix: tentukan tx_type dari COA (4xxx = INCOME, 5xxx = EXPENSE)
-      const txType=coa.startsWith('4')?'INCOME':'EXPENSE';
+      // Transaction direction follows the authoritative COA type (including 7-1100).
       // F06-fix: Owner wajib kirim branch_id; gunakan selectedBranch atau unit yang dipilih
       const cu=window.SipekaCurrentUser||null;
       let branchId;try{branchId=formBranch('mn');}catch(err){toast(err.message);return;}
@@ -3427,9 +3423,10 @@ window.SipekaAuth.bootstrap=bootstrap;
       const amount=integer(amountRaw,true);
       if(amount===null){toast('Nominal harus angka bulat positif dalam batas aman');return;}
       const intent=(document.getElementById('scIntent')||{}).value||'SETOR_NOTA';
-      const coa=(document.getElementById('scCoa')||{}).value||'5101';
+      const coa=(document.getElementById('scCoa')||{}).value;
+      let txType;try{txType=selectedCoaType('sc');}catch(err){toast(err.message);return;}
       // F06-fix: tx_type dari COA (4xxx=INCOME)
-      const txType=coa.startsWith('4')?'INCOME':'EXPENSE';
+      // Transaction direction follows the authoritative COA type (including 7-1100).
       // F06-fix: branch_id untuk owner
       const cu=window.SipekaCurrentUser||null;
       let branchId;try{branchId=formBranch('sc');}catch(err){toast(err.message);return;}
@@ -3461,7 +3458,7 @@ window.SipekaAuth.bootstrap=bootstrap;
       if(!b)return;
       e.preventDefault();
       receipts.clear('scan');document.getElementById('widyaReceiptReview')?.remove();const resetStatus=document.getElementById('scanStatus2');if(resetStatus)resetStatus.textContent='';
-      ['scMemo','scAmount','scDate'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+      ['scMemo','scAmount','scDate','scCoa'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
       const wrap=document.getElementById('scanPreviewWrap'); if(wrap)wrap.style.display='none';
       ['scanFile'].forEach(id=>{const fi=document.getElementById(id);if(fi)fi.value='';});
       const conf=document.getElementById('scanConf'); if(conf){conf.textContent='MENUNGGU';conf.className='tag';}
@@ -3487,6 +3484,19 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
 .device-staff-form input,.device-staff-form select{width:100%;height:42px;min-height:42px;font-size:14px;border-radius:8px}
 .device-staff-form .btn{height:42px;min-height:42px;padding:0 16px;border-radius:8px;font-weight:600}
 .device-staff-form strong{display:inline-block;padding:4px 8px;background:var(--surface);border:1px solid var(--line);border-radius:6px;font-size:13px}
+
+.device-staff-form>small{flex:1 1 100%;overflow-wrap:anywhere;font-size:12px;color:var(--sub)}
+.device-staff-form label:has(input[type=checkbox]){display:flex;flex:1 1 100%;align-items:center;gap:10px;text-transform:none;line-height:1.5;font-size:14px}
+.device-staff-form input[type=checkbox]{width:18px;height:18px;min-height:18px;min-width:18px;flex:0 0 18px;border-radius:3px}
+#employeePayroll [data-employee-import]{display:grid;gap:12px;margin-top:18px}
+#employeePayroll [data-employee-import]>label{display:grid;gap:8px}
+#employeePayroll [data-employee-import],#employeePayroll [data-employee-import]>label,#employeePayroll [data-employee-import] input{min-width:0;max-width:100%;width:100%;box-sizing:border-box}
+#employeePayroll [data-employee-import]>.btn{justify-self:start}
+#employeePayroll [data-employee-rows]>.card{padding:18px;margin-top:18px}
+#employeePayroll td:last-child,#employeePayroll th:last-child{min-width:260px;white-space:normal;overflow-wrap:anywhere}
+#employeePayroll td>label,#employeePayroll article>label{display:flex;align-items:flex-start;gap:8px;white-space:normal;margin:12px 0;line-height:1.5}
+#employeePayroll input[type=checkbox]{width:18px;height:18px;min-height:18px;flex:0 0 18px}
+#employeePayroll td p{white-space:normal;margin:10px 0}
 /* Enhanced Branches View */
 .branches-card{border-radius:14px;border:1px solid var(--line);background:var(--surface);box-shadow:0 4px 20px rgba(0,0,0,.04);overflow:hidden}
 .branches-card>.card-head{padding:18px 22px;margin:0;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
@@ -3608,22 +3618,53 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
   return '<section class="card device-staff" aria-label="Staff bertugas"><label for="onDutyStaff">Staff bertugas di unit ini</label><select id="onDutyStaff" class="control" required><option value="">Pilih Staff sebelum transaksi</option>'+rows.filter(r=>r.active).map(r=>'<option value="'+esc(r.id)+'"'+(choice?.id===r.id?' selected':'')+'>'+esc(r.name)+'</option>').join('')+'</select><p role="status">'+esc(error||(!rows.length?'Owner perlu menambahkan Staff aktif untuk unit ini.':choice?'Bertugas: '+choice.name+'. Pilihan hanya berlaku di tab ini.':'Akun ini adalah device unit. Pilih nama Anda; pergantian hanya memengaruhi operasi berikutnya.'))+'</p></section>';
  }
  function branches(selected){return (window.SipekaUnits||[]).map(u=>'<option value="'+esc(u.id)+'"'+(u.id===selected?' selected':'')+'>'+esc(u.name)+'</option>').join('');}
- function form(r){return '<form data-staff-edit="'+esc(r?.id||'')+'" class="device-staff-form"><label>Nama Staff<input name="name" class="control" maxlength="120" required value="'+esc(r?.name||'')+'"></label><label>Unit bisnis<select name="branch_id" class="control" required>'+branches(r?.branch_id)+'</select></label><label>Status<select name="active" class="control"><option value="true">Aktif</option><option value="false"'+(r&&!r.active?' selected':'')+'>Nonaktif</option></select></label><button class="btn" type="submit">'+(r?'Simpan Staff':'Tambah Staff')+'</button></form>';}
+ function form(r){return '<form data-staff-edit="'+esc(r?.id||'')+'" class="device-staff-form"><small>ID karyawan: '+esc(r?.id||'dibuat setelah disimpan')+'</small><label>Nama Staff<input name="name" class="control" maxlength="120" required value="'+esc(r?.name||'')+'"></label><label>Departemen<input name="department" class="control" maxlength="120" value="'+esc(r?.department||'')+'" placeholder="Contoh: Operasional"></label><label>Email slip gaji<input type="email" name="email" class="control" maxlength="254" value="'+esc(r?.email||'')+'"></label><label><input type="checkbox" name="email_confirmed" value="true"> Saya sudah memeriksa email penerima</label><label>Unit bisnis<select name="branch_id" class="control" required>'+branches(r?.branch_id)+'</select></label><label>Status<select name="active" class="control"><option value="true">Aktif</option><option value="false"'+(r&&!r.active?' selected':'')+'>Nonaktif</option></select></label><button class="btn" type="submit">'+(r?'Simpan Staff':'Tambah Staff')+'</button></form>';}
+ function companyForm(){const company=window.SipekaCompany||{};return '<section class="card device-staff"><h2>Identitas Perusahaan</h2><p>Satu perusahaan untuk seluruh departemen dan unit. Nama ini dipakai pada dokumen laporan.</p><form data-company-edit class="device-staff-form"><label>Nama perusahaan<input class="control" name="name" maxlength="80" required value="'+esc(company.name||'')+'"></label><button class="btn" type="submit">Simpan Perusahaan</button><p role="status" data-company-message></p></form></section>';}
  function directory(){if(window.SipekaCurrentUser?.role!=='OWNER')return '';
-  return '<section class="card device-staff"><div class="card-head" style="padding:0;margin-bottom:14px;"><div><h2>Direktori Staff Bertugas per Unit</h2><p>Staff tidak memiliki akun login. Nama staf dipilih oleh Device saat operasional transaksi.</p></div></div><div class="staff-add-box" style="margin-bottom:16px;">'+form(null)+'</div><div class="staff-list-grid" style="display:grid;gap:8px;">'+rows.map(form).join('')+'</div><p role="status" id="staffDirectoryMessage" style="font-size:12.5px;color:var(--sub);margin-top:10px;">'+esc(error)+'</p></section>';
+  return companyForm()+(window.SipekaEmployeePayroll?.render()||'')+'<section class="card device-staff"><div class="card-head" style="padding:0;margin-bottom:14px;"><div><h2>Direktori Karyawan — Departemen & Unit</h2><p>Staff tidak memiliki akun login. Nama staf dipilih oleh Device saat operasional transaksi.</p></div></div><div class="staff-add-box" style="margin-bottom:16px;">'+form(null)+'</div><div class="staff-list-grid" style="display:grid;gap:8px;">'+rows.map(form).join('')+'</div><p role="status" id="staffDirectoryMessage" style="font-size:12.5px;color:var(--sub);margin-top:10px;">'+esc(error)+'</p></section>';
  }
  function headers(path,method){if(method!=='POST'||window.SipekaCurrentUser?.role!=='STAFF'||!(/^\/api\/(transactions|closing|approvals|receipts\/upload)$/.test(path)||path.startsWith('/api/advances/')))return {};
   if(!choice)throw Error('Pilih Staff bertugas sebelum mengirim operasi.');
   return {'X-Operational-Staff':choice.id,'X-Operational-Revision':String(choice.revision)};
  }
  document.addEventListener('change',e=>{if(e.target.id!=='onDutyStaff')return;choice=rows.find(r=>r.id===e.target.value)||null;error='';window.SipekaPrivateReceipts?.clearUploads();redraw();});
- document.addEventListener('submit',async e=>{const form=e.target;if(!form.matches('[data-staff-edit],[data-device-edit]'))return;e.preventDefault();const button=form.querySelector('button');button.disabled=true;
-  try{const body=Object.fromEntries(new FormData(form));let path='/api/operational-staff';if(form.hasAttribute('data-device-edit')){path='/api/devices/configure';body.device_id=form.dataset.deviceEdit;}else{body.active=body.active==='true';if(form.dataset.staffEdit){body.id=form.dataset.staffEdit;body.revision=rows.find(r=>r.id===body.id)?.revision;}}
+ document.addEventListener('submit',async e=>{const form=e.target;if(form.matches('[data-company-edit]')){e.preventDefault();const button=form.querySelector('button');button.disabled=true;try{window.SipekaCompany=await api('/api/company',{method:'POST',body:{name:form.elements.name.value,revision:window.SipekaCompany?.revision||0}});form.querySelector('[data-company-message]').textContent='Identitas perusahaan tersimpan.';}catch(err){form.querySelector('[data-company-message]').textContent=err.message;}finally{button.disabled=false;}return;}if(!form.matches('[data-staff-edit],[data-device-edit]'))return;e.preventDefault();const button=form.querySelector('button');button.disabled=true;
+  try{const body=Object.fromEntries(new FormData(form));let path='/api/operational-staff';if(form.hasAttribute('data-device-edit')){path='/api/devices/configure';body.device_id=form.dataset.deviceEdit;}else{body.active=body.active==='true';body.email_confirmed=body.email_confirmed==='true';if(form.dataset.staffEdit){body.id=form.dataset.staffEdit;body.revision=rows.find(r=>r.id===body.id)?.revision;}}
    await api(path,{method:'POST',body});await window.SipekaAuth.bootstrap(window.SipekaCurrentUser);redraw();
   }catch(e){document.getElementById('staffDirectoryMessage').textContent=e.message;}finally{button.disabled=false;}
  });
  window.SipekaDeviceStaff={load,selector,directory,headers,reset(){identity=null;choice=null;rows=[];error='';}};
 })();
-
+</script>
+<script>
+(()=>{'use strict';
+ const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const api=(...a)=>window.SipekaAuth.api(...a);
+ const amount=v=>'Rp '+BigInt(v).toLocaleString('id-ID');
+ function render(){return '<section id="employeePayroll" class="card device-staff"><h2>Gaji Karyawan & Slip Email</h2><p>Karyawan terpisah dari device kasir. Slip memakai satu perusahaan, departemen, dan unit karyawan.</p><p>Perhitungan saat ini: gaji pokok + tunjangan − potongan − PPh 21. Nominal diimpor sesuai perhitungan yang sudah diperiksa.</p><button class="btn" type="button" data-employee-template>Unduh template CSV</button><form data-employee-import><label>File gaji CSV<input class="control" type="file" name="csv" accept=".csv,text/csv" required></label><p>Gunakan ID karyawan dari direktori di bawah. Isi departemen dan email karyawan sebelum impor.</p><button class="btn primary">Impor & Preview</button></form><p data-employee-status role="status"></p><div data-employee-rows></div></section>';}
+ async function download(path,filename){const response=await fetch(path,{credentials:'same-origin',cache:'no-store'});if(!response.ok)throw Error('Unduhan belum tersedia');const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=filename;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+ function bind(content){const panel=content.querySelector('#employeePayroll');if(!panel)return;const generation=window.SipekaAuth.generation(),current=()=>panel.isConnected&&generation===window.SipekaAuth.generation()&&window.SipekaCurrentUser?.role==='OWNER';
+  const status=panel.querySelector('[data-employee-status]'),output=panel.querySelector('[data-employee-rows]');let entries=[],ready={};
+  const notice=e=>{if(current())status.textContent=String(e.message||e);};
+  async function load(){
+   const result=await api('/api/employee-payroll');if(!current())return;entries=result.rows;ready=result.readiness;
+   const groups=new Map();for(const e of entries){if(!groups.has(e.batch_id))groups.set(e.batch_id,[]);groups.get(e.batch_id).push(e);}
+   output.innerHTML=entries.length?[...groups.values()].map(rows=>{const first=rows[0];return '<article class="card"><h3>'+esc(first.period)+' · '+esc(first.status==='PUBLISHED'?'Terbit':'Draft')+'</h3><div class="table-wrap"><table><thead><tr><th>Karyawan / Penempatan</th><th>Gaji pokok</th><th>Tunjangan</th><th>Potongan</th><th>PPh 21</th><th>Bersih</th><th>Slip & Email</th></tr></thead><tbody>'+rows.map(e=>'<tr><td>'+esc(e.row.full_name)+'<br>'+esc(e.row.department)+' · '+esc(e.row.branch_name)+'</td>'+['basic_salary','allowances','deductions','pph21','net_salary'].map(k=>'<td>'+esc(amount(e.row[k]))+'</td>').join('')+'<td><button type="button" class="btn" data-employee-pdf="'+esc(e.id)+'">Unduh Slip</button><p>'+esc(e.row.email||'Email belum diisi saat impor')+'</p><p>'+esc(e.email_status==='sent'?'Diterima layanan email':e.email_status==='sending'||e.email_status==='uncertain'?'Status kirim perlu diperiksa; pengiriman ulang diblokir.':'Belum dikirim')+'</p><label><input type="checkbox" data-employee-consent="'+esc(e.id)+'"> Saya periksa penerima dan slip ini</label><button type="button" class="btn" data-employee-send="'+esc(e.id)+'" disabled>Kirim Email</button></td></tr>').join('')+'</tbody></table></div>'+(first.status==='DRAFT'?'<label><input type="checkbox" data-employee-publish-consent="'+esc(first.batch_id)+'"> Seluruh komponen dan penempatan karyawan sudah saya periksa</label><button type="button" class="btn primary" data-employee-publish="'+esc(first.batch_id)+'" disabled>Terbitkan Slip</button>':'')+'</article>';}).join(''):'<p>Belum ada slip gaji karyawan.</p>';
+   status.textContent=!ready.encryption?'Penyimpanan gaji belum siap.':!ready.email?'Slip dapat disiapkan. Layanan email belum siap.':'Preview slip terlebih dahulu, lalu terbitkan dan kirim ke email karyawan.';
+  }
+  panel.addEventListener('change',e=>{const id=e.target.dataset.employeeConsent,batch=e.target.dataset.employeePublishConsent;if(id){const row=entries.find(x=>x.id===id);panel.querySelector('[data-employee-send="'+id+'"]').disabled=!e.target.checked||!ready.email||row.status!=='PUBLISHED'||!row.row.email||!!row.email_status;}if(batch)panel.querySelector('[data-employee-publish="'+batch+'"]').disabled=!e.target.checked;});
+  panel.addEventListener('click',async e=>{const button=e.target.closest('button');if(!button||button.type==='submit'||!current())return;button.disabled=true;
+   try{
+    if(button.hasAttribute('data-employee-template'))await download('/api/employee-payroll/template','template-gaji-karyawan.csv');
+    if(button.dataset.employeePdf)await download('/api/employee-payroll/entries/'+button.dataset.employeePdf+'/slip.pdf','slip-gaji-karyawan.pdf');
+    if(button.dataset.employeePublish){const row=entries.find(x=>x.batch_id===button.dataset.employeePublish);if(!panel.querySelector('[data-employee-publish-consent="'+row.batch_id+'"]').checked)return;await api('/api/employee-payroll/publish',{method:'POST',body:{id:row.batch_id,preview_token:row.preview_token,confirmed:true}});if(current())await load();}
+    if(button.dataset.employeeSend){const row=entries.find(x=>x.id===button.dataset.employeeSend);if(!panel.querySelector('[data-employee-consent="'+row.id+'"]').checked)return;const result=await api('/api/employee-payroll/entries/'+row.id+'/send',{method:'POST',body:{email:row.row.email,confirmed:true}});if(current()){await load();status.textContent=result.status==='sent'?'Layanan email menerima slip.':'Status kirim '+result.status+'; periksa sebelum mengirim ulang.';}}
+   }catch(err){notice(err);}finally{if(button.isConnected&&!button.hasAttribute('data-employee-send')&&!button.hasAttribute('data-employee-publish'))button.disabled=false;}
+  });
+  panel.querySelector('[data-employee-import]').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button');if(button.disabled||!current())return;button.disabled=true;try{const file=e.target.elements.csv.files[0];if(!file||file.size>1024*1024)throw Error('Pilih CSV maksimal 1 MB');await api('/api/employee-payroll/import',{method:'POST',body:{csv:await file.text()}});if(current()){await load();status.textContent='Draft tersimpan. Periksa seluruh komponen sebelum menerbitkan.';e.target.reset();}}catch(err){notice(err);}finally{if(button.isConnected)button.disabled=false;}};
+  load().catch(notice);
+ }
+ window.SipekaEmployeePayroll={render,bind};
+})();
 </script>
 </body></html>

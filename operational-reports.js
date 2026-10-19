@@ -15,6 +15,11 @@ function exact(v){if(!/^[0-9]+$/.test(String(v)))fail('REPORT_INVALID_AMOUNT',50
 function total(rows){let income=0n,expense=0n;for(const r of rows){if(r.tx_type==='INCOME')income+=exact(r.amount);else if(r.tx_type==='EXPENSE')expense+=exact(r.amount);else fail('REPORT_INVALID_TYPE',503);}return {income:String(income),expense:String(expense),net:String(income-expense),count:rows.length};}
 async function read(pool,actor,token,id,params,{readAdvances=require('./advance-service').snapshot}={}){
  if(actor?.role!=='OWNER')fail('REPORT_OWNER_ONLY',403);
+ if(['company-profit-loss','compare-profit-loss'].includes(id)){
+  const source=await read(pool,actor,token,'profit-loss',params,{readAdvances});
+  const units=(await pool.query('SELECT id,name,category,is_active FROM business_units ORDER BY id')).rows;
+  return require('./company-pnl').build(source,units,id);
+ }
  if(id==='quarterly-owner')return require('./quarterly-owner').read(pool,actor,token,params,{readAdvances});
  if(['fund-position','recorded-income-expense'].includes(id))return require('./informational-statements').read(pool,actor,token,id,params,{readAdvances});
  if(!['profit-loss','cash-flow','fund-requests','daily-closings','audit-evidence','quarterly-data'].includes(id))fail('REPORT_NOT_FOUND',404);
@@ -53,7 +58,7 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
 }
 function toCsv(report){
  const money=new Set(['amount','income','expense','net','system_balance','physical_cash','difference']);
- const cell=(value,key)=>{let s=value==null?'':String(value);const numeric=money.has(key)&&/^-?\d+$/.test(s);if(!numeric&&/^[\s\u0000-\u001f\u007f]*[=+\-@]|^[\u0000-\u001f\u007f]/.test(s))s="'"+s;return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+ const cell=(value,key)=>{let s=value==null?'':String(value);const numeric=(money.has(key)||/^unit_\d+$/.test(key))&&/^-?\d+$/.test(s);if(!numeric&&/^[\s\u0000-\u001f\u007f]*[=+\-@]|^[\u0000-\u001f\u007f]/.test(s))s="'"+s;return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
  return '\uFEFF'+[report.columns.map(c=>cell(c.key)).join(','),...report.rows.map(r=>report.columns.map(c=>cell(r[c.key],c.key)).join(','))].join('\r\n')+'\r\n';
 }
 module.exports={read,filters,toCsv};
