@@ -10,12 +10,12 @@ function plain(value,max=96){return String(value??'Tidak tersedia').replace(/[\x
 function renderSlipPdf(row,{publishedAt,simulation=false,documentIdentity}={}){
  const commands=[];
  const employeeLayout=!!row.employee_id;
- if(employeeLayout)commands.push('0.96 0.98 0.96 rg 380 842 m 595 842 l 595 670 l h f','0.92 0.96 0.93 rg 500 842 m 595 842 l 595 740 l h f');
+ if(employeeLayout)commands.push('0.96 0.97 0.99 rg 380 842 m 595 842 l 595 670 l h f','0.91 0.94 0.98 rg 500 842 m 595 842 l 595 740 l h f');
  const literal=value=>plain(value,180).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/\u2014/g,'\x97').replace(/[^\x20-\x7e\x97]/g,'?').replace(/([\\()])/g,'\\$1');
  const text=(s,x,y,size=11,bold=false,color='0.18 0.23 0.28')=>commands.push(`${color} rg BT /${bold?'F2':'F1'} ${size} Tf 1 0 0 1 ${x} ${y} Tm (${literal(s)}) Tj ET`);
  const line=y=>commands.push(`0.84 0.87 0.88 RG 0.6 w 48 ${y} m 547 ${y} l S`);
  const compName = documentIdentity ? require('./report-identity').companyName(documentIdentity.company_name) : 'SLIP GAJI KARYAWAN';
- if(employeeLayout){compName.match(/.{1,45}/g).forEach((part,i)=>text(part,48,797-i*15,13,true,'0.08 0.28 0.32'));}else text(compName,48,documentIdentity?779:784,documentIdentity?13:15,true,'0.08 0.28 0.32');text('SLIP GAJI',48,746,26,true);text('RAHASIA / HANYA UNTUK PENERIMA',48,722,9);
+ if(employeeLayout){compName.match(/.{1,45}/g).forEach((part,i)=>text(part,48,797-i*15,13,true,'0.122 0.220 0.392'));}else text(compName,48,documentIdentity?779:784,documentIdentity?13:15,true,'0.122 0.220 0.392');text('SLIP GAJI',48,746,26,true);text('RAHASIA / HANYA UNTUK PENERIMA',48,722,9);
  if(simulation)text('CONTOH — DATA SIMULASI',320,784,11,true,'0.6 0.22 0.13');
  if(employeeLayout&&!publishedAt)text('DRAFT - BELUM DITERBITKAN',320,722,9,true,'0.6 0.22 0.13');
  if(documentIdentity&&!employeeLayout){const name=require('./report-identity').companyName(documentIdentity.company_name);const parts=name.match(/.{1,45}/g);parts.forEach((s,i)=>text(s,48,812-i*12,10,true));}
@@ -35,7 +35,7 @@ function renderSlipPdf(row,{publishedAt,simulation=false,documentIdentity}={}){
  if(row.basic_salary!=null&&row.allowances!=null)amount('Penghasilan bruto',(integer(row.basic_salary)+integer(row.allowances)).toString(),detailed?380:402,48,284,true);
  if(row.deductions!=null&&row.pph21!=null)amount('Total potongan',(integer(row.deductions)+integer(row.pph21)).toString(),detailed?380:402,311,547,true);
  commands.push('0.84 0.87 0.88 RG 0.6 w 297 368 m 297 526 l S');
- commands.push('0.92 0.96 0.96 rg 48 292 499 70 re f');text('GAJI BERSIH',64,334,10,true);const net=row.net_salary==null?'Tidak tersedia':money(row.net_salary);text(net,531-width(net,20,true),314,20,true,'0.08 0.28 0.32');
+ commands.push('0.92 0.94 0.98 rg 48 292 499 70 re f');text('GAJI BERSIH',64,334,10,true);const net=row.net_salary==null?'Tidak tersedia':money(row.net_salary);text(net,531-width(net,20,true),314,20,true,'0.122 0.220 0.392');
  text('Slip diterbitkan oleh Owner; bukan bukti pembayaran.',48,267,9);
  // Reserved image region remains completely blank, no box, fake autograph or ttd.
  text('Raditya Martanegara',365,150,12,true);text('Penanggung jawab',365,132,10);text('Tanggal: '+publicationDate(publishedAt),365,114,10);

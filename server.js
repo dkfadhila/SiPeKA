@@ -549,9 +549,16 @@ async function handleRequest(req, res, url, p) {
     const match=p.match(/^\/api\/reports\/([a-z-]+)(\/export)?$/);
     if(!match||req.method!=='GET'||match[1]==='quarterly-data'||(match[1]==='quarterly-owner'&&match[2]))return json(res,404,{error:'REPORT_NOT_FOUND'});
     const reports=require('./operational-reports'),params=new URLSearchParams(url.searchParams);
+    const exportFormat=params.get('format');let exportCompany;
     if(match[2]){
-      if(params.getAll('format').length!==1||params.get('format')!=='csv')return json(res,400,{error:'REPORT_CSV_FORMAT_REQUIRED'});
+      if(params.getAll('format').length!==1||!['csv','xlsx'].includes(exportFormat))return json(res,400,{error:'REPORT_CSV_FORMAT_REQUIRED'});
       params.delete('format');
+      if(exportFormat==='xlsx'){
+        if(!require('./report-template').kinds[match[1]])return json(res,400,{error:'REPORT_XLSX_TEMPLATE_UNAVAILABLE'});
+        if(params.getAll('company_name').length!==1)return json(res,400,{error:'REPORT_COMPANY_REQUIRED'});
+        try{exportCompany=require('./report-identity').companyName(params.get('company_name'));}catch{return json(res,400,{error:'REPORT_COMPANY_REQUIRED'});}
+        params.delete('company_name');
+      }
     }
     const client=await require('./db-postgres').getPool().connect();
     let report;
@@ -570,6 +577,10 @@ async function handleRequest(req, res, url, p) {
       return json(res,code,{error:/^REPORT_[A-Z_]+$/.test(e.message||'')?e.message:'REPORT_SOURCE_UNAVAILABLE'});
     }finally{client.release();}
     if(match[2]){
+      if(exportFormat==='xlsx'){
+        const bytes=require('./report-template-xlsx').exportXlsx(report.templateLayout,exportCompany);
+        res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="SiPeKA-'+match[1]+'.xlsx"',...SECURITY_HEADERS,'Cache-Control':'no-store'});return res.end(bytes);
+      }
       const csv=reports.toCsv(report);
       res.writeHead(200,{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="SiPeKA-'+match[1]+'.csv"',...SECURITY_HEADERS,'Cache-Control':'no-store'});
       return res.end(csv);

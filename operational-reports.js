@@ -13,10 +13,22 @@ function filters(params){
 }
 function exact(v){if(!/^[0-9]+$/.test(String(v)))fail('REPORT_INVALID_AMOUNT',503);return BigInt(v);}
 function total(rows){let income=0n,expense=0n;for(const r of rows){if(r.tx_type==='INCOME')income+=exact(r.amount);else if(r.tx_type==='EXPENSE')expense+=exact(r.amount);else fail('REPORT_INVALID_TYPE',503);}return {income:String(income),expense:String(expense),net:String(income-expense),count:rows.length};}
-async function read(pool,actor,token,id,params,{readAdvances=require('./advance-service').snapshot}={}){
+async function read(pool,actor,token,id,params,{readAdvances=require('./advance-service').snapshot,template=true}={}){
  if(actor?.role!=='OWNER')fail('REPORT_OWNER_ONLY',403);
+ if(template&&require('./report-template').kinds[id]){
+  const result=await read(pool,actor,token,id,params,{readAdvances,template:false});
+  const f=filters(params),days=(Date.parse(f.dateTo)-Date.parse(f.dateFrom))/86400000+1;
+  const previousParams=new URLSearchParams(params),end=new Date(Date.parse(f.dateFrom)-86400000),start=new Date(end.getTime()-(days-1)*86400000);
+  previousParams.set('date_from',start.toISOString().slice(0,10));previousParams.set('date_to',end.toISOString().slice(0,10));
+  const sourceId=['fund-position','cash-flow'].includes(id)?id:'profit-loss';
+  const source=sourceId===id?result:await read(pool,actor,token,sourceId,params,{readAdvances,template:false});
+  const previous=await read(pool,actor,token,sourceId,previousParams,{readAdvances,template:false});
+  const units=(await pool.query('SELECT id,name,category,is_active FROM business_units ORDER BY id')).rows;
+  result.templateLayout=require('./report-template').make(id,source,previous,units,f);
+  return result;
+ }
  if(['company-profit-loss','compare-profit-loss'].includes(id)){
-  const source=await read(pool,actor,token,'profit-loss',params,{readAdvances});
+  const source=await read(pool,actor,token,'profit-loss',params,{readAdvances,template:false});
   const units=(await pool.query('SELECT id,name,category,is_active FROM business_units ORDER BY id')).rows;
   return require('./company-pnl').build(source,units,id);
  }
