@@ -90,4 +90,4 @@ function createPayrollService({pool,encryptionKey=process.env.PAYROLL_ENCRYPTION
  async retryDelivery(actor,id){owner(actor);return transaction(pool,async c=>{const r=(await c.query('SELECT o.*,e.batch_id FROM payroll_delivery_outbox o JOIN payroll_entries e ON e.id=o.entry_id WHERE o.id=$1 FOR UPDATE OF o',[id])).rows[0];if(!r)throw fault('PAYROLL_NOT_FOUND',404);if(!['blocked','failed'].includes(r.status))throw fault('PAYROLL_RETRY_UNSAFE',409);await audit(c,actor,'RETRY',r.batch_id);await c.query("UPDATE payroll_delivery_outbox SET status='pending',error_code=NULL,updated_at=clock_timestamp() WHERE id=$1",[id]);return {id,status:'pending'};});}
  };
 }
-module.exports={templateCsv,validateCsv,createCipher,createPayrollService,transaction,fault};
+module.exports={templateCsv,parseCsv,validateCsv,createCipher,createPayrollService,transaction,fault};

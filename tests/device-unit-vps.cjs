@@ -116,7 +116,7 @@ const sql=s=>cp.execFileSync('sudo',['-n','-u','postgres','psql','-X','-At','-v'
   bob=await api('/api/operational-staff',{method:'POST',body:{id:bob.id,revision:bob.revision,name:'Bob',branch_id:'a',active:true,department:'Operasional',email:'bob@example.test',email_confirmed:true}});
   assert.equal(bob.department,'Operasional');assert.ok(!(await api('/api/operational-staff',{actor:'d2'})).find(r=>r.id===bob.id).email);
   await api('/api/operational-staff',{method:'POST',body:{name:'Duplicate email',branch_id:'a',active:true,email:'bob@example.test',email_confirmed:true},status:409});
-  const header=require('../employee-payroll').HEADER,csv=header+'\r\n2026-10,'+bob.id+',2500000,100000,20000,10000\r\n';
+  const header=require('../employee-payroll').HEADER,csv=header+'\r\n2026-10,'+bob.id+',2500000,50000,50000,10000,5000,5000,10000\r\n';
   const imported=await api('/api/employee-payroll/import',{method:'POST',body:{csv},status:201});
   const importedRows=(await api('/api/employee-payroll')).rows,entry=importedRows.find(e=>e.batch_id===imported.id);assert.equal(entry.row.net_salary,2570000);assert.equal(entry.row.company_name,'QA Perusahaan Tunggal');assert.equal(entry.row.employee_id,bob.id);assert.equal(entry.row.department,'Operasional');
   await api('/api/employee-payroll/publish',{method:'POST',body:{id:imported.id,preview_token:entry.preview_token,confirmed:false},status:400});

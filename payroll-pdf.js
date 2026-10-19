@@ -28,12 +28,13 @@ function renderSlipPdf(row,{publishedAt,simulation=false,documentIdentity}={}){
  // Helvetica amounts use font widths (digits 556, period/space 278).
  const width=(s,size,bold)=>[...s].reduce((n,c)=>n+(/\d/.test(c)?556:c==='R'?722:c==='p'?(bold?611:556):278),0)*size/1000;
  const amount=(label,v,at,x,right,bold=false)=>{text(label,x,at,10,bold);const m=v==null?'Tidak tersedia':money(v),size=9;text(m,right-width(m,size,bold),at,size,bold);};
- amount('Gaji pokok',row.basic_salary,485,48,284);amount('Tunjangan',row.allowances,451,48,284);
- if(row.basic_salary!=null&&row.allowances!=null)amount('Penghasilan bruto',(integer(row.basic_salary)+integer(row.allowances)).toString(),402,48,284,true);
- if(row.deductions!=null)amount('Potongan',row.deductions,485,311,547);
- if(row.pph21!=null)amount('PPh 21',row.pph21,451,311,547);
- if(row.deductions!=null&&row.pph21!=null)amount('Total potongan',(integer(row.deductions)+integer(row.pph21)).toString(),402,311,547,true);
- commands.push('0.84 0.87 0.88 RG 0.6 w 297 390 m 297 526 l S');
+ const detailed=row.overtime!=null;
+ amount('Gaji pokok',row.basic_salary,485,48,284);
+ if(detailed){amount('Lembur',row.overtime,461,48,284);amount('Bonus',row.bonus,437,48,284);amount('Potongan absen',row.absence_deduction,485,311,547);amount('Potongan telat',row.late_deduction,461,311,547);amount('Pelanggaran',row.violation_deduction,437,311,547);amount('PPh 21',row.pph21,413,311,547);}
+ else{amount('Tunjangan',row.allowances,451,48,284);if(row.deductions!=null)amount('Potongan',row.deductions,485,311,547);if(row.pph21!=null)amount('PPh 21',row.pph21,451,311,547);}
+ if(row.basic_salary!=null&&row.allowances!=null)amount('Penghasilan bruto',(integer(row.basic_salary)+integer(row.allowances)).toString(),detailed?380:402,48,284,true);
+ if(row.deductions!=null&&row.pph21!=null)amount('Total potongan',(integer(row.deductions)+integer(row.pph21)).toString(),detailed?380:402,311,547,true);
+ commands.push('0.84 0.87 0.88 RG 0.6 w 297 368 m 297 526 l S');
  commands.push('0.92 0.96 0.96 rg 48 292 499 70 re f');text('GAJI BERSIH',64,334,10,true);const net=row.net_salary==null?'Tidak tersedia':money(row.net_salary);text(net,531-width(net,20,true),314,20,true,'0.08 0.28 0.32');
  text('Slip diterbitkan oleh Owner; bukan bukti pembayaran.',48,267,9);
  // Reserved image region remains completely blank, no box, fake autograph or ttd.

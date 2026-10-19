@@ -1,15 +1,30 @@
 'use strict';
 const crypto=require('node:crypto');
-const {createCipher,validateCsv,fault}=require('./payroll');
-const HEADER='period,employee_id,basic_salary,allowances,deductions,pph21';
+const {createCipher,parseCsv,validateCsv,fault}=require('./payroll');
+const LEGACY_HEADER='period,employee_id,basic_salary,allowances,deductions,pph21';
+const HEADER='period,employee_id,basic_salary,overtime,bonus,absence_deduction,late_deduction,violation_deduction,pph21';
 const {renderSlipPdf}=require('./payroll-pdf');
 function validate(csv,staff){
- if(typeof csv!=='string'||csv.replace(/^\uFEFF/,'').split(/\r?\n/,1)[0]!==HEADER)throw fault('PAYROLL_CSV_HEADER');
+ if(typeof csv!=='string')throw fault('PAYROLL_CSV_HEADER');
+ const table=parseCsv(csv),header=table.shift()?.join(',');
+ if(![HEADER,LEGACY_HEADER].includes(header))throw fault('PAYROLL_CSV_HEADER');
+ const detail=[];
+ if(header===HEADER){
+  const amount=v=>{if(!/^(0|[1-9]\d{0,15})$/.test(v)||!Number.isSafeInteger(Number(v)))throw fault('PAYROLL_INTEGER_IDR');return Number(v);};
+  const normalized=table.map(r=>{
+   if(r.length!==9)throw fault('PAYROLL_CSV_ROWS');
+   const [period,employee_id,basic,overtime,bonus,absence,late,violation,pph21]=r;
+   const d={overtime:amount(overtime),bonus:amount(bonus),absence_deduction:amount(absence),late_deduction:amount(late),violation_deduction:amount(violation)};
+   detail.push(d);
+   return [period,employee_id,basic,String(d.overtime+d.bonus),String(d.absence_deduction+d.late_deduction+d.violation_deduction),pph21].join(',');
+  });
+  csv=LEGACY_HEADER+'\r\n'+normalized.join('\r\n')+'\r\n';
+ }
  const users=staff.map(s=>({...s,username:s.id,full_name:s.name,role:'STAFF',is_active:s.active}));
- return validateCsv(csv.replace(/^\uFEFF/,'').replace(HEADER,HEADER.replace('employee_id','user_id')),users).map(row=>{
+ return validateCsv(csv.replace(/^\uFEFF/,'').replace(LEGACY_HEADER,LEGACY_HEADER.replace('employee_id','user_id')),users).map((row,i)=>{
   const s=staff.find(s=>s.id===row.user_id);
   if(!s?.department)throw fault('PAYROLL_EMPLOYEE_DEPARTMENT_REQUIRED');
-  return {...row,employee_id:s.id,department:s.department,email:s.email||null,branch_id:s.branch_id,branch_name:s.branch_name};
+  return {...row,...detail[i],employee_id:s.id,department:s.department,email:s.email||null,branch_id:s.branch_id,branch_name:s.branch_name};
  });
 }
 function service({pool,env=process.env,transport}={}){
@@ -60,4 +75,4 @@ function service({pool,env=process.env,transport}={}){
  }
  };
 }
-module.exports={HEADER,validate,service};
+module.exports={HEADER,LEGACY_HEADER,validate,service};

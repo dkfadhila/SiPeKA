@@ -25,14 +25,14 @@ test('company P&L reconciles exact large amounts, unit comparisons and ambiguous
  assert.throws(()=>build({...source,rows:[{branch_id:'a',account_code:'7-1100',income:'0',expense:'1'}]},units,'company-profit-loss'),/TYPE_MISMATCH/);
 });
 test('employee payroll uses employee identity, requires department, preserves existing salary math and prevents CSV injection',()=>{
- const {validate,HEADER}=require('../employee-payroll'),employee={id:'employee1',name:'Ayu',department:'Operasional',branch_id:'x1',branch_name:'Unit X1',active:true,email:'ayu@example.test'};
- const csv=HEADER+'\r\n2026-10,employee1,2500000,100000,20000,10000\r\n';
- const row=validate(csv,[employee])[0];assert.equal(row.employee_id,employee.id);assert.equal(row.net_salary,2570000);assert.equal(row.department,'Operasional');
+ const {validate,HEADER,LEGACY_HEADER}=require('../employee-payroll'),employee={id:'employee1',name:'Ayu',department:'Operasional',branch_id:'x1',branch_name:'Unit X1',active:true,email:'ayu@example.test'};
+ const csv=HEADER+'\r\n2026-10,employee1,2500000,50000,50000,10000,5000,5000,10000\r\n';
+ const row=validate(csv,[employee])[0];assert.equal(row.employee_id,employee.id);assert.equal(row.net_salary,2570000);assert.equal(row.department,'Operasional');assert.equal(row.overtime,50000);assert.equal(row.absence_deduction,10000);assert.equal(validate(LEGACY_HEADER+'\r\n2026-10,employee1,2500000,100000,20000,10000\r\n',[employee])[0].net_salary,2570000);
  assert.throws(()=>validate(csv,[{...employee,department:null}]),/DEPARTMENT/);
  assert.throws(()=>validate(csv,[{...employee,active:false}]),/STAFF_NOT_FOUND/);
  assert.throws(()=>validate(csv.replace('2500000','=1+1'),[employee]),/CSV_CELL/);
  const pdf=require('../payroll-pdf').renderSlipPdf({...row,company_name:'Perusahaan Contoh'},{documentIdentity:{company_name:'Perusahaan Contoh',branch_name:'Unit X1'}}).toString('latin1');
- assert.match(pdf,/Departemen/);assert.match(pdf,/Operasional/);assert.match(pdf,/Unit X1/);assert.equal(pdf.split('(Perusahaan Contoh)').length-1,1);assert.doesNotMatch(pdf,/Username/);
+ assert.match(pdf,/Lembur/);assert.match(pdf,/Bonus/);assert.match(pdf,/Potongan absen/);assert.match(pdf,/Potongan telat/);assert.match(pdf,/Departemen/);assert.match(pdf,/Operasional/);assert.match(pdf,/Unit X1/);assert.equal(pdf.split('(Perusahaan Contoh)').length-1,1);assert.doesNotMatch(pdf,/Username/);
 });
 test('every current inline app script parses after integration',()=>{
  const html=fs.readFileSync(require('node:path').join(__dirname,'../public/financial-dashboard.html'),'utf8');
