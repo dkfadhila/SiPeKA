@@ -37,4 +37,3 @@ async function request({branch='all',entryId,lockBranch=false}={}){
 }
 host.SipekaDocumentIdentity={request,validate};
 })(window);
-
