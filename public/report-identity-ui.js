@@ -19,9 +19,10 @@ async function request({branch='all',entryId,lockBranch=false}={}){
   if(branch!=='all'&&!units.some(u=>u.id===branch))throw Error('Cabang sudah berubah; muat ulang laporan.');
   dialog=host.document.createElement('dialog');dialog.className='sipeka-document-identity';
   dialog.setAttribute('aria-labelledby','documentIdentityTitle');dialog.setAttribute('aria-describedby','documentIdentityHelp');
-  dialog.innerHTML='<form novalidate><h2 id="documentIdentityTitle">Identitas dokumen</h2><p id="documentIdentityHelp">Isi identitas untuk unduhan ini. Nama perusahaan tidak disimpan ke master perusahaan.</p><label for="documentCompany">Nama Perusahaan</label><input id="documentCompany" name="company" required maxlength="80" autocomplete="off" aria-describedby="documentIdentityError"><label for="documentBranch">Cabang</label><select id="documentBranch" name="branch" required></select><p data-identity-note></p><p id="documentIdentityError" role="alert" aria-live="assertive"></p><div class="document-identity-actions"><button type="button" data-identity-cancel>Batal</button><button type="submit">Unduh dokumen</button></div></form>';
+  dialog.innerHTML='<form novalidate><h2 id="documentIdentityTitle">Identitas dokumen</h2><p id="documentIdentityHelp">Nama perusahaan mengikuti pengaturan perusahaan. Pilih cakupan dokumen yang diperlukan.</p><label for="documentCompany">Nama Perusahaan</label><input id="documentCompany" name="company" required maxlength="80" autocomplete="off" aria-describedby="documentIdentityError"><label for="documentBranch">Cabang</label><select id="documentBranch" name="branch" required></select><p data-identity-note></p><p id="documentIdentityError" role="alert" aria-live="assertive"></p><div class="document-identity-actions"><button type="button" data-identity-cancel>Batal</button><button type="submit">Unduh dokumen</button></div></form>';
   const form=dialog.querySelector('form'),select=form.elements.branch;
-  if(all)select.add(new Option('Semua Cabang','all'));
+  form.elements.company.value=host.SipekaCompany?.name||'';form.elements.company.readOnly=!!host.SipekaCompany?.name;
+  if(all)select.add(new Option('Satu Perusahaan — Seluruh Cabang / Unit','all'));
   units.forEach(u=>select.add(new Option(u.name,u.id)));
   select.value=branch==='all'&&!all?units[0].id:branch;select.disabled=!!entryId||lockBranch;
   dialog.querySelector('[data-identity-note]').textContent=entryId?'Cabang mengikuti Staff penerima dan diperiksa kembali oleh server.':lockBranch?'Cabang mengikuti filter tabel yang sedang diekspor.':'Data laporan akan difilter sesuai cabang yang dipilih.';
@@ -36,3 +37,4 @@ async function request({branch='all',entryId,lockBranch=false}={}){
 }
 host.SipekaDocumentIdentity={request,validate};
 })(window);
+
