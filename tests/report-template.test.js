@@ -24,3 +24,16 @@ test('more than six units continue in original six-slot worksheets',()=>{
  const t=make('compare-profit-loss',{rows:[]},{rows:[]},all,f);assert.equal(t.continuations.length,1);assert.equal(t.continuations[0].grid[5][2],'Unit 6');
  const files=unzip(exportXlsx(t,'QA'));assert.ok(files.find(f=>f.name==='xl/worksheets/sheet3.xml'));assert.match(files.find(f=>f.name==='xl/workbook.xml').data.toString(),/rIdSipeka3/);
 });
+
+test('all statement labels and Excel values follow arbitrary dates, leap years and year boundaries',()=>{
+ for(const f of [{branch:'all',dateFrom:'2024-02-01',dateTo:'2024-02-29'},{branch:'all',dateFrom:'2027-01-01',dateTo:'2027-01-15'},{branch:'all',dateFrom:'2025-12-20',dateTo:'2026-01-05'}]){
+  const prior={filters:{dateFrom:'2023-12-01',dateTo:'2023-12-29'},rows:[]};
+  for(const id of ['company-profit-loss','compare-profit-loss','profit-loss','recorded-income-expense','cash-flow','fund-position']){
+   const layout=make(id,{rows:[]},prior,units,f),files=unzip(exportXlsx(layout,'Tanggal QA')),sheet=files.find(x=>x.name==='xl/worksheets/sheet1.xml').data.toString();
+   assert.match(sheet,new RegExp('<c[^>]*r="C3"[^>]*>[\\s\\S]*?'+f.dateTo+'[\\s\\S]*?</c>'));assert.match(sheet,/<c[^>]*r="B3"[^>]*\/>/);assert.match(sheet,new RegExp(f.dateTo));assert.equal(layout.period.from,f.dateFrom);assert.equal(layout.grid[2][2],id==='fund-position'?f.dateTo:f.dateFrom+' s.d. '+f.dateTo);
+   if(id==='fund-position'){const comparison=(Number(f.dateTo.slice(0,4))-1)+'-12-31';assert.equal(layout.grid[5][3],comparison);assert.equal(layout.previousPeriod.to,comparison);assert.match(sheet,new RegExp(comparison));}
+   else {assert.match(layout.grid[5][layout.kind==='pnl'?8:2],new RegExp(f.dateFrom));assert.match(layout.grid[5][layout.kind==='pnl'?9:3],/2023-12-01/);}
+   assert.doesNotMatch(sheet,/46326/);
+  }
+ }
+});

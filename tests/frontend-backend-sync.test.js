@@ -6,7 +6,7 @@ const read=name=>fs.readFileSync(path.join(__dirname,'../public',name),'utf8');
 test('embedded frontend contracts match maintained source modules',()=>{
  const context={window:{}};require('node:vm').runInNewContext(read('backend-ui.js'),context);assert.match(context.window.SipekaUi.message(Error('PAYROLL_CSV_CELL_4')),/baris 4/);assert.match(context.window.SipekaUi.message(Error('PAYROLL_NET_INVALID')),/potongan/);
  const html=read('financial-dashboard.html').replace(/\r\n/g,'\n');
- for(const file of ['lucide-icons.js','backend-ui.js','coa-input-ui.js','device-staff-ui.js','employee-payroll-ui.js','report-identity-ui.js'])assert.ok(html.includes(read(file).replace(/\r\n/g,'\n').trim()),file+' embedded source drift');
+ for(const file of ['report-template-pdf.js','lucide-icons.js','backend-ui.js','coa-input-ui.js','device-staff-ui.js','employee-payroll-ui.js','report-identity-ui.js'])assert.ok(html.includes(read(file).replace(/\r\n/g,'\n').trim()),file+' embedded source drift');
 });
 
 test('payroll UI uses backend readiness, explicit publication, uncertain delivery and actionable import errors',async t=>{

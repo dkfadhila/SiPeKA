@@ -148,6 +148,56 @@ const sql=s=>cp.execFileSync('sudo',['-n','-u','postgres','psql','-X','-At','-v'
    await op.evaluate(view=>window.__sipekaApplyState('owner','all',{view}),view);assert.equal(await op.locator('#content').innerText().then(text=>/[\p{Emoji_Presentation}\u2713\u2714]/u.test(text)),false,'emoji in '+view);assert.ok(await op.locator('.nav-link svg.lucide').count()>0);await op.screenshot({path:'report-artifacts/lucide-'+view+'.png',fullPage:true});
   }
   await op.evaluate(()=>window.__showToast('<img src=x onerror=alert(1)> berhasil'));assert.equal(await op.locator('#toast svg.lucide-circle-check').count(),1);assert.equal(await op.locator('#toast img').count(),0);assert.match(await op.locator('#toast').innerText(),/<img src=x/);checks.push('Lucide Owner pages and accessible SVG status safely preserve text');
+  // Full date-filter audit uses synthetic boundary records in this isolated schema only.
+  sql(`SET search_path=${schema};INSERT INTO ledger_transactions(id,idempotency_key,branch_id,user_id,coa_id,tx_type,amount,payment_method,memo,status,tx_intent,created_at) VALUES
+   ('date-before','date-before','a','d1','4-1300','INCOME',11,'BANK_TRANSFER','date fixture','APPROVED','SETOR_NOTA','2024-02-28 16:59:59'),
+   ('date-first','date-first','a','d1','4-1300','INCOME',20,'BANK_TRANSFER','date fixture','APPROVED','SETOR_NOTA','2024-02-28 17:00:00'),
+   ('date-last','date-last','a','d1','4-1300','INCOME',30,'BANK_TRANSFER','date fixture','APPROVED','SETOR_NOTA','2024-02-29 16:59:59'),
+   ('date-after','date-after','a','d1','4-1300','INCOME',40,'BANK_TRANSFER','date fixture','APPROVED','SETOR_NOTA','2024-02-29 17:00:00');`);
+  const dateIds=['company-profit-loss','compare-profit-loss','profit-loss','cash-flow','fund-requests','daily-closings','audit-evidence','fund-position','recorded-income-expense'];
+  for(const id of dateIds){
+   const q=new URLSearchParams({branch_id:'a',date_from:'2024-02-29',date_to:'2024-02-29',timezone:'Asia/Jakarta'}),r=await api('/api/reports/'+id+'?'+q);
+   assert.equal(r.filters.dateFrom,'2024-02-29');assert.equal(r.filters.dateTo,'2024-02-29');
+   if(['profit-loss','company-profit-loss','compare-profit-loss','cash-flow','recorded-income-expense'].includes(id))assert.equal(r.totals.income,'50',id+' WIB inclusive');
+   const future=await api('/api/reports/'+id+'?'+q.toString().replaceAll('2024-02-29','2027-01-15'));assert.equal(future.sourceCount,0,id+' empty future');
+   if(r.templateLayout){assert.equal(r.templateLayout.grid[2][2],id==='fund-position'?'2024-02-29':'2024-02-29 s.d. 2024-02-29');if(id==='fund-position'){assert.equal(r.templateLayout.grid[5][3],'2023-12-31');assert.equal(future.templateLayout.grid[5][3],'2026-12-31');}}
+  }
+  await api('/api/closings/history?date_from=2024-02-29&date_to=2024-02-29',{actor:'d2'}).then(r=>assert.equal(r.rows.length,0));
+  await api('/api/closings/history?date_from=2024-02-29&date_from=2026-10-01&date_to=2024-02-29',{actor:'d2',status:400});
+  await api('/api/calendar/notes?date_from=2024-02-29&date_to=2024-02-29').then(r=>assert.equal(r.rows.length,0));
+  await api('/api/reports/quarterly-owner?year=2024&quarter=1&branch_id=a').then(r=>{assert.equal(r.filters.dateFrom,'2024-01-01');assert.equal(r.filters.dateTo,'2024-03-31');});
+  await api('/api/accounting/trial-balance?start=2024-02-29&end=2024-02-29').then(r=>assert.equal(r.start,'2024-02-29'));
+  await api('/api/accounting/trial-balance?start=2024-02-29&start=2026-10-01&end=2024-02-29',{status:400});
+  checks.push('all date-filter APIs: leap day, 00:00/23:59:59 WIB inclusive, future empty, quarter, calendar, closing and duplicate rejection');
+  await op.evaluate(()=>SipekaAuth.bootstrap(SipekaCurrentUser));await op.evaluate(()=>window.__sipekaApplyState('owner','all',{view:'reports'}));
+  await op.waitForFunction(()=>!document.querySelector('[data-sr-id="company-profit-loss"][data-sr-action="preview"]').disabled);
+  // Change inputs then preview, without clicking Apply: must use the visible dates.
+  await op.locator('[data-sr-filter] [name=dateFrom]').fill('2024-02-29');await op.locator('[data-sr-filter] [name=dateTo]').fill('2024-02-29');
+  await op.locator('[data-sr-id="company-profit-loss"][data-sr-action="preview"]').click();await op.waitForFunction(()=>document.querySelector('[data-sr-preview]').textContent.includes('LAPORAN LABA RUGI')&&document.querySelector('[data-sr-preview]').textContent.includes('2024-02-29'));
+  assert.equal((await op.evaluate(()=>SipekaReports.buildReport('company-profit-loss'))).totals.income,'50');
+  const dl=op.waitForEvent('download');await op.locator('[data-sr-id="company-profit-loss"][data-sr-action="pdf"]').click();await op.waitForSelector('#documentCompany');await op.locator('dialog button[type=submit]').click();await(await dl).saveAs(root+'/report-artifacts/date-leap-pnl.pdf');
+  await op.locator('[data-sr-filter] [name=dateFrom]').fill('2027-01-01');await op.locator('[data-sr-filter] [name=dateTo]').fill('2027-01-15');
+  const xlsx=op.waitForEvent('download');await op.locator('[data-sr-id="fund-position"][data-sr-action="xlsx"]').click();await op.waitForSelector('#documentCompany');await op.locator('dialog button[type=submit]').click();await(await xlsx).saveAs(root+'/report-artifacts/date-future-balance.xlsx');
+  const futureFiles=require('../report-template-xlsx').unzip(fs.readFileSync('report-artifacts/date-future-balance.xlsx')),futureXml=futureFiles.find(f=>f.name==='xl/worksheets/sheet1.xml').data.toString();assert.match(futureXml,/2027-01-15/);assert.match(futureXml,/2026-12-31/);assert.doesNotMatch(futureXml,/2025-12-31|46326/);
+  await op.locator('[data-sr-filter] [name=dateFrom]').fill('2027-01-20');await op.locator('[data-sr-filter] [name=dateTo]').fill('2027-01-01');await op.locator('[data-sr-filter] button[type=submit]').click();assert.match(await op.locator('[data-sr-status]').innerText(),/Tanggal awal/);
+  await op.screenshot({path:'report-artifacts/date-filter-validation.png',fullPage:true});
+  checks.push('actual browser changed filter without Apply: preview/PDF/XLSX, future 2027 balance 2026 comparison, reversed range rejected');
+  await op.evaluate(()=>window.__sipekaApplyState('owner','all',{view:'accounting'}));
+  let releaseOld,oldReady;const oldSeen=new Promise(resolve=>oldReady=resolve),oldRelease=new Promise(resolve=>releaseOld=resolve);
+  await op.route('**/api/accounting/trial-balance?**',async route=>{const q=new URL(route.request().url()).searchParams,start=q.get('start');if(start==='2024-02-01'){oldReady();await oldRelease;}await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({start,end:q.get('end'),rows:[{code:'QA',name:start==='2024-02-01'?'STALE RESPONSE':'LATEST RESPONSE',debit:'0',credit:'0'}]})});});
+  await op.locator('#accountingTrial [name=start]').fill('2024-02-01');await op.locator('#accountingTrial [name=end]').fill('2024-02-29');await op.locator('#accountingTrial button').click();await oldSeen;
+  await op.locator('#accountingTrial [name=start]').fill('2027-01-01');await op.locator('#accountingTrial [name=end]').fill('2027-01-15');await op.locator('#accountingTrial button').click();await op.waitForFunction(()=>document.querySelector('#accountingResult').textContent.includes('LATEST RESPONSE'));
+  const oldResponse=op.waitForResponse(r=>r.url().includes('/api/accounting/trial-balance?start=2024-02-01'));releaseOld();await oldResponse;
+  assert.doesNotMatch(await op.locator('#accountingResult').innerText(),/STALE RESPONSE/);assert.match(await op.locator('#accountingResult').innerText(),/2027-01-01 s.d. 2027-01-15/);await op.unroute('**/api/accounting/trial-balance?**');checks.push('accounting slow old date response cannot overwrite newest result');
+  await op.evaluate(()=>window.__sipekaApplyState('owner','all',{view:'calendar'}));await op.waitForFunction(()=>!!document.querySelector('[data-calendar-nav]'));
+  await op.locator('[data-calendar-nav="-1"]').click();await op.waitForFunction(()=>document.querySelector('#content').textContent.includes('September 2026'));
+  const calendarRequest=op.waitForRequest(r=>r.url().includes('/api/calendar/notes?')&&r.url().includes('date_from=2026-09-01'));await op.locator('[data-calendar-date="2026-09-01"]').click();await calendarRequest;checks.push('calendar month navigation reads selected WIB day, not current month');
+
+  await op.evaluate(()=>window.__sipekaApplyState('owner','all',{view:'transactions'}));await op.locator('[data-ledger-filter-toggle]').click();await op.locator('[data-ledger-filter] [name=dateFrom]').fill('2024-02-29');await op.locator('[data-ledger-filter] [name=dateTo]').fill('2024-02-29');
+  const ledgerDownload=op.waitForEvent('download');await op.locator('[data-download]').click();await op.waitForSelector('#documentCompany');await op.locator('dialog button[type=submit]').click();await(await ledgerDownload).saveAs(root+'/report-artifacts/date-ledger.csv');const ledgerCsv=fs.readFileSync('report-artifacts/date-ledger.csv','utf8');assert.match(ledgerCsv,/date-first/);assert.match(ledgerCsv,/date-last/);assert.doesNotMatch(ledgerCsv,/date-before|date-after/);checks.push('ledger CSV automatically applies visible dates and agrees with WIB table boundaries');
+  await op.evaluate(()=>window.__sipekaApplyState('owner','all',{view:'cashflow'}));await op.locator('.tabs button').filter({hasText:'7D'}).click();const cutoff=new Date(Date.parse(today+'T00:00:00Z')-6*86400000).toISOString().slice(0,10);assert.match(await op.locator('#content').innerText(),new RegExp(cutoff));
+  const cashRequest=op.waitForRequest(r=>r.url().includes('/api/reports/cash-flow?')&&r.url().includes('date_from='+cutoff)&&r.url().includes('date_to='+today));const cashDownload=op.waitForEvent('download');await op.locator('[data-download]').click();await op.waitForSelector('#documentCompany');await op.locator('dialog button[type=submit]').click();await cashRequest;await(await cashDownload).saveAs(root+'/report-artifacts/date-cashflow-7d.csv');checks.push('cashflow 7D filter agrees across chart, KPI, and exported CSV');
+  await op.evaluate(()=>window.__sipekaApplyState('owner','all',{view:'dashboard'}));await op.waitForSelector('[data-quarterly-filter]');await op.locator('[data-quarterly-filter] [name=year]').fill('2024');assert.match(await op.locator('[data-quarterly-result]').innerText(),/Pilihan periode berubah/);await op.locator('[data-quarterly-filter] [name=quarter]').selectOption('1');await op.locator('[data-quarterly-filter] button').click();await op.waitForFunction(()=>document.querySelector('[data-quarterly-result]').textContent.includes('2024-01-01'));assert.match(await op.locator('[data-quarterly-result]').innerText(),/2024-03-31/);checks.push('quarterly Owner edits clear old results and show submitted year/quarter');
   assert.deepEqual(errors,[]);checks.push('actual browser master company/department/payroll preview, Staff COA, all-company PDFs');
   fs.writeFileSync('device-proof.json',JSON.stringify({schema,retained:true,checks,passed:checks.length,failed:0,pageErrors:errors,productionWrites:false,providersCalled:false},null,2));console.log(JSON.stringify({schema,passed:checks.length,failed:0}));
  }finally{if(browser)await browser.close();child.kill();await pool.end();fs.writeFileSync('qa-server.log',logs);}

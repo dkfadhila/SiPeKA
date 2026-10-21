@@ -477,6 +477,7 @@ async function handleRequest(req, res, url, p) {
     try {
       const pool=require('./db-postgres').getPool();
       if(p==='/api/accounting/trial-balance'&&req.method==='GET'){
+        if([...url.searchParams.keys()].some(k=>!['start','end','branchId'].includes(k)||url.searchParams.getAll(k).length!==1))return json(res,400,{error:'INVALID_DATE_RANGE'});
         const branchId=url.searchParams.get('branchId');
         if(branchId!==null&&!(await pool.query('SELECT id FROM business_units WHERE id=$1',[branchId])).rows.length)return json(res,404,{error:'ACCOUNTING_BRANCH_NOT_FOUND'});
         return json(res,200,await accounting.trialBalance(pool,sessionToken,{start:url.searchParams.get('start'),end:url.searchParams.get('end'),branchId}));

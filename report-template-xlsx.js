@@ -24,12 +24,14 @@ function exportXlsx(layout,company){
  const values={};layout.grid.forEach((row,r)=>row.forEach((v,c)=>{values[col(c)+(r+1)]=v;}));values.A1=company;
  // Store cached values, with no live formula that could turn missing data into zero.
  // Report is an exported snapshot; retain template formulas only in the original source files.
- xml=xml.replace(/<c\b([^>]*\br="([A-Z]+\d+)"[^>]*)\s*(?:\/>|>[\s\S]*?<\/c>)/g,(full,attrs,ref)=>{
+ xml=xml.replace(/<c\b([^>]*?\br="([A-Z]+\d+)"[^>]*?)(?:\s*\/>|>[\s\S]*?<\/c>)/g,(full,attrs,ref)=>{
   if(!Object.hasOwn(values,ref))return full;const value=values[ref];attrs=attrs.replace(/\s+t="[^"]*"/g,'').replace(/\/$/,'');
   if(value==null)return '<c'+attrs+'/>';
   const numeric=typeof value==='number'||typeof value==='string'&&/^-?\d+$/.test(value);
   return '<c'+attrs+(numeric?'><v>'+escape(value)+'</v>':' t="inlineStr"><is><t xml:space="preserve">'+escape(value)+'</t></is>')+'</c>';
  });
+ // Period labels can span several lines; preserve readable headers in Excel.
+ xml=xml.replace(/<row\b([^>]*\br="6"[^>]*)>/,(_,attrs)=>'<row'+attrs.replace(/\s+(?:ht|customHeight)="[^"]*"/g,'')+' ht="52" customHeight="1">');
  xml=xml.replace(/<headerFooter[\s\S]*?<\/headerFooter>/g,'');
  const footer='<headerFooter><oddFooter>&amp;LSiPeKA&amp;RHalaman &amp;P / &amp;N</oddFooter></headerFooter>';
  xml=xml.replace('</worksheet>',footer+'</worksheet>');sheet.data=Buffer.from(xml);
