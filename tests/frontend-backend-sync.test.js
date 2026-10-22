@@ -39,3 +39,40 @@ test('payroll UI uses backend readiness, explicit publication, uncertain deliver
  assert.equal(await send.isDisabled(),true);assert.equal(await page.locator('[data-employee-consent]').isDisabled(),true);await page.locator('[data-employee-refresh]').click();assert.equal(await send.isDisabled(),true);
  assert.deepEqual(writes.map(x=>x.route),['/api/employee-payroll/import','/api/employee-payroll/publish','/api/employee-payroll/entries/employee-entry/send']);assert.deepEqual(errors,[]);
 });
+
+
+test('Income/Expenses follow backend transaction types, including other income, operating expenses, tax and legacy codes',()=>{
+ const html=read('financial-dashboard.html'),vm=require('node:vm');
+ const raw=[['i','7-1100','INCOME'],['e6','6-1100','EXPENSE'],['e7','7-2100','EXPENSE'],['e8','8-1000','EXPENSE'],['legacy','5101','EXPENSE'],['other','4-1300','INCOME']].map(([id,account_code,tx_type])=>({id,account_code,tx_type}));
+ const display=raw.map(r=>['',r.id,r.id==='other'?'Unit B':'Unit A',r.account_code,'','','','',null,r.id]);
+ const context={Set,transactions:display,visibleTransactions:rows=>rows.filter(r=>r[2]==='Unit A'),realDataRows:()=>raw};
+ for(const name of ['categoryRawRows','categoryDisplayRows'])vm.runInNewContext(html.match(new RegExp('function '+name+'\\([^\\n]+'))[0],context);
+ assert.deepEqual(Array.from(context.categoryDisplayRows('income'),r=>r[9]),['i']);
+ assert.deepEqual(Array.from(context.categoryDisplayRows('expenses'),r=>r[9]),['e6','e7','e8','legacy']);
+ // A Staff display list can be narrower than the API snapshot (today/device).
+ context.transactions=display.filter(r=>r[9]==='e8');assert.deepEqual(Array.from(context.categoryRawRows('expenses'),r=>r.id),['e8']);
+});
+
+test('Staff directory ignores older success/failure responses across reloads, identity changes, logout and auth generations',async()=>{
+ const vm=require('node:vm'),pending=[];let generation=1;
+ const window={SipekaAuth:{generation:()=>generation,api:()=>new Promise((resolve,reject)=>pending.push({resolve,reject}))},SipekaCurrentUser:{role:'STAFF'}};
+ vm.runInNewContext(read('device-staff-ui.js'),{window,document:{addEventListener(){}},console});const ui=window.SipekaDeviceStaff;
+ const load=(id='device-a')=>ui.load({id,branch_id:id}),row=name=>[{id:name,name,active:true,revision:1}];
+ let old=load(),latest=load();pending[1].resolve(row('Latest'));await latest;pending[0].resolve(row('Stale'));await old;
+ assert.match(ui.selector(),/Latest/);assert.doesNotMatch(ui.selector(),/Stale/);
+ old=load();latest=load('device-b');assert.doesNotMatch(ui.selector(),/Latest/);pending[3].resolve(row('Unit B'));await latest;pending[2].reject(Error('old request failed'));await old;
+ assert.match(ui.selector(),/Unit B/);assert.doesNotMatch(ui.selector(),/tidak tersedia/);
+ old=load('device-b');ui.reset();pending[4].resolve(row('After logout'));await old;assert.doesNotMatch(ui.selector(),/After logout/);
+ old=load('device-b');generation++;pending[5].resolve(row('Old generation'));await old;assert.doesNotMatch(ui.selector(),/Old generation/);
+});
+
+
+test('category register exports exact visible IDs across years while financial report ranges remain bounded',()=>{
+ const vm=require('node:vm'),window={},context=vm.createContext({window,console,Intl,Date}),html=read('financial-dashboard.html');
+ for(const marker of ['SIPEKA_METRICS_MODULE','SIPEKA_REPORT_MODULE'])vm.runInContext(html.split('<!-- '+marker+' -->')[1].split('</script>')[0].replace(/^\s*<script>/,''),context);
+ const rows=[{id:'old',branch_id:'a',created_at:'2024-02-29T05:00:00Z',tx_type:'EXPENSE',status:'APPROVED',amount:100},{id:'new',branch_id:'a',created_at:'2026-10-22T00:00:00Z',tx_type:'EXPENSE',status:'APPROVED',amount:200},{id:'exclude',branch_id:'b',created_at:'2026-10-22T00:00:00Z',tx_type:'INCOME',status:'APPROVED',amount:300}];
+ const api=window.SipekaReports;api.setSnapshot({rows,units:[{id:'a',name:'A'},{id:'b',name:'B'}],advanceAvailable:false});const range={branch:'a',dateFrom:'2024-02-29',dateTo:'2026-10-22'};
+ assert.throws(()=>api.buildReport('general-ledger',range),/366/);
+ const r=api.buildRegister(range,['old','new','exclude']);assert.deepEqual(Array.from(r.rows,x=>x.id),['old','new']);assert.equal(r.sourceCount,2);assert.equal(r.totals.expense,300);assert.equal(r.totals.income,0);assert.equal(r.complete,true);assert.match(api.toCsv(r),/2024-02-29/);assert.equal(api.csvManifest(r).export_row_count,2);
+ const empty=api.buildRegister(range,[]);assert.equal(empty.rows.length,0);assert.equal(empty.sourceCount,0);assert.throws(()=>api.buildRegister({...range,dateTo:'2024-02-28'},['old']),/awal/);
+});

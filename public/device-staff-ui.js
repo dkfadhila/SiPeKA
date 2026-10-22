@@ -1,14 +1,16 @@
 /* Device identity is authentication; the on-duty person is explicit per-tab attribution. */
 (()=>{'use strict';
- let rows=[],choice=null,identity=null,error='';
+ let rows=[],choice=null,identity=null,error='',loadVersion=0;
  const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const api=(...args)=>window.SipekaAuth.api(...args);
  const redraw=()=>window.__sipekaApplyState(window.__sipekaRole,window.__sipekaBranch);
  async function load(user){
-  const key=user.id+':'+user.branch_id;if(identity!==key){choice=null;identity=key;}error='';
-  try{rows=await api('/api/operational-staff');if(identity!==key)return;
+  const key=user.id+':'+user.branch_id,version=++loadVersion,generation=window.SipekaAuth.generation();
+  const current=()=>version===loadVersion&&identity===key&&generation===window.SipekaAuth.generation();
+  if(identity!==key){rows=[];choice=null;identity=key;}error='';
+  try{const next=await api('/api/operational-staff');if(!current())return;rows=next;
    if(choice&&!rows.some(r=>r.id===choice.id&&r.revision===choice.revision&&r.active)){choice=null;error='Daftar Staff berubah. Pilih ulang sebelum melanjutkan.';}
-  }catch(e){rows=[];choice=null;error='Direktori Staff tidak tersedia. Operasi diblokir.';}
+  }catch(e){if(!current())return;rows=[];choice=null;error='Direktori Staff tidak tersedia. Operasi diblokir.';}
  }
  function selector(){if(window.SipekaCurrentUser?.role!=='STAFF')return '';
   return '<section class="card device-staff" aria-label="Staff bertugas"><label for="onDutyStaff">Staff bertugas di unit ini</label><select id="onDutyStaff" class="control" required><option value="">Pilih Staff sebelum transaksi</option>'+rows.filter(r=>r.active).map(r=>'<option value="'+esc(r.id)+'"'+(choice?.id===r.id?' selected':'')+'>'+esc(r.name)+'</option>').join('')+'</select><p role="status">'+esc(error||(!rows.length?'Owner perlu menambahkan Staff aktif untuk unit ini.':choice?'Bertugas: '+choice.name+'. Pilihan hanya berlaku di tab ini.':'Akun ini adalah device unit. Pilih nama Anda; pergantian hanya memengaruhi operasi berikutnya.'))+'</p></section>';
@@ -30,5 +32,5 @@
    if(body.email&&!body.email_confirmed)throw Error('OPERATIONAL_EMAIL_CONFIRM_REQUIRED');await api(path,{method:'POST',body});if(!current())return;await window.SipekaAuth.bootstrap(user);if(window.SipekaCurrentUser?.id===user.id)redraw();
   }catch(e){if(current()&&feedback?.isConnected)feedback.textContent=window.SipekaUi.message(e);}finally{button.disabled=false;}
  });
- window.SipekaDeviceStaff={load,selector,directory,headers,onDuty(){return choice?{id:choice.id,name:choice.name,department:choice.department}:null;},reset(){identity=null;choice=null;rows=[];error='';}};
+ window.SipekaDeviceStaff={load,selector,directory,headers,onDuty(){return choice?{id:choice.id,name:choice.name,department:choice.department}:null;},reset(){loadVersion++;identity=null;choice=null;rows=[];error='';}};
 })();
