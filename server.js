@@ -306,7 +306,7 @@ const widyaReceiptRouter = require('./widya-receipt-analysis').createWidyaReceip
 });
 async function widyaLedgerContext() {
  const txs = (await deviceStaff.annotate({query:require('./db-postgres').query},'ledger_transactions',await q.txAll.all())).slice(0,40);
- return JSON.stringify({scope:'latest_40_only_not_complete_period',transactions:txs.map(t=>({id:t.id,date:t.created_at,branch:t.branch_name,type:t.tx_type,amount:t.amount,payment:t.payment_method,status:t.status,memo:t.memo}))});
+ return require('./widya-account-context').build(txs,await q.allCoa.all());
 }
 
 // ---------- router ----------

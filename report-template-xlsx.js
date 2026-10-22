@@ -19,6 +19,7 @@ function zip(files){const parts=[],central=[];let offset=0;for(const file of fil
 const escape=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
 function exportXlsx(layout,company){
  require('./report-identity').companyName(company);
+ if(layout.presentation==='simple')return require('./report-simple-xlsx').create(layout,company,{zip,escape,col});
  const files=unzip(fs.readFileSync(path.join(__dirname,'report-templates',layout.kind+'.xlsx')));
  const sheet=files.find(f=>f.name==='xl/worksheets/sheet1.xml');let xml=sheet.data.toString();
  const values={};layout.grid.forEach((row,r)=>row.forEach((v,c)=>{values[col(c)+(r+1)]=v;}));values.A1=company;

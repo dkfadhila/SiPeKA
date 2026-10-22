@@ -98,9 +98,16 @@ const sql=s=>cp.execFileSync('sudo',['-n','-u','postgres','psql','-X','-At','-v'
    await p.evaluate(({id,today})=>{window.SipekaReports.downloadCsv(id,{branch:'a',dateFrom:today,dateTo:today}).catch(e=>window.exportError=e.message);},{id,today});await p.locator('#documentCompany').fill('DEVICE QA COMPANY');await p.locator('dialog button[type=submit]').click();
    for(let i=0;i<50&&downloads.length<2;i++)await new Promise(r=>setTimeout(r,100));assert.equal(downloads.length,2);
    for(const d of downloads)await d.saveAs(root+'/report-artifacts/'+id+(d.suggestedFilename().endsWith('.json')?'.manifest.json':'.csv'));
-   const manifest=JSON.parse(fs.readFileSync('report-artifacts/'+id+'.manifest.json'));assert.ok(manifest.coverage);assert.equal(manifest.snapshot.basis,'CURRENT_SNAPSHOT_NOT_PERIOD_END');assert.ok(fs.readFileSync('report-artifacts/'+id+'.csv','utf8').startsWith('\uFEFFitem,amount,status,basis\r\n'));checks.push('CSV + identity/coverage manifest '+id);await c.close();
+   const manifest=JSON.parse(fs.readFileSync('report-artifacts/'+id+'.manifest.json'));assert.ok(manifest.coverage);assert.equal(manifest.snapshot.basis,'CURRENT_SNAPSHOT_NOT_PERIOD_END');assert.ok(fs.readFileSync('report-artifacts/'+id+'.csv','utf8').startsWith('\uFEFFitem,amount_1'));checks.push('CSV + identity/coverage manifest '+id);await c.close();
   }
 
+  await op.setViewportSize({width:1440,height:1000});await op.evaluate(()=>window.__sipekaApplyState('owner','all',{view:'reports'}));
+  await op.locator('[data-sr-id="company-profit-loss"][data-sr-action="preview"]').click();await op.waitForSelector('.sr-statement');
+  assert.doesNotMatch(await op.locator('.sr-statement table').innerText(),/\d-\d{4}|Kode Akun/);assert.match(await op.locator('.sr-statement').innerText(),/TOTAL LABA KOTOR/);
+  assert.equal(await op.locator('.sr-statement').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(255, 255, 255)');await op.screenshot({path:'report-artifacts/simple-profit-loss.png',fullPage:true});
+  await op.locator('[data-sr-id="fund-position"][data-sr-action="preview"]').click();await op.waitForFunction(()=>document.querySelector('.sr-statement')?.textContent.includes('Debet (Rp)'));
+  await op.screenshot({path:'report-artifacts/simple-balance.png',fullPage:true});await op.setViewportSize({width:390,height:950});assert.equal(await op.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await op.screenshot({path:'report-artifacts/simple-balance-mobile.png',fullPage:true});
+  checks.push('plain report previews: no account codes; P&L sections; stafel Debet/Kredit; mobile overflow');
   const coa=await api('/api/coa',{actor:'d2'});assert.equal(coa.length,23);assert.ok(coa.some(r=>r.id==='7-1100'&&r.account_type==='REVENUE'));assert.ok(!coa.some(r=>r.id==='6-3000'));
   await api('/api/transactions',{method:'POST',actor:'d2',staff:bob,body:{idempotency_key:'missing-coa',amount:10,payment_method:'BANK_TRANSFER'},status:400});
   await api('/api/transactions',{method:'POST',actor:'d2',staff:bob,body:{idempotency_key:'bad-type',amount:10,coa_id:'7-1100',tx_type:'EXPENSE',payment_method:'BANK_TRANSFER'},status:400});
@@ -140,7 +147,7 @@ const sql=s=>cp.execFileSync('sudo',['-n','-u','postgres','psql','-X','-At','-v'
   await page.locator('#mnIntent').selectOption('SETOR_NOTA');await page.locator('#mnCoaSearch').fill('deterjen');assert.equal(await page.locator('#mnCoa option').count(),2);await page.locator('#mnCoa').selectOption('5-1100');assert.match(await page.locator('#mnCoaHelp').innerText(),/Pengeluaran.*5-1100/);await page.setViewportSize({width:390,height:950});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:'report-artifacts/frontend-coa-390.png',fullPage:true});checks.push('Staff searchable grouped COA, authoritative direction and mobile layout');
   const navy=await op.evaluate(()=>{document.documentElement.dataset.theme='light';return getComputedStyle(document.documentElement).getPropertyValue('--green').trim();});assert.equal(navy.toLowerCase(),'#1f3864');checks.push('exact Owner-supplied navy accent');
   for(const id of ['company-profit-loss','compare-profit-loss','fund-position','cash-flow']){
-   const doc=await api('/api/reports/'+id+'?'+params);assert.ok(doc.templateLayout);assert.ok(doc.templateLayout.grid[5].includes('Kode'));
+   const doc=await api('/api/reports/'+id+'?'+params);assert.ok(doc.templateLayout);assert.ok(!doc.templateLayout.grid[5].includes('Kode'));assert.equal(doc.templateLayout.presentation,'simple');
    const url=base+'/api/reports/'+id+'/export?'+params+'&format=xlsx&company_name=QA%20Perusahaan%20Tunggal';const response=await fetch(url,{headers:{Cookie:'sipeka_session=qa-owner'}});assert.equal(response.status,200,await response.clone().text());const buffer=Buffer.from(await response.arrayBuffer());assert.equal(buffer.subarray(0,2).toString(),'PK');const files=require('../report-template-xlsx').unzip(buffer);assert.ok(files.find(f=>f.name==='xl/worksheets/sheet1.xml').data.toString().includes('QA Perusahaan Tunggal'));fs.writeFileSync('report-artifacts/'+id+'.xlsx',buffer);assert.equal((await fetch(url,{headers:{Cookie:'sipeka_session=qa-d2'}})).status,403);checks.push('actual source template XLSX + RBAC '+id);
   }
   await op.evaluate(()=>window.__sipekaApplyState('owner','all',{view:'reports'}));await op.waitForSelector('[data-sr-action="xlsx"]');await op.screenshot({path:'report-artifacts/navy-reports.png',fullPage:true});
@@ -160,7 +167,7 @@ const sql=s=>cp.execFileSync('sudo',['-n','-u','postgres','psql','-X','-At','-v'
    assert.equal(r.filters.dateFrom,'2024-02-29');assert.equal(r.filters.dateTo,'2024-02-29');
    if(['profit-loss','company-profit-loss','compare-profit-loss','cash-flow','recorded-income-expense'].includes(id))assert.equal(r.totals.income,'50',id+' WIB inclusive');
    const future=await api('/api/reports/'+id+'?'+q.toString().replaceAll('2024-02-29','2027-01-15'));assert.equal(future.sourceCount,0,id+' empty future');
-   if(r.templateLayout){assert.equal(r.templateLayout.grid[2][2],id==='fund-position'?'2024-02-29':'2024-02-29 s.d. 2024-02-29');if(id==='fund-position'){assert.equal(r.templateLayout.grid[5][3],'2023-12-31');assert.equal(future.templateLayout.grid[5][3],'2026-12-31');}}
+   if(r.templateLayout){assert.equal(r.templateLayout.grid[2][0],id==='fund-position'?'2024-02-29':'2024-02-29 s.d. 2024-02-29');if(id==='fund-position'){assert.deepEqual(r.templateLayout.grid[5],['Keterangan','Debet (Rp)','Kredit (Rp)']);assert.equal(future.templateLayout.grid[2][0],'2027-01-15');}}
   }
   await api('/api/closings/history?date_from=2024-02-29&date_to=2024-02-29',{actor:'d2'}).then(r=>assert.equal(r.rows.length,0));
   await api('/api/closings/history?date_from=2024-02-29&date_from=2026-10-01&date_to=2024-02-29',{actor:'d2',status:400});
@@ -173,15 +180,15 @@ const sql=s=>cp.execFileSync('sudo',['-n','-u','postgres','psql','-X','-At','-v'
   await op.waitForFunction(()=>!document.querySelector('[data-sr-id="company-profit-loss"][data-sr-action="preview"]').disabled);
   // Change inputs then preview, without clicking Apply: must use the visible dates.
   await op.locator('[data-sr-filter] [name=dateFrom]').fill('2024-02-29');await op.locator('[data-sr-filter] [name=dateTo]').fill('2024-02-29');
-  await op.locator('[data-sr-id="company-profit-loss"][data-sr-action="preview"]').click();await op.waitForFunction(()=>document.querySelector('[data-sr-preview]').textContent.includes('LAPORAN LABA RUGI')&&document.querySelector('[data-sr-preview]').textContent.includes('2024-02-29'));
+  await op.locator('[data-sr-id="company-profit-loss"][data-sr-action="preview"]').click();await op.waitForFunction(()=>document.querySelector('[data-sr-preview]').textContent.includes('Laporan Laba & Rugi')&&document.querySelector('[data-sr-preview]').textContent.includes('2024-02-29'));
   assert.equal((await op.evaluate(()=>SipekaReports.buildReport('company-profit-loss'))).totals.income,'50');
   const dl=op.waitForEvent('download');await op.locator('[data-sr-id="company-profit-loss"][data-sr-action="pdf"]').click();await op.waitForSelector('#documentCompany');await op.locator('dialog button[type=submit]').click();await(await dl).saveAs(root+'/report-artifacts/date-leap-pnl.pdf');
   await op.locator('[data-sr-filter] [name=dateFrom]').fill('2027-01-01');await op.locator('[data-sr-filter] [name=dateTo]').fill('2027-01-15');
   const xlsx=op.waitForEvent('download');await op.locator('[data-sr-id="fund-position"][data-sr-action="xlsx"]').click();await op.waitForSelector('#documentCompany');await op.locator('dialog button[type=submit]').click();await(await xlsx).saveAs(root+'/report-artifacts/date-future-balance.xlsx');
-  const futureFiles=require('../report-template-xlsx').unzip(fs.readFileSync('report-artifacts/date-future-balance.xlsx')),futureXml=futureFiles.find(f=>f.name==='xl/worksheets/sheet1.xml').data.toString();assert.match(futureXml,/2027-01-15/);assert.match(futureXml,/2026-12-31/);assert.doesNotMatch(futureXml,/2025-12-31|46326/);
+  const futureFiles=require('../report-template-xlsx').unzip(fs.readFileSync('report-artifacts/date-future-balance.xlsx')),futureXml=futureFiles.find(f=>f.name==='xl/worksheets/sheet1.xml').data.toString();assert.match(futureXml,/2027-01-15/);assert.match(futureXml,/Debet \(Rp\)/);assert.doesNotMatch(futureXml,/2025-12-31|46326/);
   await op.locator('[data-sr-filter] [name=dateFrom]').fill('2027-01-20');await op.locator('[data-sr-filter] [name=dateTo]').fill('2027-01-01');await op.locator('[data-sr-filter] button[type=submit]').click();assert.match(await op.locator('[data-sr-status]').innerText(),/Tanggal awal/);
   await op.screenshot({path:'report-artifacts/date-filter-validation.png',fullPage:true});
-  checks.push('actual browser changed filter without Apply: preview/PDF/XLSX, future 2027 balance 2026 comparison, reversed range rejected');
+  checks.push('actual browser changed filter without Apply: preview/PDF/XLSX, future 2027 stafel balance, reversed range rejected');
   await op.evaluate(()=>window.__sipekaApplyState('owner','all',{view:'accounting'}));
   let releaseOld,oldReady;const oldSeen=new Promise(resolve=>oldReady=resolve),oldRelease=new Promise(resolve=>releaseOld=resolve);
   await op.route('**/api/accounting/trial-balance?**',async route=>{const q=new URL(route.request().url()).searchParams,start=q.get('start');if(start==='2024-02-01'){oldReady();await oldRelease;}await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({start,end:q.get('end'),rows:[{code:'QA',name:start==='2024-02-01'?'STALE RESPONSE':'LATEST RESPONSE',debit:'0',credit:'0'}]})});});

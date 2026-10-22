@@ -1,0 +1,24 @@
+'use strict';
+function create(layout,company,{zip,escape,col}){
+ const ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main',files=[];
+ const add=(name,data)=>files.push({name,data:Buffer.from(data)});
+ const parts=[layout,...(layout.continuations||[])];
+ const pages=parts.map((p,i)=>({name:i?'Unit '+(i*6+1)+'–'+(i*6+6):'Laporan',grid:p.grid,types:p.rowTypes}));
+ pages.push({name:'Catatan',grid:[[company],['Catatan Laporan'],...layout.notes.map(v=>[v])],types:[]});
+ add('[Content_Types].xml','<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+pages.map((_,i)=>'<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('')+'</Types>');
+ add('_rels/.rels','<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+ add('xl/workbook.xml','<workbook xmlns="'+ns+'" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+pages.map((p,i)=>'<sheet name="'+escape(p.name)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join('')+'</sheets></workbook>');
+ add('xl/_rels/workbook.xml.rels','<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+pages.map((_,i)=>'<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')+'<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+ add('xl/styles.xml','<styleSheet xmlns="'+ns+'"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0;(#,##0);0"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Arial"/><color rgb="FF111111"/></font><font><b/><sz val="11"/><name val="Arial"/><color rgb="FF111111"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF5F5F5"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border/><border><bottom style="thin"><color rgb="FFCCCCCC"/></bottom></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="1"><alignment wrapText="1" vertical="center"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="1"><alignment horizontal="right" vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="1"><alignment wrapText="1" vertical="center"/></xf><xf numFmtId="164" fontId="1" fillId="2" borderId="1"><alignment horizontal="right" vertical="center"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
+ pages.forEach((p,i)=>{
+  const width=i===pages.length-1?1:layout.grid[5].length;
+  const rows=p.grid.map((row,r)=>'<row r="'+(r+1)+'" ht="26" customHeight="1">'+row.map((v,c)=>{
+   if(r===0&&c===0)v=company;
+   const numeric=r>=6&&c>0&&typeof v==='string'&&/^-?\d+$/.test(v),bold=r<6||['section','total'].includes(p.types[r]),style=bold?(numeric?3:2):(numeric?1:0);
+   return '<c r="'+col(c)+(r+1)+'" s="'+style+'"'+(numeric?'><v>'+v+'</v>':' t="inlineStr"><is><t xml:space="preserve">'+escape(v??(c&&p.types[r]!=='section'?'Belum tersedia':''))+'</t></is>')+'</c>';
+  }).join('')+'</row>').join('');
+  add('xl/worksheets/sheet'+(i+1)+'.xml','<worksheet xmlns="'+ns+'"><sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews><cols><col min="1" max="1" width="'+(width===1?120:48)+'" customWidth="1"/>'+(width>1?'<col min="2" max="'+width+'" width="24" customWidth="1"/>':'')+'</cols><sheetData>'+rows+'</sheetData>'+(width>1?'<mergeCells count="4">'+[1,2,3,4].map(r=>'<mergeCell ref="A'+r+':'+col(width-1)+r+'"/>').join('')+'</mergeCells>':'')+'<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.2" footer="0.2"/><pageSetup paperSize="9" orientation="'+(width>4?'landscape':'portrait')+'" fitToWidth="1" fitToHeight="0"/></worksheet>');
+ });
+ return zip(files);
+}
+module.exports={create};

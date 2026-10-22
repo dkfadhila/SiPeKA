@@ -24,7 +24,8 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
   const source=sourceId===id?result:await read(pool,actor,token,sourceId,params,{readAdvances,template:false});
   const previous=await read(pool,actor,token,sourceId,previousParams,{readAdvances,template:false});
   const units=(await pool.query('SELECT id,name,category,is_active FROM business_units ORDER BY id')).rows;
-  result.templateLayout=require('./report-template').make(id,source,previous,units,f);
+  result.templateLayout=require('./report-presentation').compact(require('./report-template').make(id,source,previous,units,f),id);
+  result.presentationData=require('./report-presentation').columnsAndRows(result.templateLayout);
   return result;
  }
  if(['company-profit-loss','compare-profit-loss'].includes(id)){
@@ -69,6 +70,8 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
  return {id,columns:(id==='cash-flow'?['branch_id','branch','method','income','expense','net','count']:['branch_id','branch','account_code','account_name','income','expense','net','count']).map(key=>({key,label:key})),rows,totals:total(approved),filters:f,sourceCount:transactions.length,complete:true,readiness:rows.length?'available':'empty',missingDatasets:[],generated_at:new Date().toISOString(),provenance:'Recorded ordinary transactions; approved advance settlement on event WIB day. Approval is not disbursement.',neracaComplete:false,reconciliationComplete:false,endBalance:null,notices:['Mutasi operasional tercatat, bukan laba akrual atau neraca lengkap.']};
 }
 function toCsv(report){
+ if(report.templateLayout?.presentation==='simple')report={...report,...require('./report-presentation').columnsAndRows(report.templateLayout)};
+ report={...report,columns:report.columns.filter(c=>!['account_code','account_name'].includes(c.key))};
  const money=new Set(['amount','income','expense','net','system_balance','physical_cash','difference']);
  const cell=(value,key)=>{let s=value==null?'':String(value);const numeric=(money.has(key)||/^unit_\d+$/.test(key))&&/^-?\d+$/.test(s);if(!numeric&&/^[\s\u0000-\u001f\u007f]*[=+\-@]|^[\u0000-\u001f\u007f]/.test(s))s="'"+s;return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
  return '\uFEFF'+[report.columns.map(c=>cell(c.key)).join(','),...report.rows.map(r=>report.columns.map(c=>cell(r[c.key],c.key)).join(','))].join('\r\n')+'\r\n';
