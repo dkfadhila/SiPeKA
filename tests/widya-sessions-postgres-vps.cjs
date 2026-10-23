@@ -1,0 +1,41 @@
+'use strict';
+const fs=require('node:fs'),cp=require('node:child_process'),crypto=require('node:crypto'),assert=require('node:assert/strict');
+const {createWidyaSessions}=require('../widya-sessions');
+const schema='widya_sessions_'+crypto.randomBytes(8).toString('hex');
+const sql=s=>cp.execFileSync('sudo',['-n','-u','postgres','psql','-X','-At','-v','ON_ERROR_STOP=1','-d','sipeka'],{input:s,encoding:'utf8'});
+(async()=>{
+ let setup=`CREATE SCHEMA ${schema};SET search_path=${schema};CREATE TABLE schema_migrations(name text PRIMARY KEY,sha256 text NOT NULL);`;
+ for(const f of fs.readdirSync('migrations').filter(x=>/^\d+_.*\.sql$/.test(x)).sort())setup+=fs.readFileSync('migrations/'+f,'utf8')+'\n';
+ setup+=`GRANT USAGE ON SCHEMA ${schema} TO sipeka_runtime;INSERT INTO app_users(id,username,password_hash,full_name,role) VALUES('owner1','owner1','unused','Owner1','OWNER'),('owner2','owner2','unused','Owner2','OWNER'),('staff','staff','unused','Staff','STAFF');INSERT INTO sessions(token,user_id,expired_at,purpose) SELECT 'qa-'||id,id,(clock_timestamp() AT TIME ZONE 'UTC')+interval '2 hours','full' FROM app_users;`;sql(setup);
+ const raw=cp.execFileSync('sudo',['-n','cat','/etc/sipeka/runtime.env'],{encoding:'utf8'}),url=new URL(raw.split('\n').find(x=>x.startsWith('DATABASE_URL=')).slice(13).trim().replace(/^['"]|['"]$/g,''));url.searchParams.set('options','-c search_path='+schema);
+ const pool=new(require('pg').Pool)({connectionString:url.toString()});const checks=[];
+ const check=(name,fn)=>{fn();checks.push(name);};
+ let starts=0,request,phase='running';const bridge={startRun:async(p,key)=>{starts++;request=p;return {run_id:'run_qa'};},getRun:async()=>({status:phase,output:'Persisted assistant reply',approval:{request_id:'approval1',command:'echo sample',choices:['once','deny']}})};
+ const storage={materialize:async()=>({output:'/qa/outputs',paths:[]}),collect:async(_,text)=>({reply:text,files:[]})};
+ const options={pool,bridge,storage,context:async()=>'Synthetic dashboard rows only'};
+ let service=createWidyaSessions(options);const access=(op,p,token='qa-owner1')=>service.call(token,op,p);
+ try{
+  await require('../widya-sessions').guard(pool);checks.push('startup verifies SECURITYDEFINER and runtime ACL guards');
+  await assert.rejects(access('LIST',{limit:51},'qa-staff'),/WIDYA_OWNER_REQUIRED/);checks.push('Staff denied by DB function');
+  const id=crypto.randomUUID();await access('CREATE',{id,title:'Sesi baru',hermes_session_id:'sipeka-web-'+crypto.randomUUID()});
+  check('crossOwner list isolated',()=>{});assert.deepEqual(await access('LIST',{limit:51},'qa-owner2'),[]);
+  await assert.rejects(access('READ',{session_id:id,limit:101},'qa-owner2'),/WIDYA_NOT_FOUND/);
+  const fileid=crypto.randomUUID(),base64=Buffer.from('private QA attachment').toString('base64');await access('UPLOAD',{id:fileid,session_id:id,name:'sample.csv',mime:'application/octet-stream',data_base64:base64});
+  await assert.rejects(access('FILE_GET',{id:fileid},'qa-owner2'),/WIDYA_NOT_FOUND/);checks.push('crossOwner messages and attachments denied');
+  const send={session_id:id,id:crypto.randomUUID(),message_id:crypto.randomUUID(),client_message_id:crypto.randomUUID(),fingerprint:'fingerprint1',message:'Build a file',attachment_ids:[fileid],capability:'capability-'+crypto.randomUUID()};
+  const first=await access('SEND',send),again=await access('SEND',send);assert.equal(first.id,again.id);checks.push('duplicate send idempotent');
+  await assert.rejects(access('SEND',{...send,fingerprint:'changed'}),/WIDYA_IDEMPOTENCY_CONFLICT/);
+  await assert.rejects(access('SEND',{...send,id:crypto.randomUUID(),client_message_id:crypto.randomUUID()}),/WIDYA_BUSY/);checks.push('conflict and concurrent send prevented');
+  await service.tick();assert.equal(starts,1);assert.equal(request.session_id.startsWith('sipeka-web-'),true);assert.match(request.instructions,/Synthetic dashboard/);assert.equal(request.model,undefined);checks.push('direct Hermes request profile runtime preserved');
+  service=createWidyaSessions(options);await service.tick();assert.equal(starts,1);checks.push('new worker recovers persisted run ID without starting duplicate');
+  phase='waiting_for_approval';await service.tick();let history=await access('READ',{session_id:id,limit:101});assert.equal(history.session.status,'waiting_for_approval');assert.deepEqual(history.messages[0].approval.choices,['once','deny']);checks.push('explicit approval metadata durable');
+  await assert.rejects(access('APPROVAL',{session_id:id,request_id:'stale'}),/WIDYA_APPROVAL_STALE/);
+  phase='completed';await service.tick();history=await access('READ',{session_id:id,limit:101});assert.equal(history.messages.length,2);assert.equal(history.messages[1].content,'Persisted assistant reply');await service.tick();assert.equal((await access('READ',{session_id:id,limit:101})).messages.length,2);checks.push('assistant stored once despite repeated worker polls');
+  sql(`SET search_path=${schema};INSERT INTO sessions(token,user_id,expired_at,purpose) VALUES('qa-newlogin','owner1',(clock_timestamp() AT TIME ZONE 'UTC')+interval '2 hours','full');DELETE FROM sessions WHERE token='qa-owner1';`);
+  const renewed=await access('READ',{session_id:id,limit:101},'qa-newlogin');assert.equal(renewed.messages.length,2);assert.equal((await access('FILE_GET',{id:fileid},'qa-newlogin')).data_base64.replace(/\s/g,''),base64);checks.push('new login retrieves retained messages and original file bytes');
+  await assert.rejects(access('READ',{session_id:id,limit:101}),/OPERATIONAL_SESSION_REQUIRED/);checks.push('revoked login rejected');
+  const paged=await access('READ',{session_id:id,limit:1},'qa-newlogin');assert.equal(paged.messages[0].role,'assistant');const older=await access('READ',{session_id:id,limit:1,before:paged.messages[0].id},'qa-newlogin');assert.equal(older.messages[0].role,'user');checks.push('older messages page without loss');
+  for(const table of ['widya_sessions','widya_messages','widya_files','widya_runs']){await assert.rejects(pool.query(`SELECT * FROM ${table}`));await assert.rejects(pool.query(`DELETE FROM ${table}`));}checks.push('runtime direct table reads and destructive DML denied');
+  console.log(JSON.stringify({ok:true,schema,checks},null,2));
+ }finally{service.stop();await pool.end();}
+})().catch(e=>{console.error(e.message);process.exitCode=1;});

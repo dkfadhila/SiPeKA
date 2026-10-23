@@ -60,6 +60,7 @@ const authReady = Promise.resolve(ready).then(async () => {
     await accountingGuard(require('./db-postgres').getPool());
     await require('./advance-service').guard(require('./db-postgres').getPool());
     await deviceStaff.guard(require('./db-postgres').getPool());
+    await require('./widya-sessions').guard(require('./db-postgres').getPool());
   } else if (authConfig.requireOwner2FA || authConfig.production) throw new Error("Public auth requires PostgreSQL migration 002");
 });
 authReady.catch(() => {});
@@ -293,6 +294,8 @@ async function issueSession(res, user, purpose) {
 
 // ---------- Widya AI ----------
 const widyaBridge = require('./widya-bridge').createWidyaBridge();
+const widyaSessions = process.env.DATABASE_URL ? require('./widya-sessions').createWidyaSessions({pool:require('./db-postgres').getPool(),bridge:widyaBridge,context:widyaLedgerContext}) : null;
+authReady.then(()=>widyaSessions?.start()).catch(()=>{});
 const widyaReceiptRouter = require('./widya-receipt-analysis').createWidyaReceiptRouter({
   authenticate:async(req,options)=>process.env.DATABASE_URL
     ? require('./widya-receipt-db').createWidyaReceiptDB(require('./db-postgres').getPool(),{idleMS:authConfig.idleMS}).authenticate(security.sessionToken(req,authConfig),options)
@@ -904,6 +907,11 @@ async function handleRequest(req, res, url, p) {
     return json(res,200,rows);
   }
 
+  if(p==='/api/widya/sessions'||p.startsWith('/api/widya/sessions/')||p.startsWith('/api/widya/files/')) {
+    if(me.role!=='OWNER')return json(res,403,{error:'WIDYA_OWNER_REQUIRED'});
+    if(!widyaSessions)return json(res,503,{error:'WIDYA_POSTGRES_REQUIRED'});
+    return widyaSessions.handle(req,res,url,{token:security.sessionToken(req,authConfig),readBody,json});
+  }
   if (p === '/api/widya/status' && req.method === 'GET') {
     if (me.role !== 'OWNER') return json(res,403,{error:'Akses Widya hanya untuk Owner'});
     return json(res,200,await widyaBridge.status());
