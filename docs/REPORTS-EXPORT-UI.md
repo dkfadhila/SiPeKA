@@ -20,3 +20,7 @@ Unavailable balances and accruals remain unavailable. Approval does not prove di
 `tests/report-catalog-ui.test.js` loads the production report/metrics scripts and CSS in a local synthetic HTTP fixture. It checks user-facing copy, unavailable actions, dropdown interaction and keyboard dismissal, stale-preview removal, changed date/branch filters, invalid ranges, actual XLSX download through the production exporter, desktop/mobile layouts, and source-failure handling. The fixture uses synthetic records only and contacts no production service. Existing date, amount, workbook and embedded-module regressions remain covered.
 
 The PostgreSQL/browser release fixture was updated to open the download disclosure before selecting a format. This revision is GitHub-only pending Owner authorization to deploy.
+
+## Preview placement correction
+
+Report previews now open in a native modal only after Preview is clicked. No report is automatically rendered below the card catalog. The modal has a persistent close control, a bounded scroll area and a backdrop. Close, Escape and a backdrop click dismiss it and restore focus to its originating card. Dismissal clears report content, and report invalidation closes an open preview so a changed scope/session cannot leave a stale modal visible. Date, branch and export behavior stays unchanged. Browser coverage includes initially hidden previews, trigger focus, Escape/backdrop dismissal, viewport bounds and internal scrolling on mobile, and invalidation cleanup.
