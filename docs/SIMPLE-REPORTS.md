@@ -11,3 +11,11 @@ Widya's authenticated Owner context includes the actual chart of accounts, accou
 Validation: account-based calculation/date regressions; exact integer aggregation; missing balance/accrual handling; all-unit CSV and XLSX export; embedded script syntax/source synchronization; Widya context and bridge tests. The real PostgreSQL/browser fixture checks report permissions, WIB date boundaries, actual PDF/XLSX/CSV downloads, white report previews, stafel columns and mobile overflow. Fixture data stays in retained isolated schemas; no production financial fixtures or real email delivery.
 
 No dependency or schema changes. Release through GitHub before deployment; backup, readiness and release/public HTML checks required. Rollback is compatible with the previous application binary.
+
+## Excel follow-up — 23 October 2026
+
+Owner requested the complete Excel columns from the previous format while keeping accounts out of every report. Excel now uses a separate presentation: P&L includes selected unit columns, consolidation, the previous equal-length period, percentage change and profit margins. More than six units continue on additional worksheets. Balance Excel includes current and prior 31 December debit/credit positions; cash-flow Excel includes current and previous periods. Missing values remain unavailable, and change percentages are unavailable when the prior value is zero.
+
+Preview, PDF and CSV retain the simple presentation. The exported Excel contains grouped report positions and no account codes or account lists. Percentage cells use percentage formats; integers beyond Excel's 15-digit numeric precision are stored as text to preserve the exact amount. Branch scope and date filters apply to both presentations. Tests in `tests/report-excel-complete.test.js` cover source integration, comparison values, unit continuation, missing balances, percentages and large integers.
+
+This follow-up is GitHub-only until the Owner authorizes deployment.

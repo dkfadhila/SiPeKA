@@ -24,7 +24,9 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
   const source=sourceId===id?result:await read(pool,actor,token,sourceId,params,{readAdvances,template:false});
   const previous=await read(pool,actor,token,sourceId,previousParams,{readAdvances,template:false});
   const units=(await pool.query('SELECT id,name,category,is_active FROM business_units ORDER BY id')).rows;
-  result.templateLayout=require('./report-presentation').compact(require('./report-template').make(id,source,previous,units,f),id);
+  const calculatedLayout=require('./report-template').make(id,source,previous,units,f);
+  result.templateLayout=require('./report-presentation').compact(calculatedLayout,id);
+  result.templateLayout.excelLayout=require('./report-presentation').compact(calculatedLayout,id,{excel:true});
   result.presentationData=require('./report-presentation').columnsAndRows(result.templateLayout);
   return result;
  }
