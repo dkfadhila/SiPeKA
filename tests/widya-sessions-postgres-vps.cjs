@@ -26,7 +26,7 @@ const sql=s=>cp.execFileSync('sudo',['-n','-u','postgres','psql','-X','-At','-v'
   const first=await access('SEND',send),again=await access('SEND',send);assert.equal(first.id,again.id);checks.push('duplicate send idempotent');
   await assert.rejects(access('SEND',{...send,fingerprint:'changed'}),/WIDYA_IDEMPOTENCY_CONFLICT/);
   await assert.rejects(access('SEND',{...send,id:crypto.randomUUID(),client_message_id:crypto.randomUUID()}),/WIDYA_BUSY/);checks.push('conflict and concurrent send prevented');
-  await service.tick();assert.equal(starts,1);assert.equal(request.session_id.startsWith('sipeka-web-'),true);assert.match(request.instructions,/Synthetic dashboard/);assert.equal(request.model,undefined);checks.push('direct Hermes request profile runtime preserved');
+  await service.tick();assert.equal(starts,1);assert.equal(request.session_id.startsWith('sipeka-web-'),true);assert.match(request.instructions,/Synthetic dashboard/);assert.match(request.input,/output_directory/);assert.match(request.input,/\/qa\/outputs/);assert.match(request.input,/MEDIA:/);assert.equal(request.model,undefined);checks.push('direct Hermes request profile runtime preserved');
   service=createWidyaSessions(options);await service.tick();assert.equal(starts,1);checks.push('new worker recovers persisted run ID without starting duplicate');
   phase='waiting_for_approval';await service.tick();let history=await access('READ',{session_id:id,limit:101});assert.equal(history.session.status,'waiting_for_approval');assert.deepEqual(history.messages[0].approval.choices,['once','deny']);checks.push('explicit approval metadata durable');
   await assert.rejects(access('APPROVAL',{session_id:id,request_id:'stale'}),/WIDYA_APPROVAL_STALE/);
