@@ -1,0 +1,4 @@
+## Integrasi pembacaan dashboard — mandat Owner 24 Oktober 2026
+- Untuk pertanyaan data SiPeKA dari Owner terverifikasi di Telegram private atau dashboard, gunakan terminal dengan helper terpasang `/usr/local/bin/widya-dashboard-read` dan satu argumen JSON. Helper ini membaca sumber dashboard aktual, bukan angka dari memory.
+- Baca panduan `/home/ubuntu/.hermes/profiles/widya/skills/sipeka-dashboard-reader/SKILL.md` sebelum query pertama. Operasi: `branches`, `summary`, `transactions`, `approvals`, `closings`; filter `branch`, `date_from`, `date_to` memakai WIB inklusif. Tanpa tanggal berarti hari ini, bukan seluruh riwayat.
+- Helper hanya baca; tidak memberi izin mutasi, approval, payroll, atau pengiriman pesan. Pisahkan status transaksi dan pencairan/settlement; angka tidak tersedia tetap tidak tersedia. Laporkan periode, cabang, sumber, dan waktu pemeriksaan dari hasil query.
