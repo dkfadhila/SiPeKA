@@ -1,7 +1,7 @@
 'use strict';
 // Account-based calculation stays in report-template; this is the public statement.
 function compact(layout,id,{excel=false}={}){
- const old=layout.grid,comparison=id==='compare-profit-loss'||excel,kind=layout.kind;
+ const old=layout.grid,kind=layout.kind,comparison=kind==='pnl'&&(id==='compare-profit-loss'||layout.scopeMode==='comparison'||excel);
  const unitCols=[2,3,4,5,6,7].filter(c=>old[5][c]);
  const indices=kind==='pnl'?(excel?[...unitCols,8,9]:comparison?[...unitCols,8]:[8]):excel?[2,3]:[2];
  const periodLabel=period=>period?period.from+' s.d. '+period.to:'Belum tersedia';
@@ -61,12 +61,28 @@ function compact(layout,id,{excel=false}={}){
 }
 function columnsAndRows(layout){
  const parts=[layout,...(layout.continuations||[])];
- const headers=parts.length>1?['Keterangan',...parts.flatMap(p=>p.grid[5].slice(1,-1)),'Total (Rp)']:layout.grid[5];
+ const totalWidth=layout.scopeMode==='comparison'&&layout.kind==='balance'?2:1;
+ const headers=parts.length>1?['Keterangan',...parts.flatMap(p=>p.grid[5].slice(1,-totalWidth)),...layout.grid[5].slice(-totalWidth)]:layout.grid[5];
  const columns=headers.map((label,i)=>({key:i?'amount_'+i:'item',label,type:i?'currency':'text'}));
  const rows=layout.grid.slice(6).map((row,r)=>{
-  const values=parts.length>1?[row[0],...parts.flatMap(p=>p.grid[r+6].slice(1,-1)),row.at(-1)]:row;
+  const values=parts.length>1?[row[0],...parts.flatMap(p=>p.grid[r+6].slice(1,-totalWidth)),...row.slice(-totalWidth)]:row;
   return Object.fromEntries(columns.map((c,i)=>[c.key,values[i]??null]));
  });
  return {columns,rows};
 }
-module.exports={compact,columnsAndRows};
+// Comparison panels use the same scoped calculation; unavailable source positions stay unavailable.
+function scoped(layout,id,source,previous,units,filters,options={}){
+ if(filters.viewMode!=='comparison'||layout.kind==='pnl')return compact(layout,id,options);
+ const total=compact(layout,id),selected=layout.units,size=layout.kind==='balance'?3:6;
+ const panels=Array.from({length:Math.max(1,Math.ceil(selected.length/size))},(_,i)=>selected.slice(i*size,(i+1)*size));
+ const build=group=>{
+  const parts=group.map(unit=>compact(require('./report-template').make(id,source,previous,units,{...filters,branch:unit.id,viewMode:'branch'}),id));
+  const headers=['Keterangan',...parts.flatMap((part,i)=>part.grid[5].slice(1).map(label=>group[i].name+' · '+label)),...total.grid[5].slice(1).map(label=>'Perusahaan · '+label)];
+  const grid=total.grid.map((row,r)=>r===5?headers:r<5?[row[0]]:[row[0],...parts.flatMap(part=>part.grid[r].slice(1)),...row.slice(1)]);
+  grid[3]=['Perbandingan cabang · '+layout.period.from+' s.d. '+layout.period.to];
+  const types=total.rowTypes;
+  return {...total,grid,scopeMode:'comparison',excelComplete:false,continuations:[],spec:{rows:grid.map((row,r)=>row.map(value=>({value,bold:['section','total','heading'].includes(types[r]),format:'General'}))),widths:headers.map((_,i)=>i?24:65),merges:[]},notes:[...total.notes,'Kolom perusahaan mencakup seluruh cabang; jangan menjumlahkan ulang total perusahaan pada panel lanjutan.']};
+ };
+ const result=build(panels[0]);result.continuations=panels.slice(1).map(build);return result;
+}
+module.exports={compact,columnsAndRows,scoped};

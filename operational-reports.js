@@ -2,14 +2,15 @@
 // Read-only operational reports. No migrations, posting, notifications or balance inference.
 const fail=(code,statusCode=400)=>{throw Object.assign(new Error(code),{statusCode});};
 function filters(params){
- const allowed=['branch_id','date_from','date_to','timezone'];
+ const allowed=['branch_id','date_from','date_to','timezone','view_mode'];
  for(const key of params.keys())if(!allowed.includes(key)||params.getAll(key).length!==1)fail('REPORT_INVALID_FILTER');
- const start=params.get('date_from'),end=params.get('date_to'),branch=params.get('branch_id')||'all';
+ const start=params.get('date_from'),end=params.get('date_to'),branch=params.get('branch_id')||'all',viewMode=params.get('view_mode');
+ if(viewMode!==null&&(!['company','branch','comparison'].includes(viewMode)||(viewMode==='branch'?branch==='all':branch!=='all')))fail('REPORT_INVALID_SCOPE');
  const valid=s=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&!Number.isNaN(Date.parse(s+'T00:00:00Z'))&&new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s;
  if(!valid(start)||!valid(end)||start>end||params.get('timezone')!=='Asia/Jakarta'||branch.length>120)fail('REPORT_INVALID_FILTER');
  const from=Date.parse(start+'T00:00:00Z')-25200000,to=Date.parse(end+'T00:00:00Z')+86400000-25200000;
  if(to-from>366*86400000)fail('REPORT_RANGE_TOO_LARGE');
- return {branch,dateFrom:start,dateTo:end,timezone:'Asia/Jakarta',utcFrom:new Date(from).toISOString(),utcToExclusive:new Date(to).toISOString()};
+ return {branch,dateFrom:start,dateTo:end,timezone:'Asia/Jakarta',utcFrom:new Date(from).toISOString(),utcToExclusive:new Date(to).toISOString(),...(viewMode?{viewMode}:{})};
 }
 function exact(v){if(!/^[0-9]+$/.test(String(v)))fail('REPORT_INVALID_AMOUNT',503);return BigInt(v);}
 function total(rows){let income=0n,expense=0n;for(const r of rows){if(r.tx_type==='INCOME')income+=exact(r.amount);else if(r.tx_type==='EXPENSE')expense+=exact(r.amount);else fail('REPORT_INVALID_TYPE',503);}return {income:String(income),expense:String(expense),net:String(income-expense),count:rows.length};}
@@ -25,8 +26,8 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
   const previous=await read(pool,actor,token,sourceId,previousParams,{readAdvances,template:false});
   const units=(await pool.query('SELECT id,name,category,is_active FROM business_units ORDER BY id')).rows;
   const calculatedLayout=require('./report-template').make(id,source,previous,units,f);
-  result.templateLayout=require('./report-presentation').compact(calculatedLayout,id);
-  result.templateLayout.excelLayout=require('./report-presentation').compact(calculatedLayout,id,{excel:true});
+  result.templateLayout=require('./report-presentation').scoped(calculatedLayout,id,source,previous,units,f);
+  result.templateLayout.excelLayout=require('./report-presentation').scoped(calculatedLayout,id,source,previous,units,f,{excel:true});
   result.presentationData=require('./report-presentation').columnsAndRows(result.templateLayout);
   return result;
  }
@@ -76,6 +77,6 @@ function toCsv(report){
  report={...report,columns:report.columns.filter(c=>!['account_code','account_name'].includes(c.key))};
  const money=new Set(['amount','income','expense','net','system_balance','physical_cash','difference']);
  const cell=(value,key)=>{let s=value==null?'':String(value);const numeric=(money.has(key)||/^unit_\d+$/.test(key))&&/^-?\d+$/.test(s);if(!numeric&&/^[\s\u0000-\u001f\u007f]*[=+\-@]|^[\u0000-\u001f\u007f]/.test(s))s="'"+s;return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
- return '\uFEFF'+[report.columns.map(c=>cell(c.key)).join(','),...report.rows.map(r=>report.columns.map(c=>cell(r[c.key],c.key)).join(','))].join('\r\n')+'\r\n';
+ return '\uFEFF'+[report.columns.map(c=>cell(report.templateLayout?.presentation==='simple'?c.label:c.key)).join(','),...report.rows.map(r=>report.columns.map(c=>cell(r[c.key],c.key)).join(','))].join('\r\n')+'\r\n';
 }
 module.exports={read,filters,toCsv};

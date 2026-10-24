@@ -50,6 +50,6 @@ function make(id,source,previous,units,filters,panelIndex=null){
  set(1,0,'[Nama Perusahaan]');set(3,2,kind==='balance'?filters.dateTo:periodLabel(currentPeriod));
  for(let r=0;r<grid.length;r++)for(let c=0;c<grid[r].length;c++)if(typeof grid[r][c]==='string'&&grid[r][c].startsWith('='))grid[r][c]=null;
  const continuations=kind==='pnl'&&panelIndex===null?panels.slice(1).map((_,i)=>make(id,source,previous,units,filters,i+1)):[];
- return {kind,grid,cells,spec,panels,continuations,units:selected,notes,period:currentPeriod,previousPeriod,legacyTotal:legacy.reduce((n,r)=>n+BigInt(r.income||0)-BigInt(r.expense||0),0n).toString()};
+ return {kind,grid,cells,spec,panels,continuations,units:selected,scopeMode:filters.viewMode,notes,period:currentPeriod,previousPeriod,legacyTotal:legacy.reduce((n,r)=>n+BigInt(r.income||0)-BigInt(r.expense||0),0n).toString()};
 }
 module.exports={make,kinds,col};
