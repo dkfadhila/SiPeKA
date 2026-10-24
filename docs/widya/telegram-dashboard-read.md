@@ -57,7 +57,7 @@ advance approval/disbursement as realized expense and leaves unavailable totals
 unavailable.
 
 The OS account receives execute-only ACLs on the required release ancestors,
-read access to the four helper source files, and read/traverse access to the
+read access to the helper source files and package metadata, and read/traverse access to the
 resolved npm module tree inside `/opt/sipeka`. No ACL recursion through the app
 release, uploads, generated artifacts or `/etc/sipeka` is performed. Repeat
 `--apply` after each new release, because its directory is new. `--check` is

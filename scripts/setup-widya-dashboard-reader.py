@@ -122,17 +122,31 @@ def check_file(path, content, mode):
 
 
 def allow_code_read():
-    """Traverse the release but read only the four helper source files and npm.
+    """Traverse the release but read only the helper sources, package metadata and npm.
 
     Never recurse through the app release, uploads, generated files or /etc.
     The node_modules symlink is resolved and constrained to /opt/sipeka.
     """
-    files = [APP/'widya-dashboard-reader.js', APP/'scripts/widya-dashboard-read.cjs', APP/'informational-statements.js', APP/'operational-reports.js']
+    files = [APP/'widya-dashboard-reader.js', APP/'scripts/widya-dashboard-read.cjs', APP/'informational-statements.js', APP/'operational-reports.js', APP/'package.json']
     modules = (APP/'node_modules').resolve(strict=True)
     base = Path('/opt/sipeka')
     if base not in modules.parents or not modules.is_dir():
         raise RuntimeError('WIDYA_READER_UNEXPECTED_MODULE_PATH')
     ancestors = set()
+    link = APP.resolve(strict=True) / 'node_modules'
+    seen_links = set()
+    while link.is_symlink():
+        if link in seen_links or base not in link.parents:
+            raise RuntimeError('WIDYA_READER_UNEXPECTED_MODULE_PATH')
+        seen_links.add(link)
+        for parent in link.parents:
+            if parent == Path('/opt'):
+                break
+            if parent.stat().st_uid != 0 or parent.stat().st_mode & 0o022:
+                raise RuntimeError('WIDYA_READER_CODE_PARENT_MUST_BE_ROOT_OWNED')
+            ancestors.add(str(parent))
+        destination = Path(os.readlink(link))
+        link = Path(os.path.abspath(destination if destination.is_absolute() else link.parent / destination))
     for target in [f.resolve(strict=True) for f in files] + [modules]:
         if base not in target.parents:
             raise RuntimeError('WIDYA_READER_UNEXPECTED_RELEASE_PATH')
@@ -155,7 +169,7 @@ def main():
     args = parser.parse_args()
     if args.apply == args.check or os.geteuid() != 0:
         parser.error('run as root with exactly one of --check / --apply')
-    for file in [APP/'widya-dashboard-reader.js', APP/'scripts/widya-dashboard-read.cjs', APP/'informational-statements.js', APP/'operational-reports.js']:
+    for file in [APP/'widya-dashboard-reader.js', APP/'scripts/widya-dashboard-read.cjs', APP/'informational-statements.js', APP/'operational-reports.js', APP/'package.json']:
         if not file.is_file() or file.stat().st_uid != 0 or file.stat().st_mode & 0o022:
             raise RuntimeError('WIDYA_READER_RELEASE_MUST_BE_ROOT_OWNED')
     exists = psql("SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='widya_reader');") == 't'
