@@ -91,10 +91,10 @@ END $audit$;
 LAUNCHER = '''#!/bin/sh
 set -eu
 cd /
-exec /usr/bin/sudo -n -u widya_reader -- /usr/bin/env -i PATH=/usr/bin:/bin HOME=/nonexistent TZ=UTC /usr/bin/node /opt/sipeka/current/scripts/widya-dashboard-read.cjs "$@"
+exec /usr/bin/sudo -n -u widya_reader -- /usr/bin/env -i PATH=/usr/bin:/bin HOME=/nonexistent TZ=UTC /usr/local/bin/node /opt/sipeka/current/scripts/widya-dashboard-read.cjs "$@"
 '''
 SUDOERS = '''# Fixed private Widya reader only; JSON is parsed as one script argument.
-ubuntu ALL=(widya_reader) NOPASSWD: /usr/bin/env -i PATH=/usr/bin\\:/bin HOME=/nonexistent TZ=UTC /usr/bin/node /opt/sipeka/current/scripts/widya-dashboard-read.cjs *
+ubuntu ALL=(widya_reader) NOPASSWD: /usr/bin/env -i PATH=/usr/bin\\:/bin HOME=/nonexistent TZ=UTC /usr/local/bin/node /opt/sipeka/current/scripts/widya-dashboard-read.cjs *
 '''
 
 
