@@ -9,7 +9,7 @@ const sql=s=>cp.execFileSync('sudo',['-n','-u','postgres','psql','-X','-At','-v'
  if(process.getuid()===0){
  let setup=`CREATE SCHEMA ${schema};SET search_path=${schema};CREATE TABLE schema_migrations(name text PRIMARY KEY,sha256 text NOT NULL);`;
  for(const f of fs.readdirSync('migrations').filter(x=>/^\d+_.*\.sql$/.test(x)).sort())setup+=fs.readFileSync('migrations/'+f,'utf8')+'\n';
- setup+=`GRANT USAGE ON SCHEMA ${schema} TO sipeka_runtime;INSERT INTO app_users(id,username,password_hash,full_name,role) VALUES('qa-owner','qa-owner','unused','QA integration only','OWNER');INSERT INTO sessions(token,user_id,expired_at,purpose) VALUES('qa-live-session','qa-owner',(clock_timestamp() AT TIME ZONE 'UTC')+interval '2 hours','full');`;sql(setup);
+ setup+=`GRANT USAGE ON SCHEMA ${schema} TO sipeka_runtime;INSERT INTO app_users(id,username,password_hash,full_name,role) VALUES('qa-owner','qa-owner','unused','QA integration only','OWNER');INSERT INTO sessions(token,user_id,expired_at,purpose) VALUES('qa-live-session','qa-owner',(clock_timestamp() AT TIME ZONE 'UTC')+interval '2 hours','full'),('qa-live-relogin','qa-owner',(clock_timestamp() AT TIME ZONE 'UTC')+interval '2 hours','full');`;sql(setup);
  process.stdout.write(cp.execFileSync('sudo',['-n','-u','sipeka','env','WIDYA_LIVE_PROBE=1','WIDYA_QA_SCHEMA='+schema,'WIDYA_QA_EXPECTED_BRANCHES='+sql('SELECT count(*) FROM public.business_units;').trim(),process.execPath,__filename],{encoding:'utf8',timeout:660000}));return;
 
  }
@@ -30,7 +30,7 @@ const sql=s=>cp.execFileSync('sudo',['-n','-u','postgres','psql','-X','-At','-v'
   state=await turn('What was the exact synthetic marker in the file from the previous turn? Reply only with the marker from our conversation. Do not open any file or use any tools.');assert.ok(state.messages.findLast(m=>m.role==='assistant').content.includes(marker),'Actual Hermes retained previous turn context');checks.push('actual Hermes second turn retains session context');
   state=await turn('Use the authorized SiPeKA dashboard reader now. Run /usr/local/bin/widya-dashboard-read with one JSON argument {"report":"branches"}. Count its returned rows. This is an authorized read-only branch-master integration check, no writes or messages. Reply only WIDYA_BRANCH_COUNT=N where N is the actual number of returned branches.');
   const count=state.messages.findLast(m=>m.role==='assistant').content.match(/WIDYA_BRANCH_COUNT=(\d+)/);assert.ok(count,'Actual agent returned reader count');assert.equal(count[1],process.env.WIDYA_QA_EXPECTED_BRANCHES);checks.push('actual Widya profile executes private reader against dashboard master');
-  const before=state.messages.length;await pool.query("INSERT INTO sessions(token,user_id,expired_at,purpose) VALUES('qa-live-relogin','qa-owner',(clock_timestamp() AT TIME ZONE 'UTC')+interval '2 hours','full')");state=await service.call('qa-live-relogin','READ',{session_id:sessionId,limit:101});assert.equal(state.messages.length,before);checks.push('new login retains real Hermes messages');
+  const before=state.messages.length;state=await service.call('qa-live-relogin','READ',{session_id:sessionId,limit:101});assert.equal(state.messages.length,before);checks.push('new login retains real Hermes messages');
   console.log(JSON.stringify({ok:true,schema,sessionId,checks,telegram_messages_sent:0,financial_writes:0}));
  }finally{service.stop();await pool.end();}
 })().catch(e=>{console.error('WIDYA_LIVE_PROBE_FAILED '+e.message);process.exitCode=1;});
