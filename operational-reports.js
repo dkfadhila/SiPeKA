@@ -27,12 +27,12 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
   const units=(await pool.query('SELECT id,name,category,is_active FROM business_units ORDER BY id')).rows;
   const calculatedLayout=require('./report-template').make(id,source,previous,units,f);
   if(id==='recorded-income-expense'){
-   const recordedByBranch={};
+   const recordedSummary=structuredClone(result),recordedByBranch={};
    for(const unit of units.filter(u=>f.branch==='all'||u.id===f.branch)){
-    if(f.branch===unit.id)recordedByBranch[unit.id]=result;
+    if(f.branch===unit.id)recordedByBranch[unit.id]=structuredClone(result);
     else{const unitParams=new URLSearchParams(params);unitParams.set('branch_id',unit.id);unitParams.set('view_mode','branch');recordedByBranch[unit.id]=await read(pool,actor,token,id,unitParams,{readAdvances,template:false});}
    }
-   const attach=layout=>{layout.recordedSummary=result;layout.recordedByBranch=recordedByBranch;layout.recordedPreviousSummary=previous;for(const part of layout.continuations||[])attach(part);};attach(calculatedLayout);
+   const attach=layout=>{layout.recordedSummary=recordedSummary;layout.recordedByBranch=recordedByBranch;layout.recordedPreviousSummary=previous;for(const part of layout.continuations||[])attach(part);};attach(calculatedLayout);
   }
   result.templateLayout=require('./report-presentation').scoped(calculatedLayout,id,source,previous,units,f);
   result.templateLayout.excelLayout=require('./report-presentation').scoped(calculatedLayout,id,source,previous,units,f,{excel:true});
