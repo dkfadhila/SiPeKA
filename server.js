@@ -61,6 +61,7 @@ const authReady = Promise.resolve(ready).then(async () => {
     await require('./advance-service').guard(require('./db-postgres').getPool());
     await deviceStaff.guard(require('./db-postgres').getPool());
     await require('./widya-sessions').guard(require('./db-postgres').getPool());
+    await require('./document-numbering').guard(require('./db-postgres').getPool());
   } else if (authConfig.requireOwner2FA || authConfig.production) throw new Error("Public auth requires PostgreSQL migration 002");
 });
 authReady.catch(() => {});
@@ -427,6 +428,17 @@ async function handleRequest(req, res, url, p) {
   if (p.startsWith('/api/') && me && (me.session_purpose !== 'full' || me.password_change_required) && p !== '/api/change-password')
     return json(res, 403, { error: 'Ganti password untuk mengamankan akun', setup_required: true });
 
+  if(p==='/api/documents/issue'||p.startsWith('/api/documents/')){
+    if(me.role!=='OWNER')return json(res,403,{error:'DOCUMENT_OWNER_REQUIRED'});
+    if(!process.env.DATABASE_URL)return json(res,503,{error:'DOCUMENT_POSTGRES_REQUIRED'});
+    const numbering=require('./document-numbering'),pool=require('./db-postgres').getPool(),token=security.cookieToken(req);
+    try{
+      if(p==='/api/documents/issue'&&req.method==='POST')return json(res,201,await numbering.issue(pool,token,await readBody(req)));
+      const match=p.match(/^\/api\/documents\/([a-f0-9-]{36})$/i);
+      if(match&&req.method==='GET')return json(res,200,await numbering.get(pool,token,match[1]));
+      return json(res,404,{error:'DOCUMENT_NOT_FOUND'});
+    }catch(e){return json(res,e.status||503,{error:/^DOCUMENT_[A-Z_]+$/.test(e.code||'')?e.code:'DOCUMENT_UNAVAILABLE'});}
+  }
   if(p.startsWith('/api/employee-payroll')){
     if(me.role!=='OWNER')return json(res,403,{error:'PAYROLL_OWNER_ONLY'});
     if(!process.env.DATABASE_URL)return json(res,503,{error:'PAYROLL_POSTGRES_REQUIRED'});
@@ -441,7 +453,7 @@ async function handleRequest(req, res, url, p) {
       if(p==='/api/employee-payroll/publish'&&req.method==='POST')return json(res,200,await svc.publish(token,await readBody(req)));
       const match=p.match(/^\/api\/employee-payroll\/entries\/([a-f0-9-]{36})\/(slip.pdf|send)$/);
       if(match&&match[2]==='slip.pdf'&&req.method==='GET'){
-        const pdf=await svc.pdf(token,match[1]);res.writeHead(200,{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="slip-gaji.pdf"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end(pdf);
+        const pdf=await svc.pdf(token,match[1]),filename=await svc.filename(token,match[1]);res.writeHead(200,{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="'+filename+'"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end(pdf);
       }
       if(match&&match[2]==='send'&&req.method==='POST')return json(res,200,await svc.send(token,match[1],await readBody(req)));
       return json(res,404,{error:'PAYROLL_NOT_FOUND'});
@@ -553,7 +565,14 @@ async function handleRequest(req, res, url, p) {
     const match=p.match(/^\/api\/reports\/([a-z-]+)(\/export)?$/);
     if(!match||req.method!=='GET'||match[1]==='quarterly-data'||(match[1]==='quarterly-owner'&&match[2]))return json(res,404,{error:'REPORT_NOT_FOUND'});
     const reports=require('./operational-reports'),params=new URLSearchParams(url.searchParams);
-    const exportFormat=params.get('format');let exportCompany;
+    const exportFormat=params.get('format');let exportCompany,exportDocument;
+    const documentId=params.get('document_id');
+    if(documentId!==null){
+      if(params.getAll('document_id').length!==1)return json(res,400,{error:'DOCUMENT_INVALID_REQUEST'});
+      params.delete('document_id');
+      try{exportDocument=await require('./document-numbering').get(require('./db-postgres').getPool(),token,documentId);require('./document-numbering').assertMatches(exportDocument,{report_id:match[1],branch_id:params.get('branch_id')||'all',date_from:params.get('date_from'),date_to:params.get('date_to'),view_mode:params.get('view_mode')||undefined});}
+      catch(e){return json(res,e.status||503,{error:e.code||'DOCUMENT_UNAVAILABLE'});}
+    }
     if(match[2]){
       if(params.getAll('format').length!==1||!['csv','xlsx'].includes(exportFormat))return json(res,400,{error:'REPORT_CSV_FORMAT_REQUIRED'});
       params.delete('format');
@@ -580,13 +599,14 @@ async function handleRequest(req, res, url, p) {
       const code=e.statusCode?e.statusCode:503;
       return json(res,code,{error:/^REPORT_[A-Z_]+$/.test(e.message||'')?e.message:'REPORT_SOURCE_UNAVAILABLE'});
     }finally{client.release();}
+    if(exportDocument)report=require('./report-document').attach(report,exportDocument);
     if(match[2]){
       if(exportFormat==='xlsx'){
         const bytes=require('./report-template-xlsx').exportXlsx(report.templateLayout,exportCompany);
-        res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="SiPeKA-'+match[1]+'.xlsx"',...SECURITY_HEADERS,'Cache-Control':'no-store'});return res.end(bytes);
+        res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="'+(exportDocument?require('./document-format').filename(exportDocument.code):'SiPeKA-'+match[1])+'.xlsx"',...SECURITY_HEADERS,'Cache-Control':'no-store'});return res.end(bytes);
       }
       const csv=reports.toCsv(report);
-      res.writeHead(200,{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="SiPeKA-'+match[1]+'.csv"',...SECURITY_HEADERS,'Cache-Control':'no-store'});
+      res.writeHead(200,{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="'+(exportDocument?require('./document-format').filename(exportDocument.code):'SiPeKA-'+match[1])+'.csv"',...SECURITY_HEADERS,'Cache-Control':'no-store'});
       return res.end(csv);
     }
     return json(res,200,report);

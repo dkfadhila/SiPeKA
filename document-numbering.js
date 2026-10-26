@@ -1,0 +1,26 @@
+'use strict';
+// Authoritative numbers are allocated by PostgreSQL; this module never generates a sequence in memory.
+const crypto=require('node:crypto');
+const reportCodes=Object.freeze({'fund-position':'NRC','recorded-income-expense':'PB','company-profit-loss':'LR','compare-profit-loss':'LR','profit-loss':'LR','cash-flow':'AK','expense-breakdown':'RP','branch-performance':'KC','budget-actual':'AR','tax-summary':'RPK',ppn:'PPN',pph21:'PPH21',pph4:'PPH4',pbjt:'PBJT',umkm:'UMKM','tax-checklist':'KPP','general-ledger':'RT','management-report':'LM','audit-evidence':'BT','fund-requests':'PD','daily-closings':'CL','quarterly-owner':'LT','quarterly-data':'DT'});
+const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
+const fail=(code,status=400)=>Object.assign(new Error(code),{code,status,statusCode:status});
+function romanMonth(month){if(!Number.isInteger(Number(month))||Number(month)<1||Number(month)>12)throw fail('DOCUMENT_INVALID_MONTH');return ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'][Number(month)-1];}
+function unitCode(unit,overrides={}){if(unit===null||unit==='all')return 'AMC';if(!unit||typeof unit!=='object')throw fail('DOCUMENT_INVALID_UNIT');let code=Object.hasOwn(overrides,String(unit.id))?overrides[String(unit.id)]:/REDDOORZ/i.test(String(unit.name||''))?'RD':String(unit.code||'').toUpperCase().replace(/^UNIT_/,'').replace(/[^A-Z0-9]/g,'');if(typeof code!=='string'||!/^[A-Z0-9]{1,16}$/.test(code)||code==='AMC')throw fail('DOCUMENT_INVALID_UNIT');return code;}
+function validDate(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&value>='2000-01-01'&&value<='2100-12-31'&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;}
+function normalizedScope(body){
+ if(!body||typeof body!=='object'||Array.isArray(body)||!Object.hasOwn(reportCodes,body.report_id)||typeof body.branch_id!=='string'||!body.branch_id||body.branch_id.length>128||/[\x00-\x1f\x7f]/.test(body.branch_id)||!validDate(body.date_from)||!validDate(body.date_to)||body.date_from>body.date_to||(body.report_id!=='general-ledger'&&Date.parse(body.date_to)-Date.parse(body.date_from)>365*86400000))throw fail('DOCUMENT_INVALID_REQUEST');
+ const view_mode=body.view_mode??(body.branch_id==='all'?'company':'branch');
+ if(!['company','branch','comparison'].includes(view_mode)||(view_mode==='branch'?body.branch_id==='all':body.branch_id!=='all'))throw fail('DOCUMENT_INVALID_SCOPE');
+ return {report_id:body.report_id,branch_id:body.branch_id,date_from:body.date_from,date_to:body.date_to,view_mode};
+}
+function normalize(body){
+ const allowed=['report_id','branch_id','date_from','date_to','view_mode','idempotency_key'];if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>!allowed.includes(k))||!UUID.test(body.idempotency_key||''))throw fail('DOCUMENT_INVALID_REQUEST');
+ return {...normalizedScope(body),idempotency_key:body.idempotency_key.toLowerCase()};
+}
+function safeError(error){const code=/^DOCUMENT_[A-Z_]+$/.test(error.message||'')?error.message:'DOCUMENT_UNAVAILABLE';const status=error.code==='42501'?403:code==='DOCUMENT_NOT_FOUND'?404:code==='DOCUMENT_IDEMPOTENCY_CONFLICT'?409:code==='DOCUMENT_UNAVAILABLE'?503:400;return fail(code,status);}
+async function invoke(pool,token,op,p){try{return (await pool.query('SELECT document_issue($1,$2,$3::jsonb) result',[token,op,JSON.stringify(p)])).rows[0].result;}catch(e){throw safeError(e);}}
+async function issue(pool,token,body){return invoke(pool,token,'ISSUE',{...normalize(body),id:crypto.randomUUID()});}
+async function get(pool,token,id){if(!UUID.test(id||''))throw fail('DOCUMENT_NOT_FOUND',404);return invoke(pool,token,'GET',{id:id.toLowerCase()});}
+function assertMatches(document,body){const expected=normalizedScope(body);if(!document||Object.entries(expected).some(([key,value])=>document[key]!==value))throw fail('DOCUMENT_SCOPE_MISMATCH',409);return document;}
+async function guard(pool){const role=(await pool.query('SELECT current_user role,current_schema() schema')).rows[0];for(const table of ['document_registry','document_counters','document_unit_overrides']){if((await pool.query("SELECT has_table_privilege(current_user,$1,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER') unsafe",[table])).rows[0].unsafe)throw Error('DOCUMENT_DIRECT_ACCESS_DENIED');}const r=(await pool.query("SELECT p.prosecdef,p.proconfig,pg_get_userbyid(p.proowner) owner,has_function_privilege(current_user,p.oid,'EXECUTE') allowed,EXISTS(SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE') public FROM pg_proc p WHERE p.oid='document_issue(text,text,jsonb)'::regprocedure")).rows[0];if(!r?.prosecdef||r.owner===role.role||!r.allowed||r.public||!r.proconfig?.includes('search_path='+role.schema+', pg_temp'))throw Error('DOCUMENT_FUNCTION_ACL_REQUIRED');const t=(await pool.query("SELECT tgenabled,tgfoid='sipeka_immutable_guard()'::regprocedure correct FROM pg_trigger WHERE tgrelid='document_registry'::regclass AND tgname='document_registry_immutable'")).rows[0];if(!t||!['O','A'].includes(t.tgenabled)||!t.correct)throw Error('DOCUMENT_IMMUTABLE_GUARD_REQUIRED');}
+module.exports={reportCodes,romanMonth,unitCode,normalize,issue,get,assertMatches,guard};

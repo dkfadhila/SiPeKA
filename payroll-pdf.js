@@ -22,7 +22,7 @@ function renderSlipPdf(row,{publishedAt,simulation=false,documentIdentity}={}){
  line(701);text('Periode',48,675,10);text(row.period,170,675,12,true);
  text('Nama',48,649,10);text(plain(row.full_name,66),170,649,12,true);if(employeeLayout){text('Departemen',48,625,10);plain(row.department,120).match(/.{1,58}/g).forEach((part,i)=>text(part,170,625-i*11,10));}else{text('Username',48,625,10);text(plain(row.username,64),170,625);}
  const branch=documentIdentity?.branch_name||row.branch_name;const branchLines=branch?(documentIdentity?plain(branch,120).match(/.{1,40}/g):[plain(branch,64)]):[];if(branch){text(employeeLayout?'Unit':'Unit / cabang',48,601,10);branchLines.forEach((s,i)=>text(s,170,601-i*11,documentIdentity?9:11));}const branchOffset=Math.max(0,branchLines.length-2)*11;
- text('Referensi: '+plain(row.entry_id||'Tidak tersedia',64),48,579-branchOffset,8);
+ const documentCode=require('./document-format').slipCode(row);if(documentCode)text('Kode dokumen: '+documentCode,48,579-branchOffset,documentCode.length>78?6:8);else text('Referensi: '+plain(row.entry_id||'Tidak tersedia',64),48,579-branchOffset,8);
  text('Penerbitan: '+publicationDate(publishedAt)+' (WIB)',48,563-branchOffset,9);
  line(545);text('PENGHASILAN',48,520,10,true);text('POTONGAN',311,520,10,true);
  // Helvetica amounts use font widths (digits 556, period/space 278).

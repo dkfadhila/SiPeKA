@@ -9,15 +9,16 @@
    doc.setTextColor(17,17,17);doc.setFont('helvetica','bold');doc.setFontSize(18);doc.text(part.grid[1][0],W/2,18,{align:'center'});
    doc.setFontSize(11);doc.text(company,W/2,25,{align:'center'});doc.setFont('helvetica','normal');doc.setFontSize(9);
    doc.text((part.kind==='balance'?'Per '+part.period.to:part.period.from+' s.d. '+part.period.to)+' | '+report.branch,W/2,31,{align:'center'});
+   if(part.documentCode){doc.setFontSize(8);doc.text('Kode dokumen: '+String(part.documentCode),W/2,36,{align:'center'});}
   };
   for(const [i,part] of [layout,...(layout.continuations||[])].entries()){
    if(i)doc.addPage();title(part);
    const columnStyles={0:{halign:'left',cellWidth:wide?80:part.kind==='balance'?100:125}};
    part.grid[5].slice(1).forEach((_,c)=>{columnStyles[c+1]={halign:'right'};});
-   doc.autoTable({head:[part.grid[5]],body:part.grid.slice(6).map((row,r)=>row.map((v,c)=>c?(part.rowTypes[r+6]==='section'?'':v==null?'Belum tersedia':v===''?'':money(v)):v)),startY:39,margin:{left:M,right:M,top:39,bottom:15},theme:'plain',
+   doc.autoTable({head:[part.grid[5]],body:part.grid.slice(6).map((row,r)=>row.map((v,c)=>c?(part.rowTypes[r+6]==='section'?'':v==null?'Belum tersedia':v===''?'':money(v)):v)),startY:part.documentCode?43:39,margin:{left:M,right:M,top:part.documentCode?43:39,bottom:15},theme:'plain',
     styles:{font:'helvetica',fontSize:9,cellPadding:2,textColor:[17,17,17],lineColor:[220,220,220],lineWidth:{bottom:.15}},
     headStyles:{fillColor:[255,255,255],textColor:[17,17,17],fontStyle:'bold'},columnStyles,rowPageBreak:'avoid',
-    didParseCell:data=>{if(data.section==='body'&&['section','total'].includes(part.rowTypes[data.row.index+6])){data.cell.styles.fontStyle='bold';if(part.rowTypes[data.row.index+6]==='total')data.cell.styles.fillColor=[245,245,245];}},
+    didParseCell:data=>{if(data.section==='body'&&data.column?.index===0){const level=Math.min(2,Math.max(0,Number(part.rowLevels?.[data.row.index+6])||0));data.cell.styles.cellPadding={top:2,right:2,bottom:2,left:2+level*4};}if(data.section==='body'&&['section','total'].includes(part.rowTypes[data.row.index+6])){data.cell.styles.fontStyle='bold';if(part.rowTypes[data.row.index+6]==='total')data.cell.styles.fillColor=[245,245,245];}},
     didDrawPage:()=>title(part)});
   }
   let y=doc.lastAutoTable.finalY+7;doc.setFontSize(8);doc.setTextColor(70,70,70);

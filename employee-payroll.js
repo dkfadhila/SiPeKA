@@ -4,6 +4,7 @@ const {createCipher,parseCsv,validateCsv,fault}=require('./payroll');
 const LEGACY_HEADER='period,employee_id,basic_salary,allowances,deductions,pph21';
 const HEADER='period,employee_id,basic_salary,overtime,bonus,absence_deduction,late_deduction,violation_deduction,pph21';
 const {renderSlipPdf}=require('./payroll-pdf');
+const documentFormat=require('./document-format');
 function validate(csv,staff){
  if(typeof csv!=='string')throw fault('PAYROLL_CSV_HEADER');
  const table=parseCsv(csv),header=table.shift()?.join(',');
@@ -35,7 +36,7 @@ function service({pool,env=process.env,transport}={}){
  async function entries(token){return (await call(token,'LIST')).map(e=>{
   const row=cipher().open(e.payload_cipher,e.id);
   if(row.employee_id!==e.staff_id||row.period!==e.period)throw fault('PAYROLL_PAYLOAD_IDENTITY',503);
-  const {payload_cipher,...metadata}=e;return {...metadata,row};
+  const {payload_cipher,...metadata}=e;return {...metadata,row:{...row,document_code:documentFormat.slipCode(row)}};
  });}
  async function entry(token,id){const e=(await entries(token)).find(e=>e.id===id);if(!e)throw fault('PAYROLL_NOT_FOUND',404);return e;}
  const identity=row=>({company_name:row.company_name,branch_name:row.branch_name,department:row.department});
@@ -43,13 +44,14 @@ function service({pool,env=process.env,transport}={}){
  async list(token){const rows=await entries(token);return {rows,readiness:{encryption:/^[a-fA-F0-9]{64}$/.test(env.PAYROLL_ENCRYPTION_KEY||''),email:require('./payroll-resend').resendReady(env)}};},
  async importCsv(token,csv){
   const profile=await company(token);if(!profile.name)throw fault('PAYROLL_COMPANY_REQUIRED');
-  const staff=await directory(token),units=(await pool.query('SELECT id,name FROM business_units')).rows;
+  const staff=await directory(token),units=(await pool.query('SELECT id,name,code FROM business_units')).rows;
   const rows=validate(csv,staff.map(s=>({...s,branch_name:units.find(u=>u.id===s.branch_id)?.name})));
   const id=crypto.randomUUID(),preview_token=crypto.randomUUID();
-  const prepared=rows.map(row=>{const entryId=crypto.randomUUID();return {id:entryId,staff_id:row.employee_id,period:row.period,payload_cipher:cipher().seal({...row,company_name:profile.name,entry_id:entryId},entryId)};});
+  const prepared=rows.map(row=>{const entryId=crypto.randomUUID();return {id:entryId,staff_id:row.employee_id,period:row.period,payload_cipher:cipher().seal((()=>{const snapshot={...row,unit_code:documentFormat.unitCode(units.find(u=>u.id===row.branch_id)||row),department_code:documentFormat.departmentCode(row.department),company_name:profile.name,entry_id:entryId};snapshot.document_code=documentFormat.slipCode(snapshot);return snapshot;})(),entryId)};});
   return call(token,'IMPORT',{id,period:rows[0].period,preview_token,rows:prepared});
  },
  async publish(token,body){if(body.confirmed!==true)throw fault('PAYROLL_CONFIRM_REQUIRED');const rows=await entries(token),batch=rows.filter(e=>e.batch_id===body.id);if(!batch.length)throw fault('PAYROLL_NOT_FOUND',404);return call(token,'PUBLISH',body);},
+ async filename(token,id){const e=await entry(token,id);return documentFormat.filename(documentFormat.slipCode(e.row)||'slip-gaji')+'.pdf';},
  async pdf(token,id){const e=await entry(token,id);return renderSlipPdf(e.row,{publishedAt:e.published_at,documentIdentity:identity(e.row)});},
  async send(token,id,body){
   if(body.confirmed!==true)throw fault('PAYROLL_CONFIRM_REQUIRED');

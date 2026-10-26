@@ -21,11 +21,19 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
   const f=filters(params),days=(Date.parse(f.dateTo)-Date.parse(f.dateFrom))/86400000+1;
   const previousParams=new URLSearchParams(params),end=new Date(Date.parse(f.dateFrom)-86400000),start=new Date(end.getTime()-(days-1)*86400000);
   previousParams.set('date_from',start.toISOString().slice(0,10));previousParams.set('date_to',end.toISOString().slice(0,10));
-  const sourceId=['fund-position','cash-flow'].includes(id)?id:'profit-loss';
+  const sourceId=['fund-position','cash-flow','recorded-income-expense'].includes(id)?id:'profit-loss';
   const source=sourceId===id?result:await read(pool,actor,token,sourceId,params,{readAdvances,template:false});
   const previous=await read(pool,actor,token,sourceId,previousParams,{readAdvances,template:false});
   const units=(await pool.query('SELECT id,name,category,is_active FROM business_units ORDER BY id')).rows;
   const calculatedLayout=require('./report-template').make(id,source,previous,units,f);
+  if(id==='recorded-income-expense'){
+   const recordedByBranch={};
+   for(const unit of units.filter(u=>f.branch==='all'||u.id===f.branch)){
+    if(f.branch===unit.id)recordedByBranch[unit.id]=result;
+    else{const unitParams=new URLSearchParams(params);unitParams.set('branch_id',unit.id);unitParams.set('view_mode','branch');recordedByBranch[unit.id]=await read(pool,actor,token,id,unitParams,{readAdvances,template:false});}
+   }
+   const attach=layout=>{layout.recordedSummary=result;layout.recordedByBranch=recordedByBranch;layout.recordedPreviousSummary=previous;for(const part of layout.continuations||[])attach(part);};attach(calculatedLayout);
+  }
   result.templateLayout=require('./report-presentation').scoped(calculatedLayout,id,source,previous,units,f);
   result.templateLayout.excelLayout=require('./report-presentation').scoped(calculatedLayout,id,source,previous,units,f,{excel:true});
   result.presentationData=require('./report-presentation').columnsAndRows(result.templateLayout);
@@ -75,6 +83,7 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
 function toCsv(report){
  if(report.templateLayout?.presentation==='simple')report={...report,...require('./report-presentation').columnsAndRows(report.templateLayout)};
  report={...report,columns:report.columns.filter(c=>!['account_code','account_name'].includes(c.key))};
+ if(report.documentCode){report={...report,columns:[{key:'document_code',label:'Kode dokumen'},...report.columns],rows:report.rows.map(r=>({document_code:report.documentCode,...r}))};}
  const money=new Set(['amount','income','expense','net','system_balance','physical_cash','difference']);
  const cell=(value,key)=>{let s=value==null?'':String(value);const numeric=(money.has(key)||/^unit_\d+$/.test(key))&&/^-?\d+$/.test(s);if(!numeric&&/^[\s\u0000-\u001f\u007f]*[=+\-@]|^[\u0000-\u001f\u007f]/.test(s))s="'"+s;return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
  return '\uFEFF'+[report.columns.map(c=>cell(report.templateLayout?.presentation==='simple'?c.label:c.key)).join(','),...report.rows.map(r=>report.columns.map(c=>cell(r[c.key],c.key)).join(','))].join('\r\n')+'\r\n';

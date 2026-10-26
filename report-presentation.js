@@ -1,25 +1,32 @@
 'use strict';
 // Account-based calculation stays in report-template; this is the public statement.
 function compact(layout,id,{excel=false}={}){
- const old=layout.grid,kind=layout.kind,comparison=kind==='pnl'&&(id==='compare-profit-loss'||layout.scopeMode==='comparison'||excel);
+ const recorded=id==='recorded-income-expense',old=layout.grid,kind=layout.kind,comparison=kind==='pnl'&&(id==='compare-profit-loss'||layout.scopeMode==='comparison'||excel);
  const unitCols=[2,3,4,5,6,7].filter(c=>old[5][c]);
  const indices=kind==='pnl'?(excel?[...unitCols,8,9]:comparison?[...unitCols,8]:[8]):excel?[2,3]:[2];
  const periodLabel=period=>period?period.from+' s.d. '+period.to:'Belum tersedia';
  const header=kind==='balance'?['Keterangan','Debet (Rp)','Kredit (Rp)']:['Keterangan',...(excel?(kind==='pnl'?[...unitCols.map(c=>old[5][c]),'Konsolidasi (Rp)\n'+periodLabel(layout.period),'Periode sebelumnya (Rp)\n'+periodLabel(layout.previousPeriod),'Perubahan (%)']:['Periode berjalan (Rp)\n'+periodLabel(layout.period),'Periode sebelumnya (Rp)\n'+periodLabel(layout.previousPeriod)]):comparison?[...unitCols.map(c=>old[5][c]),'Total (Rp)']:['Nominal (Rp)'])];
- const grid=[['[Nama Perusahaan]'],[kind==='pnl'?'Laporan Laba & Rugi':kind==='balance'?'Laporan Neraca':'Laporan Arus Kas'],[kind==='balance'?layout.period.to:layout.period.from+' s.d. '+layout.period.to],['Disajikan dalam Rupiah · '+(layout.units.length===1?layout.units[0].name:'Seluruh Cabang / Unit')],[],header];
- const types=Array(6).fill('heading');
+ const grid=[['[Nama Perusahaan]'],[recorded?'Pendapatan & Beban Tercatat':kind==='pnl'?'Laporan Laba & Rugi':kind==='balance'?'Laporan Neraca':'Laporan Arus Kas'],[kind==='balance'?layout.period.to:layout.period.from+' s.d. '+layout.period.to],['Disajikan dalam Rupiah · '+(layout.units.length===1?layout.units[0].name:'Seluruh Cabang / Unit')],[],header];
+ const types=Array(6).fill('heading'),levels=Array(6).fill(0);
  let balanceCredit=false;
- const add=(label,values=[],type='detail')=>{
+ const add=(label,values=[],type='detail',level=0)=>{
   if(kind==='balance'&&!values.length&&type!=='section')values=label==='TOTAL'?[null,null]:balanceCredit?['',null]:[null,''];
   if(excel&&kind==='pnl'&&type!=='section'){
    const now=values.at(-2),prior=values.at(-1);
    values=[...values,type==='ratio'||now==null||prior==null||BigInt(prior)===0n?null:Number(BigInt(now)-BigInt(prior))/Math.abs(Number(prior))];
   }
-  grid.push([label,...header.slice(1).map((_,i)=>values[i]??null)]);types.push(type);
+  grid.push([label,...header.slice(1).map((_,i)=>values[i]??null)]);types.push(type);levels.push(level);
  };
- const section=label=>add(label,[],'section');
+ const section=(label,level=0)=>add(label,[],'section',level);
  const take=(label,r,type='detail',negative=false)=>add(label,indices.map(c=>old[r-1][c]==null?null:String(BigInt(old[r-1][c])*(negative?-1n:1n))),type);
- if(kind==='pnl'){
+ if(recorded){
+  const summary=layout.recordedSummary||null;
+  const value=(report,key)=>report?.totals?.[key]??null;
+  const sourceByColumn=c=>c===8?summary:c===9?layout.recordedPreviousSummary:layout.recordedByBranch?.[layout.units.find(u=>u.name===old[5][c])?.id];
+  for(const [label,key] of [['Pendapatan tercatat','income'],['Beban tercatat','expense'],['Selisih Pendapatan dan Beban Tercatat','net']]){
+   add(label,indices.map(c=>value(sourceByColumn(c),key)),key==='net'?'total':'detail');
+  }
+ }else if(kind==='pnl'){
   section('Pendapatan');take('Pendapatan usaha',13);take('Total Pendapatan',13,'total');
   section('Harga Pokok Penjualan');take('Harga pokok penjualan',21);take('Total Harga Pokok Penjualan',21,'total',true);take('TOTAL LABA KOTOR',23,'total');
   if(excel)add('Margin laba kotor',indices.map(c=>old[23][c]),'ratio');
@@ -30,34 +37,34 @@ function compact(layout,id,{excel=false}={}){
   take('Total Beban Operasional',38,'total',true);take('LABA BERSIH OPERASIONAL',40,'total');
   if(excel)add('Margin laba operasional',indices.map(c=>old[40][c]),'ratio');
   section('Pendapatan & Beban Lainnya');take('Pendapatan lainnya',44);take('Beban lainnya',45,'detail',true);take('Total Pendapatan & Beban Lainnya',46,'total');
-  take('Pajak penghasilan',49,'detail',true);take('LABA/(RUGI) BERSIH',50,'total');
+  take('Pajak penghasilan',49,'detail',true);take(recorded?'Selisih Pendapatan dan Beban Tercatat':'LABA/(RUGI) BERSIH',50,'total');
   if(excel)add('Margin laba bersih',indices.map(c=>old[50][c]),'ratio');
  }else if(kind==='balance'){
   // Source has no verified closing balances: preserve unavailable values, never infer equity.
-  section('AKTIVA');section('Aktiva Lancar');
-  for(const label of ['Kas dan bank','Piutang','Persediaan','Biaya dibayar di muka'])add(label);
-  add('Total Aktiva Lancar',[],'total');section('Aktiva Tetap');
-  for(const label of ['Tanah dan bangunan','Peralatan dan inventaris','Kendaraan','Akumulasi penyusutan aset'])add(label);
-  add('Total Aktiva Tetap',[],'total');add('TOTAL AKTIVA',[],'total');
-  balanceCredit=true;section('PASIVA');section('Kewajiban');
-  for(const label of ['Utang usaha','Utang beban dan pajak','Pendapatan diterima di muka','Pinjaman'])add(label);
-  add('Total Kewajiban',[],'total');section('Ekuitas');
-  for(const label of ['Modal','Laba ditahan','Laba/(rugi) tahun berjalan','Prive'])add(label);
-  add('Total Ekuitas',[],'total');add('TOTAL PASIVA',[],'total');add('TOTAL',[],'total');
+  section('AKTIVA');section('Aktiva Lancar',1);
+  for(const label of ['Kas dan bank','Piutang','Persediaan','Biaya dibayar di muka'])add(label,[],'detail',2);
+  add('Total Aktiva Lancar',[],'total',1);section('Aktiva Tetap',1);
+  for(const label of ['Tanah dan bangunan','Peralatan dan inventaris','Kendaraan','Akumulasi penyusutan aset'])add(label,[],'detail',2);
+  add('Total Aktiva Tetap',[],'total',1);add('TOTAL AKTIVA',[],'total');
+  balanceCredit=true;section('PASIVA');section('Kewajiban',1);
+  for(const label of ['Utang usaha','Utang beban dan pajak','Pendapatan diterima di muka','Pinjaman'])add(label,[],'detail',2);
+  add('Total Kewajiban',[],'total',1);section('Ekuitas',1);
+  for(const label of ['Modal','Laba ditahan','Laba/(rugi) tahun berjalan','Prive'])add(label,[],'detail',2);
+  add('Total Ekuitas',[],'total',1);add('TOTAL PASIVA',[],'total');add('TOTAL',[],'total');
  }else{
   for(let r=6;r<old.length;r++){
    const row=old[r],label=row[1]||row[0];if(!label||/Disusun|Disetujui|____|Nama \/ Jabatan/.test(label))continue;
    add(label,indices.map(c=>row[c]),layout.spec.rows[r].some(c=>c.bold)?'total':'detail');
   }
  }
- const notes=layout.notes.filter(note=>kind!=='balance'||!note.startsWith('Kolom pembanding neraca')).map(note=>/^Akun historis belum/.test(note)?'Sebagian transaksi historis belum dipetakan ke pos laporan; nilainya belum masuk subtotal.':note);
+ const notes=(recorded?(layout.recordedSummary?.notices||['Pendapatan dan beban tercatat belum tersedia. Angka kosong bukan pendapatan nol.']):layout.notes).filter(note=>kind!=='balance'||!note.startsWith('Kolom pembanding neraca')).map(note=>/^Akun historis belum/.test(note)?'Sebagian transaksi historis belum dipetakan ke pos laporan; nilainya belum masuk subtotal.':note);
  if(excel&&kind==='balance'){
   const priorDate=layout.previousPeriod?.to||'Belum tersedia';
   grid[5]=['Keterangan','Debet (Rp)\n'+layout.period.to,'Kredit (Rp)\n'+layout.period.to,'Debet (Rp)\n'+priorDate,'Kredit (Rp)\n'+priorDate];
   for(const row of grid.slice(6))row.push(...row.slice(1));
  }
  const spec={rows:grid.map((row,r)=>row.map(value=>({value,bold:['section','total','heading'].includes(types[r]),fill:types[r]==='total'?'FFF5F5F5':null,format:'General'}))),widths:grid[5].map((_,i)=>i?24:70),merges:[]};
- return {...layout,presentation:'simple',excelComplete:excel,grid,spec,cells:{},rowTypes:types,notes,continuations:comparison?(layout.continuations||[]).map(part=>compact(part,id,{excel})):[]};
+ return {...layout,presentation:'simple',excelComplete:excel,grid,spec,cells:{},rowTypes:types,rowLevels:levels,notes,continuations:comparison?(layout.continuations||[]).map(part=>compact({...part,...(recorded?{recordedSummary:layout.recordedSummary,recordedByBranch:layout.recordedByBranch,recordedPreviousSummary:layout.recordedPreviousSummary}: {})},id,{excel})):[]};
 }
 function columnsAndRows(layout){
  const parts=[layout,...(layout.continuations||[])];
