@@ -18,6 +18,10 @@ test('reader refuses overlarge results and never labels unavailable income as ze
  const empty={query:async()=>({rows:[]})},r=await reader.read(empty,{report:'summary'}, {now});
  assert.equal(r.recorded_income_expense[0].amount,null);assert.equal(r.recorded_income_expense[1].amount,'0');assert.equal(r.financial_statements_complete,false);
 });
+test('reader capabilities explicitly distinguishes read datasets, protected data and missing external delivery',async()=>{
+ const r=await reader.read({query:()=>{throw Error('must not query private data');}},{report:'capabilities'});
+ assert.equal(r.datasets.company.access,'read');assert.equal(r.datasets.staff.access,'read_noncontact_metadata');assert.equal(r.datasets.telegram_delivery.access,'unavailable_in_reader');assert.equal(r.datasets.chat_sessions.access,'unavailable_in_reader');assert.equal(r.datasets.payroll.access,'unavailable_in_reader');
+});
 test('fixed CLI rejects malformed and oversized arguments before any DB connection without reflecting input',()=>{
  const script=path.resolve(__dirname,'../scripts/widya-dashboard-read.cjs');
  for(const args of [[],['{'],['{"report":"drop","password":"do-not-echo"}'],['{"report":"summary","actor":"owner"}'],['x'.repeat(4097)],['{}','{}']]){
@@ -34,7 +38,14 @@ test('actual PostgreSQL reader: minimal role, exact amounts, dates, advance sett
  CREATE TABLE advance_events(id text,advance_id text,action text,amount bigint,created_at timestamptz,settlement_id text,request jsonb);
  CREATE TABLE advance_settlement_lines(settlement_id text,line_no integer,coa_id text,amount bigint,receipt_key text);
  CREATE TABLE cash_closings(id text,branch_id text,closing_date date,system_balance bigint,physical_cash bigint,difference bigint,reason text,user_id text);
- CREATE TABLE app_users(password_hash text,email text);CREATE TABLE payroll(salary bigint);CREATE TABLE sessions(token text);
+ CREATE TABLE app_users(id text,assigned_branch_id text,full_name text,role text,password_hash text,email text);CREATE TABLE payroll(salary bigint);CREATE TABLE sessions(token text);
+ CREATE TABLE company_profile(name text,revision integer,updated_at timestamptz);
+ CREATE TABLE operational_staff(id text,branch_id text,name text,department text,active boolean,revision integer,email text);
+ CREATE TABLE document_registry(id text,code text,report_id text,report_code text,branch_id text,unit_code text,date_from date,date_to date,view_mode text,created_at timestamptz,owner_id text,idempotency_key text);
+ INSERT INTO app_users VALUES('device','a','Counter','STAFF','secret-password','private@example.com'),('owner','a','Private Owner','OWNER','owner-password','owner@example.com');
+ INSERT INTO company_profile VALUES('Fixture Company',1,'2026-10-01T01:00:00Z');
+ INSERT INTO operational_staff VALUES('person','a','Fixture Employee','Operations',true,1,'person-private@example.com');
+ INSERT INTO document_registry VALUES('doc1','001/LR/A/X/2026','profit-loss','LR','a','A','2026-09-01','2026-09-30','branch','2026-10-01T01:00:00Z','private-owner','private-idempotency');
  INSERT INTO business_units VALUES('a','Laundry','A','LAUNDRY',1),('old','Archived','OLD','LAUNDRY',0),('b','Cafe','B','CAFE',1);
  INSERT INTO chart_of_accounts VALUES('expense','5-1','Supplies','EXPENSE'),('income','4-1','Sales','INCOME');
  INSERT INTO ledger_transactions VALUES
@@ -64,8 +75,12 @@ test('actual PostgreSQL reader: minimal role, exact amounts, dates, advance sett
  const approvals=await reader.read(db,{...request,report:'approvals'});assert.deepEqual(approvals.rows.map(x=>x.id),['pending']);
  const closings=await reader.read(db,{...request,report:'closings'});assert.equal(closings.rows[0].closing_date,'2026-10-01');assert.equal(closings.rows[0].difference,'500');
  const master=await reader.read(db,{report:'branches'});assert.equal(master.rows.length,3);assert.equal(master.rows.find(x=>x.id==='old').is_active,0);
+ const company=await reader.read(db,{...request,report:'company'});assert.equal(company.rows[0].name,'Fixture Company');assert.equal(company.scope,'COMPANY_MASTER_CURRENT_SNAPSHOT');
+ const staff=await reader.read(db,{...request,report:'staff'});assert.equal(staff.rows[0].name,'Fixture Employee');assert.equal(staff.rows[0].branch_name,'Laundry');assert.ok(!JSON.stringify(staff).includes('person-private@example.com'));
+ const devices=await reader.read(db,{...request,report:'devices'});assert.deepEqual(devices.rows.map(x=>x.id),['device']);assert.ok(!JSON.stringify(devices).includes('Private Owner'));assert.ok(!JSON.stringify(devices).includes('secret-password'));
+ const documents=await reader.read(db,{...request,report:'documents'});assert.equal(documents.rows[0].code,'001/LR/A/X/2026');assert.equal(documents.rows[0].date_from,'2026-09-01');assert.equal(documents.scope,'DOCUMENT_REGISTRY_ISSUED_IN_PERIOD');assert.ok(!JSON.stringify(documents).includes('private-owner'));assert.ok(!JSON.stringify(documents).includes('private-idempotency'));
  await db.exec('ROLLBACK');await db.exec('SET ROLE widya_reader');
- for(const sql of ['SELECT token FROM sessions','SELECT salary FROM payroll','SELECT password_hash FROM app_users','SELECT receipt_key FROM ledger_transactions','SELECT receipt_key FROM advance_settlement_lines',"UPDATE business_units SET name='wrong'", "DELETE FROM ledger_transactions"]){await assert.rejects(db.query(sql),/permission denied/,sql);}
+ for(const sql of ['SELECT token FROM sessions','SELECT salary FROM payroll','SELECT password_hash FROM app_users','SELECT email FROM app_users','SELECT email FROM operational_staff','SELECT owner_id FROM document_registry','SELECT receipt_key FROM ledger_transactions','SELECT receipt_key FROM advance_settlement_lines',"UPDATE business_units SET name='wrong'", "DELETE FROM ledger_transactions"]){await assert.rejects(db.query(sql),/permission denied/,sql);}
  await db.exec('RESET ROLE;GRANT SELECT ON app_users TO widya_reader;');await assert.rejects(db.exec(schema.before),/reader table privilege/);
  await db.exec('REVOKE SELECT ON app_users FROM widya_reader;CREATE ROLE suspicious;GRANT suspicious TO widya_reader;');await assert.rejects(db.exec(schema.role),/reader role membership/);
  await db.exec('REVOKE suspicious FROM widya_reader;CREATE FUNCTION unsafe_reader() RETURNS integer LANGUAGE sql SECURITY DEFINER AS $$ SELECT 1 $$;');await assert.rejects(db.exec(schema.role),/reader security definer privilege/);

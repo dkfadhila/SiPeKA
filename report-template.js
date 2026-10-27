@@ -24,9 +24,9 @@ function make(id,source,previous,units,filters,panelIndex=null){
  const pnlRows={13:[8,9,10,11,12],21:[16,17,18,19,20],23:[13,-21],38:[27,28,29,30,31,32,33,34,35,36,37],40:[23,-38],46:[44,-45],48:[40,46],50:[48,-49]};
  const ratios={24:23,41:40,51:50};
  const sourceRows=source?.rows||[],priorRows=previous?.rows||[];
- const legacy=sourceRows.filter(r=>r.account_code&&!codes.has(r.account_code));
+ const legacy=kind==='pnl'?sourceRows.filter(r=>r.account_code&&!codes.has(r.account_code)):[];
  if(legacy.length)notes.push('Akun historis belum dipetakan: '+[...new Set(legacy.map(r=>r.account_code+' '+r.account_name))].join('; ')+'. Nilainya tetap di register operasional dan belum dimasukkan ke subtotal akun template.');
- const priorLegacy=priorRows.filter(r=>r.account_code&&!codes.has(r.account_code));
+ const priorLegacy=kind==='pnl'?priorRows.filter(r=>r.account_code&&!codes.has(r.account_code)):[];
  if(priorLegacy.length)notes.push('Periode sebelumnya juga memiliki akun historis yang belum dipetakan.');
  if(kind==='pnl'){
   for(let c=2;c<=7;c++)set(6,c,panel[c-2]?.name||'');
@@ -45,11 +45,14 @@ function make(id,source,previous,units,filters,panelIndex=null){
   for(let r=7;r<=grid.length;r++)for(let c=2;c<=3;c++)if(typeof grid[r-1][c]==='number'||String(grid[r-1][c]||'').startsWith('='))set(r,c,null);
   if(kind==='balance'){const end=(Number(filters.dateTo.slice(0,4))-1)+'-12-31';previousPeriod={from:end,to:end};set(6,2,filters.dateTo);set(6,3,(Number(filters.dateTo.slice(0,4))-1)+'-12-31');notes.push('Kolom pembanding neraca adalah 31 Desember tahun sebelumnya, mengikuti tahun tanggal posisi yang dipilih.');notes.push('Saldo kas, bank, aset, utang, dan ekuitas belum tersedia; status neraca tidak dinyatakan seimbang.');}
   if(kind==='cash'){set(6,2,'Periode Berjalan\n'+periodLabel(currentPeriod));set(6,3,'Periode Sebelumnya\n'+(previousPeriod?periodLabel(previousPeriod):'Belum tersedia'));}
-  if(kind==='cash')notes.push('Klasifikasi arus kas operasi/investasi/pendanaan, saldo awal/akhir dan rekonsiliasi belum lengkap; gunakan register mutasi kas untuk nominal operasional.');
+  if(kind==='cash'){
+   for(const [c,data] of [[2,source],[3,previous]]){const classified=require('./cashflow-classification').classify(data,filters.branch);if(classified)for(const [r,value] of Object.entries(classified.values))set(Number(r),c,value);}
+   notes.push('Arus kas memakai transaksi kas tercatat. Subtotal operasi hanya mencakup pos yang sudah terklasifikasi; mutasi advance dan transaksi yang belum dapat dikelompokkan disajikan terpisah. Saldo awal/akhir, aktivitas investasi/pendanaan dan rekonsiliasi belum tersedia.');
+  }
  }
  set(1,0,'[Nama Perusahaan]');set(3,2,kind==='balance'?filters.dateTo:periodLabel(currentPeriod));
  for(let r=0;r<grid.length;r++)for(let c=0;c<grid[r].length;c++)if(typeof grid[r][c]==='string'&&grid[r][c].startsWith('='))grid[r][c]=null;
  const continuations=kind==='pnl'&&panelIndex===null?panels.slice(1).map((_,i)=>make(id,source,previous,units,filters,i+1)):[];
- return {kind,grid,cells,spec,panels,continuations,units:selected,scopeMode:filters.viewMode,notes,period:currentPeriod,previousPeriod,legacyTotal:legacy.reduce((n,r)=>n+BigInt(r.income||0)-BigInt(r.expense||0),0n).toString()};
+ return {kind,grid,cells,spec,...(kind==='cash'?{cashUnclassified:[source,previous].map(data=>require('./cashflow-classification').classify(data,filters.branch))}:{}),panels,continuations,units:selected,scopeMode:filters.viewMode,notes,period:currentPeriod,previousPeriod,legacyTotal:legacy.reduce((n,r)=>n+BigInt(r.income||0)-BigInt(r.expense||0),0n).toString()};
 }
 module.exports={make,kinds,col};

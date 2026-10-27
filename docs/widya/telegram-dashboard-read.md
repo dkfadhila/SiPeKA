@@ -35,8 +35,12 @@ The role has USAGE on public and SELECT only on these column lists:
 | advance_events | id, advance_id, action, amount, created_at, settlement_id |
 | advance_settlement_lines | settlement_id, line_no, coa_id, amount |
 | cash_closings | id, branch_id, closing_date, system_balance, physical_cash, difference, reason |
+| company_profile | name, revision, updated_at |
+| operational_staff | id, branch_id, name, department, active, revision |
+| app_users | id, assigned_branch_id, full_name, role (device query returns STAFF only) |
+| document_registry | id, code, report_id, report_code, branch_id, unit_code, date_from, date_to, view_mode, created_at |
 
-No grant covers sessions, users, payroll, receipt keys, binary receipts, or
+No grant covers sessions, user credentials/contacts, payroll, receipt keys, binary receipts, or
 advance request/result payloads. Provisioning rejects effective unexpected
 table/column/sequence privileges, SECURITY DEFINER execution in application
 schemas, schema/database creation, role membership, ownership, password or
@@ -77,6 +81,22 @@ For financial smoke tests, summarize only success, scope, counts and timestamps
 in general deployment logs; keep private amounts/memos in the authorized
 conversation. Verify the private bot's response with no unsolicited message to
 other users. A Telegram send acceptance is not proof of device delivery/read.
+
+## Website coverage
+
+`capabilities` exposes an explicit capability matrix. The helper reads branch
+master, current company, employee/device noncontact metadata, dated transactions,
+pending approvals, physical closing observations, recorded summaries and issued
+document-number metadata. Company/directory data is a current snapshot;
+document dates filter issuance time rather than each document's financial period.
+
+It does not read accounting journals/trial balance, complete accrual statements,
+encrypted payroll amounts, calendar notes or Owner-scoped chat history. It does
+not mutate data, issue document numbers, generate a report export or send a
+Telegram message. An API-server toolset audit found no messaging/send-message
+tool even though the Telegram platform is connected; outgoing delivery from
+website conversations requires a separately registered authorized tool. Hermes's
+broader terminal permissions are not proof such a product integration exists.
 
 ## Tests
 

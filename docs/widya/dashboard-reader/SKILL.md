@@ -21,8 +21,9 @@ Call the fixed local command with **one JSON argument** using Hermes terminal:
 ```
 
 The example date is only an example; use the Owner's requested period.
-Supported `report` values are `branches`, `summary`, `transactions`, `approvals`,
-and `closings`. The only optional fields are `branch`, `date_from`, `date_to`.
+Supported `report` values are `capabilities`, `branches`, `company`, `staff`,
+`devices`, `documents`, `summary`, `transactions`, `approvals`, and `closings`.
+The only optional fields are `branch`, `date_from`, `date_to`.
 Do not supply SQL, tokens, actor IDs, a database URL or recipient overrides.
 
 - Interpret dates in Asia/Jakarta. The two dates are inclusive. Say the actual
@@ -33,6 +34,20 @@ Do not supply SQL, tokens, actor IDs, a database URL or recipient overrides.
   code, or full name, case insensitive. `all` means all units including historical
   records in archived units. Prefer the resolved master ID; do not substring-match
   names or hard-code unit counts. Ask if an exact name is ambiguous.
+- Read `capabilities` when deciding which website data is actually exposed. It
+  explicitly separates available read models from unavailable accounting,
+  payroll, calendar, chat-history and external-delivery capabilities. Do not
+  claim full website access simply because Hermes/Telegram is connected.
+- `company` is the current company identity. `staff` lists employee name,
+  department, unit and active status; `devices` lists operational device labels
+  and assigned units. These are current master snapshots, not history at the
+  selected dates. Contact emails, Telegram IDs, usernames/passwords and payroll
+  are excluded. Device presence does not prove it is online or disabled.
+- `documents` lists issued report-number metadata. Its date filter is the
+  **issuance date**, not the financial report period stored in each row's
+  `date_from`/`date_to`. Registry presence does not prove the report file exists,
+  its amounts are correct, or that it was delivered. The command does not issue
+  new numbers or generate exports.
 - `summary` returns exact integer Rupiah strings, recorded income/expense,
   advance disbursements/returns and the **current** outstanding staff funds.
   It uses the same accounting read model as the dashboard. Missing income

@@ -22,6 +22,10 @@ GRANTS = {
     'advance_events': ['id', 'advance_id', 'action', 'amount', 'created_at', 'settlement_id'],
     'advance_settlement_lines': ['settlement_id', 'line_no', 'coa_id', 'amount'],
     'cash_closings': ['id', 'branch_id', 'closing_date', 'system_balance', 'physical_cash', 'difference', 'reason'],
+    'company_profile': ['name', 'revision', 'updated_at'],
+    'operational_staff': ['id', 'branch_id', 'name', 'department', 'active', 'revision'],
+    'app_users': ['id', 'assigned_branch_id', 'full_name', 'role'],
+    'document_registry': ['id', 'code', 'report_id', 'report_code', 'branch_id', 'unit_code', 'date_from', 'date_to', 'view_mode', 'created_at'],
 }
 
 

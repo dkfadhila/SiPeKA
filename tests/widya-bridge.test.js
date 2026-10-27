@@ -13,7 +13,7 @@ test('Widya uses authenticated profile Runs API, isolated histories, configured 
  const answer=await bridge.chat({sessionToken:'session-one',userId:'owner1',body:payload,context:'Ledger kosong'});
  assert.equal(answer.reply,'Widya actual agent result');assert.equal(answer.runtime.model,'kr/gpt-5.6-luna');
  assert.equal(calls[0].url,'/p/widya/v1/runs');assert.equal(calls[0].auth,'Bearer test-private-key-at-least-32-chars');
- assert.equal(calls[0].body.input,payload.message);assert.equal(calls[0].body.provider,undefined);assert.equal(calls[0].body.model,undefined);
+ assert.equal(calls[0].body.input.startsWith(payload.message+'\n\n'),true);assert.match(calls[0].body.input,/widya-dashboard-read/);assert.match(calls[0].body.input,/Ledger kosong/);assert.equal(calls[0].body.provider,undefined);assert.equal(calls[0].body.model,undefined);
  assert.equal(calls[0].body.conversation_history,undefined);assert.match(calls[0].body.instructions,/Ledger kosong/);
  await bridge.chat({sessionToken:'session-two',userId:'owner1',body:payload,context:''});
  assert.notEqual(calls[0].body.session_id,calls[2].body.session_id);

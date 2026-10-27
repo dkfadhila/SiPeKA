@@ -96,9 +96,10 @@ const sql=s=>cp.execFileSync('sudo',['-n','-u','postgres','psql','-X','-At','-v'
   for(const id of ['fund-position','recorded-income-expense']){
    const c=await browser.newContext({acceptDownloads:true});await c.addCookies([{name:'sipeka_session',value:'qa-owner',url:base}]);const p=await c.newPage();const downloads=[];p.on('download',d=>downloads.push(d));await p.goto(base);await p.waitForSelector('#loginGate.is-hidden',{state:'attached'});
    await p.evaluate(({id,today})=>{window.SipekaReports.downloadCsv(id,{branch:'a',dateFrom:today,dateTo:today}).catch(e=>window.exportError=e.message);},{id,today});await p.locator('#documentCompany').fill('DEVICE QA COMPANY');await p.locator('dialog button[type=submit]').click();
-   for(let i=0;i<50&&downloads.length<2;i++)await new Promise(r=>setTimeout(r,100));assert.equal(downloads.length,2);
+   for(let i=0;i<50&&downloads.length<1;i++)await new Promise(r=>setTimeout(r,100));assert.equal(downloads.length,1);assert.ok(downloads[0].suggestedFilename().endsWith('.csv'));
+   await p.evaluate(({id,today})=>{window.SipekaReports.downloadManifest(id,{branch:'a',dateFrom:today,dateTo:today}).catch(e=>window.exportError=e.message);},{id,today});await p.locator('#documentCompany').fill('DEVICE QA COMPANY');await p.locator('#documentBranch').selectOption('a');const metadata=p.waitForEvent('download');await p.locator('dialog button[type=submit]').click();await metadata;assert.equal(downloads.length,2);
    for(const d of downloads)await d.saveAs(root+'/report-artifacts/'+id+(d.suggestedFilename().endsWith('.json')?'.manifest.json':'.csv'));
-   const manifest=JSON.parse(fs.readFileSync('report-artifacts/'+id+'.manifest.json'));assert.ok(manifest.coverage);assert.equal(manifest.snapshot.basis,'CURRENT_SNAPSHOT_NOT_PERIOD_END');assert.ok(fs.readFileSync('report-artifacts/'+id+'.csv','utf8').startsWith('\uFEFFitem,amount_1'));checks.push('CSV + identity/coverage manifest '+id);await c.close();
+   const manifest=JSON.parse(fs.readFileSync('report-artifacts/'+id+'.manifest.json'));assert.ok(manifest.coverage);assert.equal(manifest.snapshot.basis,'CURRENT_SNAPSHOT_NOT_PERIOD_END');assert.match(fs.readFileSync('report-artifacts/'+id+'.csv','utf8'),/Kode dokumen/);checks.push('CSV + identity/coverage manifest '+id);await c.close();
   }
 
   await op.setViewportSize({width:1440,height:1000});await op.evaluate(()=>window.__sipekaApplyState('owner','all',{view:'reports'}));

@@ -1,7 +1,7 @@
 'use strict';
 // Authoritative numbers are allocated by PostgreSQL; this module never generates a sequence in memory.
 const crypto=require('node:crypto');
-const reportCodes=Object.freeze({'fund-position':'NRC','recorded-income-expense':'PB','company-profit-loss':'LR','compare-profit-loss':'LR','profit-loss':'LR','cash-flow':'AK','expense-breakdown':'RP','branch-performance':'KC','budget-actual':'AR','tax-summary':'RPK',ppn:'PPN',pph21:'PPH21',pph4:'PPH4',pbjt:'PBJT',umkm:'UMKM','tax-checklist':'KPP','general-ledger':'RT','management-report':'LM','audit-evidence':'BT','fund-requests':'PD','daily-closings':'CL','quarterly-owner':'LT','quarterly-data':'DT'});
+const reportCodes=Object.freeze({'fund-position':'NRC','recorded-income-expense':'PB','company-profit-loss':'LR','compare-profit-loss':'LR','profit-loss':'LR','cash-flow':'AK','expense-breakdown':'RP','branch-performance':'KC','branch-accountability':'PJC','budget-actual':'AR','tax-summary':'RPK',ppn:'PPN',pph21:'PPH21',pph4:'PPH4',pbjt:'PBJT',umkm:'UMKM','tax-checklist':'KPP','general-ledger':'RT','management-report':'LM','audit-evidence':'BT','fund-requests':'PD','daily-closings':'CL','quarterly-owner':'LT','quarterly-data':'DT'});
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const fail=(code,status=400)=>Object.assign(new Error(code),{code,status,statusCode:status});
 function romanMonth(month){if(!Number.isInteger(Number(month))||Number(month)<1||Number(month)>12)throw fail('DOCUMENT_INVALID_MONTH');return ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'][Number(month)-1];}

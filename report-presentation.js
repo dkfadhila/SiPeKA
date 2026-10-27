@@ -52,11 +52,19 @@ function compact(layout,id,{excel=false}={}){
   for(const label of ['Modal','Laba ditahan','Laba/(rugi) tahun berjalan','Prive'])add(label,[],'detail',2);
   add('Total Ekuitas',[],'total',1);add('TOTAL PASIVA',[],'total');add('TOTAL',[],'total');
  }else{
-  for(let r=6;r<old.length;r++){
-   const row=old[r],label=row[1]||row[0];if(!label||/Disusun|Disetujui|____|Nama \/ Jabatan/.test(label))continue;
-   add(label,indices.map(c=>row[c]),layout.spec.rows[r].some(c=>c.bold)?'total':'detail');
-  }
+  const takeCash=(label,r,type='detail',level=1)=>add(label,indices.map(c=>old[r-1][c]),type,level);
+  section('ARUS KAS DARI AKTIVITAS OPERASI');
+  for(let r=8;r<=16;r++)takeCash(old[r-1][1],r);
+  takeCash('Kas Bersih dari Aktivitas Operasi Terklasifikasi',17,'total',0);
+  section('ARUS KAS DARI AKTIVITAS INVESTASI');for(const r of [20,21])takeCash(old[r-1][1],r);takeCash(old[21][1],22,'total',0);
+  section('ARUS KAS DARI AKTIVITAS PENDANAAN');for(const r of [25,26,27,28])takeCash(old[r-1][1],r);takeCash(old[28][1],29,'total',0);
+  section('MUTASI ADVANCE DAN ARUS KAS BELUM DIKELOMPOKKAN');
+  for(const [label,key] of [['Penerimaan belum dikelompokkan','unclassifiedIncome'],['Pengeluaran belum dikelompokkan','unclassifiedExpense']])add(label,indices.map(c=>layout.cashUnclassified?.[c-2]?.[key]??null),'detail',1);
+  takeCash('KENAIKAN (PENURUNAN) KAS TERCATAT',31,'total',0);takeCash(old[31][1],32);takeCash(old[32][1],33,'total',0);
+  section('REKONSILIASI KAS');for(const r of [35,36])takeCash(old[r-1][1],r,r===36?'total':'detail');
+  section('REKONSILIASI LABA BERSIH KE KAS OPERASI');for(let r=39;r<=48;r++)takeCash(old[r-1][1],r,[47,48].includes(r)?'total':'detail',[47,48].includes(r)?0:1);
  }
+
  const notes=(recorded?(layout.recordedSummary?.notices||['Pendapatan dan beban tercatat belum tersedia. Angka kosong bukan pendapatan nol.']):layout.notes).filter(note=>kind!=='balance'||!note.startsWith('Kolom pembanding neraca')).map(note=>/^Akun historis belum/.test(note)?'Sebagian transaksi historis belum dipetakan ke pos laporan; nilainya belum masuk subtotal.':note);
  if(excel&&kind==='balance'){
   const priorDate=layout.previousPeriod?.to||'Belum tersedia';

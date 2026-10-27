@@ -24,7 +24,7 @@ test('cash and stafel balance comparisons keep every branch, repeated company co
   assert.equal(cols.length,id==='fund-position'?19:10);assert.equal(layout.continuations.length,id==='fund-position'?2:1);
   for(const i of [0,7])assert.ok(cols.some(c=>c.label.includes('Cabang '+i)));
   assert.equal(cols.filter(c=>c.label.startsWith('Perusahaan')).length,id==='fund-position'?2:1);
-  const table=layout.grid.slice(6).filter((_,i)=>layout.rowTypes[i+6]!=='section');assert.ok(table.every(row=>row.slice(1).every(v=>v===null||v==='')));
+  const table=layout.grid.slice(6).filter((_,i)=>layout.rowTypes[i+6]!=='section');if(id==='fund-position')assert.ok(table.every(row=>row.slice(1).every(v=>v===null||v==='')));else{const net=report.presentationData.rows.find(r=>r.item==='KENAIKAN (PENURUNAN) KAS TERCATAT');assert.equal(net.amount_9,'35200');assert.equal(net.amount_8,'7900');assert.ok(layout.grid.find(r=>r[0]==='KAS DAN SETARA KAS PADA AKHIR PERIODE').slice(1).every(v=>v===null));}
   const csv=reports.toCsv(report);assert.match(csv,/Cabang 7/);assert.doesNotMatch(csv,/account_code|4-1300/);
   const files=unzip(exportXlsx(layout,'Perusahaan QA')),content=files.map(f=>f.data.toString()).join('');assert.match(content,/Cabang 7/);assert.match(content,/Belum tersedia/);assert.doesNotMatch(content,/<f[ >]|account_code/);
  }

@@ -17,6 +17,7 @@ const sql=s=>cp.execFileSync('sudo',['-n','-u','postgres','psql','-X','-At','-v'
   await assert.rejects(issue(body(),'qa-staff'),{status:403});checks.push('Staff denied by current DB authorization');
   const request=body(),first=await issue(request),retry=await issue(request);assert.equal(first.id,retry.id);assert.equal(first.code,'LR/AMC/X/2026/001');assert.equal(first.sequence,'1');checks.push('exact retry returns the same immutable first number');
   await assert.rejects(issue({...request,date_to:'2026-10-30'}),{code:'DOCUMENT_IDEMPOTENCY_CONFLICT',status:409});checks.push('changed request cannot reuse idempotency key');
+  const accountability=await issue(body({report_id:'branch-accountability',date_from:'2026-10-28',date_to:'2026-10-28'}));assert.equal(accountability.code,'PJC/AMC/X/2026/001');checks.push('branch accountability has its own document prefix and counter');
   const repeated=await Promise.all(Array.from({length:15},()=>issue(request)));assert.ok(repeated.every(x=>x.id===first.id));checks.push('15 concurrent same-key retries allocate once');
   const concurrent=await Promise.all(Array.from({length:20},()=>issue(body())));assert.equal(new Set(concurrent.map(x=>x.code)).size,20);assert.deepEqual(concurrent.map(x=>Number(x.sequence)).sort((a,b)=>a-b),Array.from({length:20},(_,i)=>i+2));checks.push('20 concurrent distinct requests allocate unique contiguous sequences');
   const alias=await issue(body({report_id:'profit-loss'}));assert.equal(alias.sequence,'22');checks.push('PNL aliases share LR counter');
