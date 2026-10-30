@@ -10,7 +10,7 @@ test('embedded frontend contracts match maintained source modules',()=>{
 });
 
 test('payroll UI uses backend readiness, explicit publication, uncertain delivery and actionable import errors',async t=>{
- const entry={id:'employee-entry',batch_id:'employee-batch',period:'2026-10',preview_token:'preview-token',status:'DRAFT',email_status:null,row:{company_name:'Perusahaan QA',employee_id:'employee-1',full_name:'Ayu QA',department:'Operasional',branch_name:'Unit X1',email:'ayu@example.test',basic_salary:'2500000',allowances:'100000',deductions:'20000',pph21:'10000',net_salary:'2570000'}};
+ const entry={id:'employee-entry',batch_id:'employee-batch',period:'2026-10',preview_token:'preview-token',status:'DRAFT',email_status:null,row:{company_name:'Perusahaan QA',employee_id:'employee-1',full_name:'Ayu QA',job_title:'Admin QA',employment_status:'Tetap',operational_allowance:'30000',health_allowance:'20000',overtime:'40000',bonus:'10000',absence_deduction:'10000',late_deduction:'5000',violation_deduction:'5000',department:'Operasional',branch_name:'Unit X1',email:'ayu@example.test',basic_salary:'2500000',allowances:'100000',deductions:'20000',pph21:'10000',net_salary:'2570000'}};
  const writes=[];
  const script="window.testGeneration=1;window.SipekaCompany={};window.SipekaCurrentUser={id:'owner',role:'OWNER'};window.SipekaAuth={generation:()=>testGeneration,api:async(path,options={})=>{const r=await fetch(path,{method:options.method||'GET',headers:{'Content-Type':'application/json'},body:options.body?JSON.stringify(options.body):undefined});const d=await r.json();if(!r.ok)throw Error(d.error);return d;}};";
  const server=http.createServer((req,res)=>{
@@ -33,11 +33,12 @@ test('payroll UI uses backend readiness, explicit publication, uncertain deliver
  const importButton=page.locator('[data-employee-import] button'),send=page.locator('[data-employee-send]');
  assert.equal(await importButton.isDisabled(),true);assert.equal(await page.locator('[data-employee-consent]').isDisabled(),true);assert.match(await page.locator('#employeePayroll').innerText(),/Operasional · Unit X1/);
  await page.evaluate(()=>{SipekaCompany={name:'Perusahaan QA'};document.dispatchEvent(new Event('sipeka-company-saved'));});await page.waitForFunction(()=>!document.querySelector('[data-employee-import] button').disabled);
+ assert.match(await page.locator('#employeePayroll').innerText(),/Tunjangan operasional/);assert.match(await page.locator('#employeePayroll').innerText(),/Tunjangan kesehatan/);assert.match(await page.locator('#employeePayroll').innerText(),/Admin QA · Tetap/);await page.locator('[name=company_address]').fill('Alamat Kop QA');
  await page.locator('[name=csv]').setInputFiles({name:'qa.csv',mimeType:'text/csv',buffer:Buffer.from('fixture rejected by backend')});await importButton.click();await page.waitForFunction(()=>document.querySelector('[data-employee-status]').textContent.includes('Lengkapi departemen'));
  assert.equal(await page.locator('[data-employee-publish]').isDisabled(),true);await page.locator('[data-employee-publish-consent]').check();await page.locator('[data-employee-publish]').click();await page.waitForFunction(()=>!document.querySelector('[data-employee-publish]'));
  assert.equal(await send.isDisabled(),true);await page.locator('[data-employee-consent]').check();assert.equal(await send.isDisabled(),false);await send.click();await page.waitForFunction(()=>document.querySelector('[data-employee-delivery]').textContent.includes('Status kirim perlu diperiksa'));
  assert.equal(await send.isDisabled(),true);assert.equal(await page.locator('[data-employee-consent]').isDisabled(),true);await page.locator('[data-employee-refresh]').click();assert.equal(await send.isDisabled(),true);
- assert.deepEqual(writes.map(x=>x.route),['/api/employee-payroll/import','/api/employee-payroll/publish','/api/employee-payroll/entries/employee-entry/send']);assert.deepEqual(errors,[]);
+ assert.equal(writes[0].body.company_address,'Alamat Kop QA');assert.deepEqual(writes.map(x=>x.route),['/api/employee-payroll/import','/api/employee-payroll/publish','/api/employee-payroll/entries/employee-entry/send']);assert.deepEqual(errors,[]);
 });
 
 

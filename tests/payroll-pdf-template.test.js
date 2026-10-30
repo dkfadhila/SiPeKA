@@ -14,5 +14,5 @@ test('one Telegram document request carries private caption and actual PDF bytes
 test('A4 private slip includes publication WIB date and clean reserved signature area',()=>{
  const pdf=renderSlipPdf(row,{publishedAt}),s=pdf.toString('latin1');
  assert.match(s,/Raditya Martanegara/);assert.match(s,/Penanggung jawab/);assert.match(s,/11 Oktober 2026/);assert.match(s,/2\.570\.000/);assert.match(s,/Laundry Pusat/);assert.match(s,/MediaBox \[0 0 595 842\]/);assert.ok(!s.includes('ttd.'));
- const {SIGNATURE_AREA}=require('../payroll-pdf');assert.deepEqual(SIGNATURE_AREA,{x:365,y:172,width:142,height:64});assert.ok(SIGNATURE_AREA.y+SIGNATURE_AREA.height<290);
+ const {SIGNATURE_AREA}=require('../payroll-pdf');assert.deepEqual(SIGNATURE_AREA,{x:365,y:112,width:142,height:64});assert.ok(SIGNATURE_AREA.y+SIGNATURE_AREA.height<290);
 });

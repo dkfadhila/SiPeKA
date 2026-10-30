@@ -7,6 +7,8 @@
   OPERATIONAL_INPUT_INVALID:'Periksa nama, unit aktif, dan status karyawan.',
   OPERATIONAL_DEVICE_INVALID:'Device tidak tersedia. Muat ulang daftar device.',
   OPERATIONAL_DEVICE_LABEL_CONFLICT:'Nama device tersebut sudah dipakai di unit ini.',
+  PAYROLL_COMPANY_ADDRESS_INVALID:'Alamat kop maksimal 180 karakter dalam satu baris.',
+  PAYROLL_TEMPLATE_TYPE:'Pilih template gaji umum atau laundry.',
   PAYROLL_COMPANY_REQUIRED:'Simpan nama perusahaan sebelum mengimpor gaji.',
   PAYROLL_EMPLOYEE_DEPARTMENT_REQUIRED:'Lengkapi departemen karyawan di direktori sebelum mengimpor gaji.',
   PAYROLL_STAFF_NOT_FOUND:'ID karyawan tidak ditemukan atau karyawan sudah nonaktif. Periksa direktori dan file CSV.',

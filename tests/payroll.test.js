@@ -14,7 +14,7 @@ test('AES GCM binds entry identity and hides amounts; OWNER gate precedes DB',as
 test('PDF contains official slip and adapter blocks missing config and private chat violations',async()=>{
  const {renderSlipPdf,createNotificationAdapter}=require('../payroll-delivery');
  const row={period:'2026-09',username:'staff',full_name:'Staff',basic_salary:2500000,allowances:100000,deductions:20000,pph21:10000,net_salary:2570000};
- const pdf=renderSlipPdf(row,{companyName:'Company'});assert.equal(pdf.subarray(0,8).toString(),'%PDF-1.4');assert.match(pdf.toString(),/SiPeKA/);assert.match(pdf.toString(),/2\.570\.000/);assert.match(pdf.toString(),/SLIP GAJI/);
+ const pdf=renderSlipPdf(row,{companyName:'Company'});assert.equal(pdf.subarray(0,8).toString(),'%PDF-1.4');assert.ok(!pdf.toString().includes('Dokumen pribadi.'));assert.ok(!pdf.toString().includes('Pembayaran melalui:'));assert.match(pdf.toString(),/2\.570\.000/);assert.ok(!pdf.toString().includes('(SLIP GAJI)'));assert.match(pdf.toString(),/Nomor Dokumen/);
  const adapter=createNotificationAdapter({});await assert.rejects(adapter.email({to:'staff@example.com',row}),/EMAIL_CONFIG/);
  await assert.rejects(adapter.telegram({to:'-123',row}),/PRIVATE_CHAT/);
  await assert.rejects(adapter.telegram({to:'123',row}),/TELEGRAM_CONFIG/);

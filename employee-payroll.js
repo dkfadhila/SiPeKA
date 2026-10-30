@@ -3,20 +3,54 @@ const crypto=require('node:crypto');
 const {createCipher,parseCsv,validateCsv,fault}=require('./payroll');
 const LEGACY_HEADER='period,employee_id,basic_salary,allowances,deductions,pph21';
 const HEADER='period,employee_id,basic_salary,overtime,bonus,absence_deduction,late_deduction,violation_deduction,pph21';
+const GENERAL_HEADER=HEADER+',payment_method';
+const LAUNDRY_HEADER='period,employee_id,basic_salary,meal_allowance,transport_allowance,ironing_regular,ironing_express,overtime,bonus,deductions,pph21,employment_status,payment_method';
+const FULL_GENERAL_HEADER='period,employee_id,basic_salary,operational_allowance,health_allowance,overtime,bonus,absence_deduction,late_deduction,violation_deduction,pph21,job_title,employment_status,payment_method';
+const FULL_LAUNDRY_HEADER='period,employee_id,basic_salary,operational_allowance,health_allowance,meal_allowance,transport_allowance,ironing_regular,ironing_express,overtime,bonus,absence_deduction,late_deduction,violation_deduction,other_deductions,pph21,job_title,employment_status,payment_method';
 const {renderSlipPdf}=require('./payroll-pdf');
 const documentFormat=require('./document-format');
 function validate(csv,staff){
  if(typeof csv!=='string')throw fault('PAYROLL_CSV_HEADER');
  const table=parseCsv(csv),header=table.shift()?.join(',');
- if(![HEADER,LEGACY_HEADER].includes(header))throw fault('PAYROLL_CSV_HEADER');
+ if(![HEADER,GENERAL_HEADER,LEGACY_HEADER,LAUNDRY_HEADER,FULL_GENERAL_HEADER,FULL_LAUNDRY_HEADER].includes(header))throw fault('PAYROLL_CSV_HEADER');
  const detail=[];
- if(header===HEADER){
+ if(header===FULL_GENERAL_HEADER||header===FULL_LAUNDRY_HEADER){
+  const keys=header.split(','),laundry=header===FULL_LAUNDRY_HEADER;
+  const normalized=table.map(r=>{
+   if(r.length!==keys.length)throw fault('PAYROLL_CSV_ROWS');
+   if(r.some(v=>/[\x00-\x1f\x7f]/.test(v)||/^[=+@-]/.test(v)))throw fault('PAYROLL_CSV_CELL');
+   const input=Object.fromEntries(keys.map((key,i)=>[key,r[i]]));
+   for(const key of keys.slice(2,-3)){const value=input[key];if(!/^(0|[1-9]\d{0,15})$/.test(value)||!Number.isSafeInteger(Number(value)))throw fault('PAYROLL_INTEGER_IDR');input[key]=Number(value);}
+   if(input.job_title.length>64||input.employment_status.length>48||input.payment_method.length>64)throw fault('PAYROLL_CSV_CELL');
+   const allowances=['operational_allowance','health_allowance','overtime','bonus',...(laundry?['meal_allowance','transport_allowance','ironing_regular','ironing_express']:[])].reduce((n,key)=>n+input[key],0);
+   const deductions=['absence_deduction','late_deduction','violation_deduction',...(laundry?['other_deductions']:[])].reduce((n,key)=>n+input[key],0);
+   if(!Number.isSafeInteger(allowances)||!Number.isSafeInteger(deductions))throw fault('PAYROLL_NET_INVALID');
+   const {period,employee_id,basic_salary,pph21,...components}=input;
+   detail.push({...components,payroll_type:laundry?'LAUNDRY':'GENERAL'});
+   return [period,employee_id,basic_salary,allowances,deductions,pph21].join(',');
+  });csv=LEGACY_HEADER+'\r\n'+normalized.join('\r\n')+'\r\n';
+ }
+ if(header===LAUNDRY_HEADER){
+  const normalized=table.map(r=>{
+   if(r.length!==13)throw fault('PAYROLL_CSV_ROWS');
+   if(r.some(v=>/[\x00-\x1f\x7f]/.test(v)||/^[=+@-]/.test(v)))throw fault('PAYROLL_CSV_CELL');
+   const [period,employee_id,...rest]=r,values=rest.slice(0,9).map(v=>{if(!/^(0|[1-9]\d{0,15})$/.test(v)||!Number.isSafeInteger(Number(v)))throw fault('PAYROLL_INTEGER_IDR');return Number(v);});
+   const [basic_salary,meal_allowance,transport_allowance,ironing_regular,ironing_express,overtime,bonus,deductions,pph21]=values;
+   const allowances=meal_allowance+transport_allowance+ironing_regular+ironing_express+overtime+bonus;
+   if(!Number.isSafeInteger(allowances))throw fault('PAYROLL_NET_INVALID');
+   const [employment_status,payment_method]=rest.slice(9);if(employment_status.length>48||payment_method.length>64)throw fault('PAYROLL_CSV_CELL');
+   detail.push({payroll_type:'LAUNDRY',meal_allowance,transport_allowance,ironing_regular,ironing_express,overtime,bonus,employment_status,payment_method});
+   return [period,employee_id,basic_salary,allowances,deductions,pph21].join(',');
+  });csv=LEGACY_HEADER+'\r\n'+normalized.join('\r\n')+'\r\n';
+ }
+ if(header===HEADER||header===GENERAL_HEADER){
   const amount=v=>{if(!/^(0|[1-9]\d{0,15})$/.test(v)||!Number.isSafeInteger(Number(v)))throw fault('PAYROLL_INTEGER_IDR');return Number(v);};
   const normalized=table.map(r=>{
-   if(r.length!==9)throw fault('PAYROLL_CSV_ROWS');
+   if(r.length!==(header===GENERAL_HEADER?10:9))throw fault('PAYROLL_CSV_ROWS');
+   if(header===GENERAL_HEADER&&(r[9].length>64||/[\x00-\x1f\x7f]/.test(r[9])||/^[=+@-]/.test(r[9])))throw fault('PAYROLL_CSV_CELL');
    const [period,employee_id,basic,overtime,bonus,absence,late,violation,pph21]=r;
    const d={overtime:amount(overtime),bonus:amount(bonus),absence_deduction:amount(absence),late_deduction:amount(late),violation_deduction:amount(violation)};
-   detail.push(d);
+   detail.push({...d,...(header===GENERAL_HEADER?{payment_method:r[9]}:{})});
    return [period,employee_id,basic,String(d.overtime+d.bonus),String(d.absence_deduction+d.late_deduction+d.violation_deduction),pph21].join(',');
   });
   csv=LEGACY_HEADER+'\r\n'+normalized.join('\r\n')+'\r\n';
@@ -39,15 +73,16 @@ function service({pool,env=process.env,transport}={}){
   const {payload_cipher,...metadata}=e;return {...metadata,row:{...row,document_code:documentFormat.slipCode(row)}};
  });}
  async function entry(token,id){const e=(await entries(token)).find(e=>e.id===id);if(!e)throw fault('PAYROLL_NOT_FOUND',404);return e;}
- const identity=row=>({company_name:row.company_name,branch_name:row.branch_name,department:row.department});
+ const identity=row=>({company_name:row.company_name,company_address:row.company_address,branch_name:row.branch_name,department:row.department});
  return {
  async list(token){const rows=await entries(token);return {rows,readiness:{encryption:/^[a-fA-F0-9]{64}$/.test(env.PAYROLL_ENCRYPTION_KEY||''),email:require('./payroll-resend').resendReady(env)}};},
- async importCsv(token,csv){
+ async importCsv(token,csv,{company_address}={}){
+  if(company_address!==undefined&&(typeof company_address!=='string'||company_address.length>180||/[\x00-\x1f\x7f]/.test(company_address)))throw fault('PAYROLL_COMPANY_ADDRESS_INVALID');
   const profile=await company(token);if(!profile.name)throw fault('PAYROLL_COMPANY_REQUIRED');
   const staff=await directory(token),units=(await pool.query('SELECT id,name,code FROM business_units')).rows;
   const rows=validate(csv,staff.map(s=>({...s,branch_name:units.find(u=>u.id===s.branch_id)?.name})));
   const id=crypto.randomUUID(),preview_token=crypto.randomUUID();
-  const prepared=rows.map(row=>{const entryId=crypto.randomUUID();return {id:entryId,staff_id:row.employee_id,period:row.period,payload_cipher:cipher().seal((()=>{const snapshot={...row,unit_code:documentFormat.unitCode(units.find(u=>u.id===row.branch_id)||row),department_code:documentFormat.departmentCode(row.department),company_name:profile.name,entry_id:entryId};snapshot.document_code=documentFormat.slipCode(snapshot);return snapshot;})(),entryId)};});
+  const prepared=rows.map(row=>{const entryId=crypto.randomUUID();return {id:entryId,staff_id:row.employee_id,period:row.period,payload_cipher:cipher().seal((()=>{const snapshot={...row,unit_code:documentFormat.unitCode(units.find(u=>u.id===row.branch_id)||row),department_code:documentFormat.departmentCode(row.department),company_name:profile.name,...(company_address!==undefined?{company_address:company_address.trim()}:{}),entry_id:entryId};snapshot.document_code=documentFormat.slipCode(snapshot);return snapshot;})(),entryId)};});
   return call(token,'IMPORT',{id,period:rows[0].period,preview_token,rows:prepared});
  },
  async publish(token,body){if(body.confirmed!==true)throw fault('PAYROLL_CONFIRM_REQUIRED');const rows=await entries(token),batch=rows.filter(e=>e.batch_id===body.id);if(!batch.length)throw fault('PAYROLL_NOT_FOUND',404);return call(token,'PUBLISH',body);},
@@ -77,4 +112,4 @@ function service({pool,env=process.env,transport}={}){
  }
  };
 }
-module.exports={HEADER,LEGACY_HEADER,validate,service};
+module.exports={FULL_GENERAL_HEADER,FULL_LAUNDRY_HEADER,GENERAL_HEADER,LAUNDRY_HEADER,HEADER,LEGACY_HEADER,validate,service};
