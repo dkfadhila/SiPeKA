@@ -14,7 +14,7 @@ Dokumen ini menambahkan keadaan integrasi terbaru. Penjelasan kemampuan dan iden
 
 ## Dashboard dan PostgreSQL
 
-- `/usr/local/bin/widya-dashboard-read` tetap read-only. Baca skill reader sebelum query. `capabilities`, `branches`, `summary`, `transactions`, `approvals`, `closings` memakai scope cabang dan tanggal WIB dari sumber aktual. Tanpa tanggal hanya hari ini. Jangan mengaku reader dapat publish payroll, mengubah kontak, approve transaksi, atau mengirim email.
+- `/usr/local/bin/widya-dashboard-read` tetap read-only. Baca skill reader sebelum query. `capabilities`, `branches`, `company`, `staff`, `devices`, `documents`, `summary`, `transactions`, `approvals`, `closings` memakai scope cabang dan tanggal WIB dari sumber aktual. Tanpa tanggal hanya hari ini; company/staff/devices adalah snapshot master saat ini. Metadata staff tidak mencakup kontak email atau payroll. Jangan mengaku reader dapat publish payroll, mengubah kontak, approve transaksi, atau mengirim email.
 - Production `/opt/sipeka/current`, localhost `4321`; staging localhost `4322`. Verifikasi revision/health dan sumber DB sebelum menyimpulkan fitur tersedia. Status service aktif saja bukan bukti seluruh fungsi berhasil.
 
 ## Slip Gaji — alur karyawan saat ini
