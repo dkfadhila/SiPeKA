@@ -1,6 +1,6 @@
 # Slip Gaji: template, pemeriksaan penerima, dan dokumen
 
-Revisi 2 November 2026. Pengaturan SMTP/domain/catch-all karyawan ditunda sesuai instruksi Owner. Tidak ada perubahan provider, kredensial, master email, antrean, atau konfigurasi VPS dalam revisi lokal ini.
+Revisi 2 November 2026. Pengaturan SMTP/domain/catch-all karyawan ditunda sesuai instruksi Owner. Provider email, kredensial email, master email dan antrean payroll tidak diubah. Rilis aplikasi a81d236 sudah dipasang pada production/staging; konteks dan kebijakan output file Hermes diperbarui terpisah dengan backup.
 
 ## Menu dan template
 
@@ -29,5 +29,5 @@ Wording bersama berada di `public/document-approval.js`. Laporan PDF, slip PDF h
 - Tes unit, browser, HTTP server dan prosedur PostgreSQL berjalan pada fixture terisolasi dengan provider email palsu/offline.
 - PDF.js dipin `6.5.438`; produksi Node 24 memenuhi kebutuhan runtime. Rilis berikutnya harus menginstal dependency lockfile; jangan hanya memakai symlink node_modules dari rilis lama yang belum memiliki pembaca PDF.
 - Microsoft Excel membuka dan menghitung ulang 48 varian XLSX tanpa error formula; dua slip PDF dirender dan ditinjau. Pagination cetak PDF dari Excel belum diverifikasi karena host tidak memiliki printer.
-- Audit VPS dilakukan read-only. Production belum memuat perubahan ini. Staging memakai schema lama tanpa operational_staff, sehingga health 200 staging tidak menjadi bukti alur payroll baru. Jangan restart staging memakai symlink produksi tanpa menyelaraskan rilis/schema lewat proses terpisah.
-- Teks PDF dapat dimanipulasi secara visual; pencocokan teks tidak menggantikan pemeriksaan dokumen oleh Owner. Tidak ada pengiriman ke penerima nyata atau pemrosesan model Hermes live sebagai bagian tes ini.
+- Audit awal VPS dilakukan read-only, kemudian deploy diotorisasi Owner. Production dan staging kini memakai rilis a81d236. Staging telah dimigrasikan ke 18 migrasi dengan database/login terpisah, env terisolasi dan pin rilis immutable. Email/worker/Hermes staging nonaktif. Production tidak menerima migrasi baru atau perubahan data gaji.
+- Teks PDF dapat dimanipulasi secara visual; pencocokan teks tidak menggantikan pemeriksaan dokumen oleh Owner. Tes live Hermes menggunakan PDF/JSON payroll simulasi dan berhasil membaca identitas, email kosong, membuat output file dan mempertahankan sesi. Satu file TXT simulasi dikirim lewat Hermes native ke Radit untuk memverifikasi transport Telegram; tidak ada payroll/email nyata dikirim. Lihat docs/widya/telegram-native-files.md untuk batas acceptance dan rollback.
