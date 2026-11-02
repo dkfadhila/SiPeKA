@@ -44,6 +44,7 @@ function workbook(type,rows=[]){
  slip.data=Buffer.from(slip.data.toString().replace('<worksheet ','<worksheet xmlns:r="'+relns+'" ').replace('</worksheet>','<drawing r:id="rIdFrame"/></worksheet>'));
  const types=files.find(f=>f.name==='[Content_Types].xml');let tx=types.data.toString();if(!/Extension="png"/.test(tx))tx=tx.replace('</Types>','<Default Extension="png" ContentType="image/png"/></Types>');types.data=Buffer.from(tx.replace('</Types>','<Override PartName="/xl/drawings/frame.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>'));
  const book=files.find(f=>f.name==='xl/workbook.xml');let bx=book.data.toString().replace(/<definedNames>[\s\S]*?<\/definedNames>/g,'');bx=bx.replace('</workbook>','<definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">&apos;Slip Gaji&apos;!$A$1:$H$46</definedName><definedName name="_xlnm.Print_Area" localSheetId="1">Database!$A$1:$'+col(keys.length-1)+'$'+Math.max(5,rows.length+4)+'</definedName></definedNames></workbook>');book.data=Buffer.from(bx.replace(/<calcPr\b[^>]*\/>/g,'').replace('</workbook>','<calcPr fullCalcOnLoad="1" forceFullCalc="1"/></workbook>'));
+ require('./document-approval-xlsx').payroll(files);
  return zip(files);
 }
 module.exports={workbook};

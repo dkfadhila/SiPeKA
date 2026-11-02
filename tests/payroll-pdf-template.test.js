@@ -9,10 +9,10 @@ test('exact huge integer formatting, escaped PDF literals, missing fields, stabl
 });
 test('one Telegram document request carries private caption and actual PDF bytes',async()=>{
  const calls=[];const adapter=createNotificationAdapter({telegramToken:'offline-fixture',fetchImpl:async(url,opt)=>{calls.push({url,opt});return {ok:true,json:async()=>({ok:true,result:{message_id:7,chat:{id:123,type:'private'}}})};}});
- await adapter.telegram({to:'123',row,publishedAt});assert.equal(calls.length,1);assert.ok(calls[0].url.endsWith('/sendDocument'));const form=calls[0].opt.body;assert.ok(form instanceof FormData);assert.equal(form.get('chat_id'),'123');assert.equal(form.get('protect_content'),'true');assert.match(form.get('caption'),/Halo Ayu/);assert.match(form.get('caption'),/11 Oktober 2026/);assert.ok(!form.has('parse_mode'));assert.equal(form.get('document').type,'application/pdf');const bytes=Buffer.from(await form.get('document').arrayBuffer());assert.equal(bytes.subarray(0,8).toString(),'%PDF-1.4');assert.match(bytes.toString(),/Raditya Martanegara/);
+ await adapter.telegram({to:'123',row,publishedAt});assert.equal(calls.length,1);assert.ok(calls[0].url.endsWith('/sendDocument'));const form=calls[0].opt.body;assert.ok(form instanceof FormData);assert.equal(form.get('chat_id'),'123');assert.equal(form.get('protect_content'),'true');assert.match(form.get('caption'),/Halo Ayu/);assert.match(form.get('caption'),/11 Oktober 2026/);assert.ok(!form.has('parse_mode'));assert.equal(form.get('document').type,'application/pdf');const bytes=Buffer.from(await form.get('document').arrayBuffer());assert.equal(bytes.subarray(0,8).toString(),'%PDF-1.4');assert.match(bytes.toString(),/RADITYA MARTANEGARA/);
 });
 test('A4 private slip includes publication WIB date and clean reserved signature area',()=>{
  const pdf=renderSlipPdf(row,{publishedAt}),s=pdf.toString('latin1');
- assert.match(s,/Raditya Martanegara/);assert.match(s,/Penanggung jawab/);assert.match(s,/11 Oktober 2026/);assert.match(s,/2\.570\.000/);assert.match(s,/Laundry Pusat/);assert.match(s,/MediaBox \[0 0 595 842\]/);assert.ok(!s.includes('ttd.'));
+ assert.match(s,/RADITYA MARTANEGARA/);assert.match(s,/Direktur/);assert.match(s,/11 Oktober 2026/);assert.match(s,/2\.570\.000/);assert.match(s,/Laundry Pusat/);assert.match(s,/MediaBox \[0 0 595 842\]/);assert.ok(!s.includes('ttd.'));
  const {SIGNATURE_AREA}=require('../payroll-pdf');assert.deepEqual(SIGNATURE_AREA,{x:365,y:112,width:142,height:64});assert.ok(SIGNATURE_AREA.y+SIGNATURE_AREA.height<290);
 });

@@ -11,6 +11,13 @@ const {renderSlipPdf}=require('./payroll-pdf');
 const documentFormat=require('./document-format');
 function validate(csv,staff){
  if(typeof csv!=='string')throw fault('PAYROLL_CSV_HEADER');
+ const inputTable=parseCsv(csv.replace(/^\uFEFF/,'')),inputHeader=inputTable[0]||[];
+ let sourceEmails=null;
+ if(inputHeader.at(-1)==='email'){
+  sourceEmails=inputTable.slice(1).map(r=>r.at(-1));
+  const quote=v=>'"'+String(v).replace(/"/g,'""')+'"';
+  csv=inputTable.map(r=>r.slice(0,-1).map(quote).join(',')).join('\r\n');
+ }
  const table=parseCsv(csv),header=table.shift()?.join(',');
  if(![HEADER,GENERAL_HEADER,LEGACY_HEADER,LAUNDRY_HEADER,FULL_GENERAL_HEADER,FULL_LAUNDRY_HEADER].includes(header))throw fault('PAYROLL_CSV_HEADER');
  const detail=[];
@@ -59,14 +66,16 @@ function validate(csv,staff){
  return validateCsv(csv.replace(/^\uFEFF/,'').replace(LEGACY_HEADER,LEGACY_HEADER.replace('employee_id','user_id')),users).map((row,i)=>{
   const s=staff.find(s=>s.id===row.user_id);
   if(!s?.department)throw fault('PAYROLL_EMPLOYEE_DEPARTMENT_REQUIRED');
-  return {...row,...detail[i],employee_id:s.id,department:s.department,email:s.email||null,branch_id:s.branch_id,branch_name:s.branch_name};
+  const canonical=require('./payroll-upload').canonicalEmail,email=canonical(s.email);
+  if(sourceEmails){const source=canonical(sourceEmails[i]);if(sourceEmails[i]&&!source)throw fault('PAYROLL_EMAIL_INVALID');if(source&&source!==email)throw fault('PAYROLL_PDF_EMAIL_MISMATCH');}
+  return {...row,...detail[i],employee_id:s.id,department:s.department,email,staff_revision:s.revision??null,branch_id:s.branch_id,branch_name:s.branch_name,...(sourceEmails?{source_email:canonical(sourceEmails[i])}:{})};
  });
 }
 function service({pool,env=process.env,transport}={}){
  const cipher=()=>createCipher(env.PAYROLL_ENCRYPTION_KEY);
  const call=async(token,op,p={},client=pool)=>(await client.query('SELECT employee_payroll_access($1,$2,$3::jsonb) result',[token,op,JSON.stringify(p)])).rows[0].result;
  const company=async token=>(await pool.query('SELECT company_profile_access($1,NULL) result',[token])).rows[0].result;
- const directory=async token=>(await pool.query('SELECT operational_directory($1,NULL) result',[token])).rows[0].result;
+ const directory=async(token,client=pool)=>(await client.query('SELECT operational_directory($1,NULL) result',[token])).rows[0].result;
  async function entries(token){return (await call(token,'LIST')).map(e=>{
   const row=cipher().open(e.payload_cipher,e.id);
   if(row.employee_id!==e.staff_id||row.period!==e.period)throw fault('PAYROLL_PAYLOAD_IDENTITY',503);
@@ -74,32 +83,59 @@ function service({pool,env=process.env,transport}={}){
  });}
  async function entry(token,id){const e=(await entries(token)).find(e=>e.id===id);if(!e)throw fault('PAYROLL_NOT_FOUND',404);return e;}
  const identity=row=>({company_name:row.company_name,company_address:row.company_address,branch_name:row.branch_name,department:row.department});
+ const upload=require('./payroll-upload');
+ function currentRecipient(row,staff){const s=staff.find(s=>s.id===row.employee_id);return !!s&&s.active&&upload.canonicalEmail(s.email)===row.email&&!!row.email&&s.name===row.full_name&&s.department===row.department&&s.branch_id===row.branch_id&&(row.staff_revision==null||row.staff_revision===s.revision)&&staff.filter(s=>upload.canonicalEmail(s.email)===row.email).length===1;}
+ async function preparedUpload(token,body){
+  if(!body||!['csv','pdf'].includes(body.format))throw fault('PAYROLL_UPLOAD_FORMAT');
+  const profile=await company(token);if(!profile.name)throw fault('PAYROLL_COMPANY_REQUIRED');
+  const units=(await pool.query('SELECT id,name,code FROM business_units')).rows;
+  const staff=(await directory(token)).map(s=>({...s,branch_name:units.find(u=>u.id===s.branch_id)?.name}));
+  let rows,warnings=[],blockers=[];
+  if(body.format==='csv'){rows=validate(body.csv,staff);if(rows.some(r=>!r.email))blockers.push('PAYROLL_EMAIL_MISSING');}
+  else{
+   const bytes=upload.pdfBytes(body.data_base64),text=await upload.extractPdf(body.data_base64),match=upload.matchPdf(text,staff,body.period);
+   warnings=match.warnings;blockers=match.blockers;const s=match.employee;
+   rows=[{period:match.period,employee_id:s.id,full_name:s.name,department:s.department,branch_id:s.branch_id,branch_name:s.branch_name,email:match.email,staff_revision:s.revision??null,upload_kind:'PDF',source_email:match.source_email,source_pdf:{data_base64:bytes.toString('base64'),sha256:crypto.createHash('sha256').update(bytes).digest('hex')},net_salary:null}];
+  }
+  const digest=upload.fingerprint({format:body.format,rows,company:profile,company_address:body.company_address||''});
+  return {profile,units,rows,warnings,blockers,digest};
+ }
+ async function saveRows(token,rows,profile,units,company_address){
+  if(rows.some(row=>!row.email))throw fault('PAYROLL_EMAIL_MISSING');
+  if(company_address!==undefined&&(typeof company_address!=='string'||company_address.length>180||/[\x00-\x1f\x7f]/.test(company_address)))throw fault('PAYROLL_COMPANY_ADDRESS_INVALID');
+  const id=crypto.randomUUID(),preview_token=crypto.randomUUID();
+  const prepared=rows.map(row=>{const entryId=crypto.randomUUID();const snapshot={...row,unit_code:documentFormat.unitCode(units.find(u=>u.id===row.branch_id)||row),department_code:documentFormat.departmentCode(row.department),company_name:profile.name,...(company_address!==undefined?{company_address:company_address.trim()}:{}),entry_id:entryId};snapshot.document_code=documentFormat.slipCode(snapshot);return {id:entryId,staff_id:row.employee_id,period:row.period,payload_cipher:cipher().seal(snapshot,entryId)};});
+  return call(token,'IMPORT',{id,period:rows[0].period,preview_token,rows:prepared});
+ }
+ function pdfBytes(row,publishedAt){if(row.source_pdf){const bytes=upload.pdfBytes(row.source_pdf.data_base64);if(crypto.createHash('sha256').update(bytes).digest('hex')!==row.source_pdf.sha256)throw fault('PAYROLL_PDF_INVALID');return bytes;}return renderSlipPdf(row,{publishedAt,documentIdentity:identity(row)});}
  return {
- async list(token){const rows=await entries(token);return {rows,readiness:{encryption:/^[a-fA-F0-9]{64}$/.test(env.PAYROLL_ENCRYPTION_KEY||''),email:require('./payroll-resend').resendReady(env)}};},
+ async list(token){const staff=await directory(token),rows=(await entries(token)).map(e=>{const {source_pdf,...row}=e.row;return {...e,row,recipient_valid:currentRecipient(e.row,staff)};});return {rows,readiness:{encryption:/^[a-fA-F0-9]{64}$/.test(env.PAYROLL_ENCRYPTION_KEY||''),email:require('./payroll-resend').resendReady(env)}};},
+ async reviewUpload(token,body){const p=await preparedUpload(token,body);return {format:body.format,rows:p.rows.map(({source_pdf,...r})=>r),warnings:p.warnings,blockers:p.blockers,review_token:p.blockers.length?null:upload.reviewToken(env.PAYROLL_ENCRYPTION_KEY,token,p.digest),requires_review:true,engine:'sipeka-payroll-verifier'};},
+ async importUpload(token,body){if(body.confirmed!==true)throw fault('PAYROLL_CONFIRM_REQUIRED');const p=await preparedUpload(token,body);if(p.blockers.length)throw fault(p.blockers[0]);upload.verifyToken(env.PAYROLL_ENCRYPTION_KEY,token,p.digest,body.review_token);return saveRows(token,p.rows,p.profile,p.units,body.company_address);},
  async importCsv(token,csv,{company_address}={}){
   if(company_address!==undefined&&(typeof company_address!=='string'||company_address.length>180||/[\x00-\x1f\x7f]/.test(company_address)))throw fault('PAYROLL_COMPANY_ADDRESS_INVALID');
   const profile=await company(token);if(!profile.name)throw fault('PAYROLL_COMPANY_REQUIRED');
   const staff=await directory(token),units=(await pool.query('SELECT id,name,code FROM business_units')).rows;
   const rows=validate(csv,staff.map(s=>({...s,branch_name:units.find(u=>u.id===s.branch_id)?.name})));
-  const id=crypto.randomUUID(),preview_token=crypto.randomUUID();
-  const prepared=rows.map(row=>{const entryId=crypto.randomUUID();return {id:entryId,staff_id:row.employee_id,period:row.period,payload_cipher:cipher().seal((()=>{const snapshot={...row,unit_code:documentFormat.unitCode(units.find(u=>u.id===row.branch_id)||row),department_code:documentFormat.departmentCode(row.department),company_name:profile.name,...(company_address!==undefined?{company_address:company_address.trim()}:{}),entry_id:entryId};snapshot.document_code=documentFormat.slipCode(snapshot);return snapshot;})(),entryId)};});
-  return call(token,'IMPORT',{id,period:rows[0].period,preview_token,rows:prepared});
+  return saveRows(token,rows,profile,units,company_address);
  },
  async publish(token,body){if(body.confirmed!==true)throw fault('PAYROLL_CONFIRM_REQUIRED');const rows=await entries(token),batch=rows.filter(e=>e.batch_id===body.id);if(!batch.length)throw fault('PAYROLL_NOT_FOUND',404);return call(token,'PUBLISH',body);},
  async filename(token,id){const e=await entry(token,id);return documentFormat.filename(documentFormat.slipCode(e.row)||'slip-gaji')+'.pdf';},
- async pdf(token,id){const e=await entry(token,id);return renderSlipPdf(e.row,{publishedAt:e.published_at,documentIdentity:identity(e.row)});},
+ async pdf(token,id){const e=await entry(token,id);return pdfBytes(e.row,e.published_at);},
  async send(token,id,body){
   if(body.confirmed!==true)throw fault('PAYROLL_CONFIRM_REQUIRED');
   const e=await entry(token,id);if(e.status!=='PUBLISHED')throw fault('PAYROLL_NOT_PUBLISHED',409);
   if(body.email!==e.row.email||!e.row.email)throw fault('PAYROLL_CONTACT_CHANGED',409);
+  if(!currentRecipient(e.row,await directory(token)))throw fault('PAYROLL_CONTACT_CHANGED',409);
   const mailer=transport||require('./payroll-resend').createResendTransport({env});
-  const pdf=renderSlipPdf(e.row,{publishedAt:e.published_at,documentIdentity:identity(e.row)});
+  const pdf=pdfBytes(e.row,e.published_at);
   const claim=await call(token,'CLAIM',{id,email:e.row.email,confirmed:true,job_id:crypto.randomUUID()});
   if(!claim.acquired)return claim;
   const client=await pool.connect();
   try{
    await client.query('BEGIN');
    await call(token,'FENCE',{id,email:e.row.email},client);
+   if(!currentRecipient(e.row,await directory(token,client)))throw fault('PAYROLL_CONTACT_CHANGED',409);
    const template=require('./payroll-email-template').payrollEmail(e.row,{publishedAt:e.published_at});
    const result=await mailer.sendMail({from:env.PAYROLL_EMAIL_FROM,to:e.row.email,subject:template.subject,text:template.text,html:template.html,messageId:`<${claim.id}@payroll.sipeka>`,attachments:[{filename:template.filename,content:pdf,contentType:'application/pdf'}]});
    if(!result?.accepted?.includes(e.row.email)||!result.messageId)throw fault('PAYROLL_EMAIL_ACCEPTANCE_UNKNOWN',503);
@@ -107,7 +143,7 @@ function service({pool,env=process.env,transport}={}){
    await client.query('COMMIT');return finished;
   }catch{
    try{await client.query('ROLLBACK');}catch{}
-   try{return await call(token,'FINISH',{id:claim.id,status:'uncertain'});}catch{throw fault('PAYROLL_DELIVERY_UNCERTAIN',503);}
+   try{return await call(token,'FINISH',{id:claim.id,status:'uncertain'},client);}catch{throw fault('PAYROLL_DELIVERY_UNCERTAIN',503);}
   }finally{client.release();}
  }
  };

@@ -28,8 +28,8 @@ async function advances(pool,result){
  return result;
 }
 async function guard(pool){
- const role=(await pool.query('SELECT current_user role,current_schema() schema')).rows[0];
- if(role.role!=='sipeka_runtime')throw Error('OPERATIONAL_RUNTIME_REQUIRED');
+ const role=(await pool.query('SELECT current_user role,current_schema() schema,current_database() database')).rows[0];
+ if(!require('./runtime-db-role').permitted(role))throw Error('OPERATIONAL_RUNTIME_REQUIRED');
  for(const table of ['operational_staff','operational_staff_audit','operational_attributions']){
   if((await pool.query("SELECT has_table_privilege(current_user,$1,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER') unsafe",[table])).rows[0].unsafe)throw Error('OPERATIONAL_DIRECT_DML_DENIED');
  }

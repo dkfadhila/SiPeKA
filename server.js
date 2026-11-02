@@ -18,8 +18,8 @@ const accountingReviewKey = crypto.randomBytes(32); // Restart invalidates outst
 function accountingFailure(code,status=400){return Object.assign(new Error(code),{accountingCode:code,status});}
 async function accountingGuard(pool) {
   const tables=['accounting_accounts','accounting_journals','accounting_lines','accounting_period_locks','accounting_category_maps','accounting_funds'];
-  const role=(await pool.query('SELECT current_user role,current_schema() schema')).rows[0];
-  if(role.role!=='sipeka_runtime')throw Error('ACCOUNTING_RUNTIME_ROLE_REQUIRED');
+  const role=(await pool.query('SELECT current_user role,current_schema() schema,current_database() database')).rows[0];
+  if(!require('./runtime-db-role').permitted(role))throw Error('ACCOUNTING_RUNTIME_ROLE_REQUIRED');
   if((await pool.query("SELECT has_schema_privilege(current_user,current_schema(),'CREATE') allowed")).rows[0].allowed)throw Error('ACCOUNTING_SCHEMA_CREATE_DENIED');
   for(const table of tables){
     const row=(await pool.query("SELECT has_table_privilege(current_user,$1,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER') unsafe",[table])).rows[0];
@@ -448,7 +448,7 @@ async function handleRequest(req, res, url, p) {
       if(p==='/api/employee-payroll'&&req.method==='GET')return json(res,200,await svc.list(token));
       if(p==='/api/employee-payroll/workbook'&&req.method==='GET'){
         const type=url.searchParams.get('type')||'general';if(!['general','laundry'].includes(type)||url.searchParams.getAll('type').length>1)return json(res,400,{error:'PAYROLL_TEMPLATE_TYPE'});
-        const data=await svc.list(token),rows=data.rows.filter(e=>(e.row.payroll_type==='LAUNDRY')===(type==='laundry')).map(e=>e.row);
+        const data=await svc.list(token),rows=data.rows.filter(e=>e.row.upload_kind!=='PDF'&&(e.row.payroll_type==='LAUNDRY')===(type==='laundry')).map(e=>e.row);
         const bytes=require('./payroll-workbook').workbook(type,rows);
         res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="gaji-'+type+'.xlsx"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end(bytes);
       }
@@ -461,7 +461,8 @@ async function handleRequest(req, res, url, p) {
         }
         res.writeHead(200,{'Content-Type':'text/csv;charset=utf-8','Content-Disposition':'attachment; filename="template-gaji-'+type+'.csv"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end('\uFEFF'+require('./employee-payroll')[type==='laundry'?'FULL_LAUNDRY_HEADER':'FULL_GENERAL_HEADER']+'\r\n');
       }
-      if(p==='/api/employee-payroll/import'&&req.method==='POST'){const body=await readBody(req);return json(res,201,await svc.importCsv(token,body.csv,{company_address:body.company_address}));}
+      if(p==='/api/employee-payroll/review'&&req.method==='POST'){req._bodyLimit=2*1024*1024;return json(res,200,await svc.reviewUpload(token,await readBody(req)));}
+      if(p==='/api/employee-payroll/import'&&req.method==='POST'){req._bodyLimit=2*1024*1024;const body=await readBody(req);return json(res,201,body.format?await svc.importUpload(token,body):await svc.importCsv(token,body.csv,{company_address:body.company_address}));}
       if(p==='/api/employee-payroll/publish'&&req.method==='POST')return json(res,200,await svc.publish(token,await readBody(req)));
       const match=p.match(/^\/api\/employee-payroll\/entries\/([a-f0-9-]{36})\/(slip.pdf|send)$/);
       if(match&&match[2]==='slip.pdf'&&req.method==='GET'){

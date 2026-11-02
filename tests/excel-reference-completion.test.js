@@ -7,7 +7,7 @@ test('complete Excel retains reference detail, pretax profit, formulas, missing 
  const l=scoped(make('company-profit-loss',source,{rows:[]},units,f),'company-profit-loss',source,{rows:[]},units,f,{excel:true});
  for(const text of ['Pendapatan Kamar','Pendapatan Jasa Laundry','Komisi OTA & Platform','Pemasaran & Promosi','LABA SEBELUM PAJAK'])assert.ok(l.grid.some(r=>r[0]===text),text);
  const files=unzip(exportXlsx(l,'AMC')),xml=files.find(f=>f.name==='xl/worksheets/sheet1.xml').data.toString(),wb=files.find(f=>f.name==='xl/workbook.xml').data.toString();
- assert.match(xml,/<f>IF\(COUNT/);assert.match(xml,/Disusun oleh,/);assert.match(xml,/Disetujui oleh,/);assert.doesNotMatch(xml,/4-1300|6-1100/);assert.match(wb,/_xlnm.Print_Area/);assert.match(wb,/_xlnm.Print_Titles/);
+ assert.match(xml,/<f>IF\(COUNT/);assert.match(xml,/Dibuat &amp; Disiapkan Oleh,/);assert.match(xml,/Disetujui &amp; Disahkan Oleh,/);assert.match(xml,/RADITYA MARTANEGARA/);assert.match(xml,/Tanggung jawab hukum/);assert.doesNotMatch(xml,/4-1300|6-1100/);assert.match(wb,/_xlnm.Print_Area/);assert.match(wb,/_xlnm.Print_Titles/);
  const formulas=require('../report-xlsx-formulas').formulas(l,require('../report-template').col),r=l.grid.findIndex(r=>r[0]==='Jumlah Beban Usaha');assert.match(formulas['B'+(r+1)],/IF\(COUNT.*Belum tersedia/,'unknown depreciation stays guarded while permitting later edits');
 });
 test('balance comparison continuation names match three branches per panel',()=>{

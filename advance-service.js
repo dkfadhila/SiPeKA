@@ -12,8 +12,8 @@ async function guard(pool){
   const r=(await pool.query("SELECT i.indisunique,i.indisvalid,pg_get_indexdef(i.indexrelid) definition,pg_get_expr(i.indpred,i.indrelid) predicate FROM pg_index i WHERE i.indexrelid=to_regclass($1) AND i.indrelid=$2::regclass",[name,table])).rows[0];
   if(!r||!r.indisunique||!r.indisvalid||!r.definition.includes('('+column+')')||!r.predicate||r.predicate.replace(/\s+/g,'')!==(actions.length===1?"(action='"+actions[0]+"'::text)":"(action=ANY(ARRAY['APPROVE'::text,'REJECT'::text]))"))throw Error('ADVANCE_UNIQUE_INDEX_REQUIRED');
  }
- const role=(await pool.query('SELECT current_user role,current_schema() schema')).rows[0];
- if(role.role!=='sipeka_runtime')throw Error('ADVANCE_RUNTIME_REQUIRED');
+ const role=(await pool.query('SELECT current_user role,current_schema() schema,current_database() database')).rows[0];
+ if(!require('./runtime-db-role').permitted(role))throw Error('ADVANCE_RUNTIME_REQUIRED');
  if((await pool.query("SELECT has_schema_privilege(current_user,current_schema(),'CREATE') unsafe")).rows[0].unsafe)throw Error('ADVANCE_SCHEMA_CREATE_DENIED');
  for(const [table,columns] of [['advance_events',['amount']],['advance_settlement_lines',['amount']]]){const r=(await pool.query("SELECT attname,format_type(atttypid,atttypmod) type FROM pg_attribute WHERE attrelid=$1::regclass AND attname=ANY($2::text[]) AND NOT attisdropped",[table,columns])).rows;if(r.length!==columns.length||r.some(c=>c.type!=='bigint'))throw Error('ADVANCE_EXACT_IDR_REQUIRED');}
  for(const table of ['advance_events','advance_settlement_lines','advance_receipt_claims']){

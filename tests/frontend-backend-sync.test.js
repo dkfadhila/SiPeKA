@@ -6,7 +6,7 @@ const read=name=>fs.readFileSync(path.join(__dirname,'../public',name),'utf8');
 test('embedded frontend contracts match maintained source modules',()=>{
  const context={window:{}};require('node:vm').runInNewContext(read('backend-ui.js'),context);assert.match(context.window.SipekaUi.message(Error('PAYROLL_CSV_CELL_4')),/baris 4/);assert.match(context.window.SipekaUi.message(Error('PAYROLL_NET_INVALID')),/potongan/);
  const html=read('financial-dashboard.html').replace(/\r\n/g,'\n');
- for(const file of ['report-template-pdf.js','lucide-icons.js','backend-ui.js','coa-input-ui.js','device-staff-ui.js','employee-payroll-ui.js','report-identity-ui.js'])assert.ok(html.includes(read(file).replace(/\r\n/g,'\n').trim()),file+' embedded source drift');
+ for(const file of ['document-approval.js','report-template-pdf.js','lucide-icons.js','backend-ui.js','coa-input-ui.js','device-staff-ui.js','employee-payroll-ui.js','report-identity-ui.js'])assert.ok(html.includes(read(file).replace(/\r\n/g,'\n').trim()),file+' embedded source drift');
 });
 
 test('payroll UI uses backend readiness, explicit publication, uncertain delivery and actionable import errors',async t=>{
@@ -18,7 +18,7 @@ test('payroll UI uses backend readiness, explicit publication, uncertain deliver
   if(route==='/'){res.end('<div id="content"></div><script>'+script+read('backend-ui.js')+read('employee-payroll-ui.js')+"document.querySelector('#content').innerHTML=SipekaEmployeePayroll.render();SipekaEmployeePayroll.bind(document.querySelector('#content'));</script>");return;}
   let body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>{
    if(req.method==='POST'){const parsed=JSON.parse(body);writes.push({route,body:parsed});
-    if(route.endsWith('/import')){res.statusCode=400;res.end(JSON.stringify({error:'PAYROLL_EMPLOYEE_DEPARTMENT_REQUIRED'}));return;}
+    if(route.endsWith('/review')){res.statusCode=400;res.end(JSON.stringify({error:'PAYROLL_EMPLOYEE_DEPARTMENT_REQUIRED'}));return;}
     if(route.endsWith('/publish')){assert.equal(parsed.preview_token,'preview-token');assert.equal(parsed.confirmed,true);entry.status='PUBLISHED';}
     if(route.endsWith('/send')){assert.equal(parsed.email,entry.row.email);assert.equal(parsed.confirmed,true);entry.email_status='uncertain';res.end(JSON.stringify({status:'uncertain'}));return;}
     res.end('{}');return;
@@ -38,7 +38,7 @@ test('payroll UI uses backend readiness, explicit publication, uncertain deliver
  assert.equal(await page.locator('[data-employee-publish]').isDisabled(),true);await page.locator('[data-employee-publish-consent]').check();await page.locator('[data-employee-publish]').click();await page.waitForFunction(()=>!document.querySelector('[data-employee-publish]'));
  assert.equal(await send.isDisabled(),true);await page.locator('[data-employee-consent]').check();assert.equal(await send.isDisabled(),false);await send.click();await page.waitForFunction(()=>document.querySelector('[data-employee-delivery]').textContent.includes('Status kirim perlu diperiksa'));
  assert.equal(await send.isDisabled(),true);assert.equal(await page.locator('[data-employee-consent]').isDisabled(),true);await page.locator('[data-employee-refresh]').click();assert.equal(await send.isDisabled(),true);
- assert.equal(writes[0].body.company_address,'Alamat Kop QA');assert.deepEqual(writes.map(x=>x.route),['/api/employee-payroll/import','/api/employee-payroll/publish','/api/employee-payroll/entries/employee-entry/send']);assert.deepEqual(errors,[]);
+ assert.equal(writes[0].body.company_address,'Alamat Kop QA');assert.deepEqual(writes.map(x=>x.route),['/api/employee-payroll/review','/api/employee-payroll/publish','/api/employee-payroll/entries/employee-entry/send']);assert.deepEqual(errors,[]);
 });
 
 

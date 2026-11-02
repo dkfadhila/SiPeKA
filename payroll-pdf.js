@@ -1,7 +1,6 @@
 'use strict';
 const {fault}=require('./payroll');
-// PDF coordinates, points: 50 x 22.6 mm reserved for an Owner-supplied image.
-// No signature asset is accepted/rendered until a separately reviewed integration.
+// Signature area in PDF points. Printed approval text does not simulate an autograph.
 const SIGNATURE_AREA=Object.freeze({x:365,y:112,width:142,height:64});
 function integer(value){if(typeof value==='number'&&!Number.isSafeInteger(value))throw fault('PAYROLL_INTEGER_IDR');if(!/^(0|[1-9]\d{0,30})$/.test(String(value)))throw fault('PAYROLL_INTEGER_IDR');return BigInt(value);}
 function money(value){return 'Rp '+integer(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.');}
@@ -50,9 +49,15 @@ function renderSlipPdf(row,{publishedAt,simulation=false,documentIdentity}={}){
  if(row.deductions!=null&&row.pph21!=null)amount('Total potongan',(integer(row.deductions)+integer(row.pph21)).toString(),380,311,547,true);
  commands.push('0.82 0.82 0.82 RG 0.6 w 297 368 m 297 574 l S');
  commands.push('0.94 0.94 0.94 rg 48 280 499 70 re f');text('TAKE HOME PAY / GAJI BERSIH',64,328,12,true);const net=row.net_salary==null?'Tidak tersedia':money(row.net_salary);text(net,531-width(net,18,true),306,18,true,'0.16 0.16 0.16');if(row.net_salary!=null){const words=require('./payroll-words').rupiahWords(row.net_salary);const lines=words.match(/.{1,78}(?:\s|$)|.{1,78}/g)||[];lines.slice(0,2).forEach((part,i)=>text((i?'':'Terbilang: ')+part.trim(),64,291-i*12,10));}
- text('PENERIMA',48,190,12,true);text('DISETUJUI OLEH',365,190,12,true);text(plain(row.full_name,42),48,90,12,true);text('Karyawan',48,72,10);
- // Reserved image region remains completely blank, no box, fake autograph or ttd.
- text('Raditya Martanegara',365,90,12,true);text('Penanggung jawab',365,72,10);text('Tanggal: '+publicationDate(publishedAt),365,54,10);
+ const approval=require('./public/document-approval').wording;
+ const atCenter=(value,x,y,size=10,bold=false)=>text(value,x-measure(value,size)/2,y,size,bold);
+ atCenter(approval.prepared,173,239,11,true);atCenter(approval.approved,423,239,11,true);
+ atCenter(approval.department,173,223);atCenter(approval.company,423,223);
+ atCenter('( '+approval.preparer+' )',173,151,11,true);atCenter('( '+approval.approver+' )',423,151,11,true);
+ atCenter(approval.preparerRole,173,135);atCenter(approval.approverRole,423,135);
+ line(115);
+ const wrap=value=>{const result=[];let current='';for(const word of value.split(' ')){const next=current?current+' '+word:word;if(measure(next,10)>499&&current){result.push(current);current=word;}else current=next;}if(current)result.push(current);return result;};
+ let footY=99;for(const sentence of [approval.note,approval.responsibility])for(const part of wrap(sentence)){text(part,48,footY,10);footY-=12;}
 
  const stream=Buffer.from(commands.join('\n'),'latin1');
  const frame=require('./assets/payroll-frame-pdf.json');const rgb=Buffer.from(frame.rgb,'base64'),alpha=Buffer.from(frame.alpha,'base64');
