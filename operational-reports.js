@@ -47,7 +47,7 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
  }
  if(id==='quarterly-owner')return require('./quarterly-owner').read(pool,actor,token,params,{readAdvances});
  if(['fund-position','recorded-income-expense'].includes(id))return require('./informational-statements').read(pool,actor,token,id,params,{readAdvances});
- if(!['profit-loss','cash-flow','fund-requests','daily-closings','audit-evidence','quarterly-data'].includes(id))fail('REPORT_NOT_FOUND',404);
+ if(!['profit-loss','cash-flow','fund-requests','daily-closings','audit-evidence','quarterly-data','branch-performance','management-report','expense-breakdown'].includes(id))fail('REPORT_NOT_FOUND',404);
  const f=filters(params);
  const units=(await pool.query('SELECT id,name,category,is_active FROM business_units ORDER BY id')).rows;
  if(f.branch!=='all'&&!units.some(u=>u.id===f.branch))fail('REPORT_BRANCH_NOT_FOUND',404);
@@ -77,6 +77,7 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
   for(const e of events){const account=accounts.find(a=>a.id===e.coa_id);if(!account)fail('REPORT_SETTLEMENT_ACCOUNT_MISSING',503);e.account_code=account.account_code;e.account_name=account.account_name;}
  }
  const approved=transactions.filter(r=>r.status==='APPROVED'&&r.tx_intent==='SETOR_NOTA').concat(events);
+ if(['branch-performance','management-report','expense-breakdown'].includes(id))return require('./branch-reports').build(id,transactions,approved,units,f);
  const groups=new Map();for(const r of approved){const key=JSON.stringify([r.branch_id,id==='cash-flow'?r.payment_method:r.account_code]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r);}
  const rows=[...groups.values()].map(rs=>({branch_id:rs[0].branch_id,branch:units.find(u=>u.id===rs[0].branch_id)?.name,account_code:rs[0].account_code,account_name:rs[0].account_name,method:rs[0].payment_method,...total(rs)}));
  return {id,columns:(id==='cash-flow'?['branch_id','branch','method','income','expense','net','count']:['branch_id','branch','account_code','account_name','income','expense','net','count']).map(key=>({key,label:key})),rows,...(id==='cash-flow'?{cashEntries:approved.map(r=>({branch_id:r.branch_id,account_code:r.account_code,tx_type:r.tx_type,amount:r.amount,tx_intent:r.tx_intent}))}:{}),totals:total(approved),filters:f,sourceCount:transactions.length,complete:true,readiness:rows.length?'available':'empty',missingDatasets:[],generated_at:new Date().toISOString(),provenance:'Recorded ordinary transactions; approved advance settlement on event WIB day. Approval is not disbursement.',neracaComplete:false,reconciliationComplete:false,endBalance:null,notices:['Mutasi operasional tercatat, bukan laba akrual atau neraca lengkap.']};

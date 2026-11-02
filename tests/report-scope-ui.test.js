@@ -6,6 +6,8 @@ test('three scope modes follow preview, CSV, Excel and PDF on desktop and mobile
  const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});t.after(()=>browser.close());
  const page=await browser.newPage({viewport:{width:1440,height:1000},acceptDownloads:true}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port+'/reports');await page.waitForFunction(()=>![...document.querySelectorAll('.sr-badge')].some(x=>x.textContent==='Memuat…'));
+ assert.equal(await page.locator('.sr-card h2').filter({hasText:/^Laba Rugi$/}).count(),1);
+ assert.equal(await page.locator('[data-sr-id=compare-profit-loss]').count(),0);assert.equal(await page.locator('[data-sr-id=profit-loss]').count(),0);
  assert.equal(await page.locator('[name=viewMode]').inputValue(),'company');assert.equal(await page.locator('[name=viewMode] option').count(),3);
  await page.locator('[name=viewMode]').selectOption('branch');assert.equal(await page.locator('[name=branch]').inputValue(),'a');await page.locator('[name=branch]').selectOption('b');
  await page.locator('[data-sr-id=company-profit-loss][data-sr-action=preview]').click();await page.waitForSelector('.sr-statement');assert.match(await page.locator('.sr-preview-period').innerText(),/Unit Kedua/);assert.doesNotMatch(await page.locator('.sr-statement').innerText(),/1\.800\.000/);await page.locator('[data-sr-preview-close]').click();

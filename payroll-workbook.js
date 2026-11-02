@@ -23,7 +23,7 @@ function workbook(type,rows=[]){
   const regex=new RegExp('<row\\b[^>]*\\br="'+r+'"[^>]*>[\\s\\S]*?<\\/row>');
   if(!regex.test(xml))throw Error('PAYROLL_WORKBOOK_ROWS');xml=xml.replace(regex,'<row r="'+r+'">'+cells+'</row>');
  }
- db.data=Buffer.from(xml.replace('<sheetViews>','<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews>').replace('</worksheet>','<pageMargins left="0.3" right="0.3" top="0.3" bottom="0.3" header="0" footer="0"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>'));
+ db.data=Buffer.from(xml.replace(/<pageMargins\b[^>]*\/>|<pageSetup\b[^>]*\/>/g,'').replace('<sheetViews>','<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews>').replace('</worksheet>','<pageMargins left="0.3" right="0.3" top="0.3" bottom="0.3" header="0" footer="0"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>'));
  const slip=files.find(f=>f.name==='xl/worksheets/sheet1.xml');
  if(rows.length){let s=slip.data.toString();for(const [ref,value]of [['D6',rows[0].period],['G6',rows[0].employee_id]])s=s.replace(new RegExp('<c\\b[^>]*\\br="'+ref+'"[^>]*?(?:\\/>|>[\\s\\S]*?<\\/c>)'),'<c r="'+ref+'" t="inlineStr"><is><t>'+esc(value)+'</t></is></c>');slip.data=Buffer.from(s);}
  // A small text gutter separates right-hand labels from left-hand amounts.

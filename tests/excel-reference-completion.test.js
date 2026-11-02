@@ -16,6 +16,7 @@ test('balance comparison continuation names match three branches per panel',()=>
 test('payroll Excel keeps selector neighbours, all reference fields, formulas, IDs and print area',()=>{
  for(const type of ['general','laundry']){
  const data=require('../payroll-workbook').workbook(type,[{period:'2026-10',employee_id:'001',full_name:'=Not a formula',basic_salary:1000000}]),files=unzip(data),s=files.find(f=>f.name==='xl/worksheets/sheet1.xml').data.toString(),db=files.find(f=>f.name==='xl/worksheets/sheet2.xml').data.toString(),book=files.find(f=>f.name==='xl/workbook.xml').data.toString();
- assert.match(s,/Nama Karyawan/);assert.match(s,/ID Karyawan/);assert.match(s,/COUNTIF/);assert.match(s,/Terbilang/);assert.match(s,/Tunjangan Operasional/);assert.match(db,/<t[^>]*>=Not a formula/);assert.match(book,/_xlnm.Print_Area/);assert.ok(files.some(f=>f.name==='xl/media/payroll-frame.png'));assert.match(s,/<c r="G6" t="inlineStr"><is><t>001/);
+ assert.match(s,/Nama Karyawan/);assert.match(s,/ID Karyawan/);assert.match(s,/COUNTIF/);assert.match(s,/Terbilang/);assert.match(s,/Tunjangan Operasional/);assert.match(db,/<t[^>]*>=Not a formula/);for(const xml of [s,db]){assert.equal((xml.match(/<pageMargins\b/g)||[]).length,1,'Excel permits one margin definition per worksheet');assert.equal((xml.match(/<pageSetup\b/g)||[]).length,1);}
+ assert.match(book,/_xlnm.Print_Area/);assert.ok(files.some(f=>f.name==='xl/media/payroll-frame.png'));assert.match(s,/<c r="G6" t="inlineStr"><is><t>001/);
  }
 });
