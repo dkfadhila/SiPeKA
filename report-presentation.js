@@ -10,6 +10,7 @@ function compact(layout,id,{excel=false}={}){
  const types=Array(6).fill('heading'),levels=Array(6).fill(0);
  let balanceCredit=false;
  const add=(label,values=[],type='detail',level=0)=>{
+  if(excel&&kind==='pnl'&&type==='detail')level=1;
   if(kind==='balance'&&!values.length&&type!=='section')values=label==='TOTAL'?[null,null]:balanceCredit?['',null]:[null,''];
   if(excel&&kind==='pnl'&&type!=='section'){
    const now=values.at(-2),prior=values.at(-1);
@@ -26,6 +27,16 @@ function compact(layout,id,{excel=false}={}){
   for(const [label,key] of [['Pendapatan tercatat','income'],['Beban tercatat','expense'],['Selisih Pendapatan dan Beban Tercatat','net']]){
    add(label,indices.map(c=>value(sourceByColumn(c),key)),key==='net'?'total':'detail');
   }
+ }else if(kind==='pnl'&&excel){
+  for(let r=7;r<=51;r++){
+   const original=old[r-1];if(!original[1]&&!original[0])continue;
+   const code=typeof original[0]==='string'&&/^\d-\d{4}$/.test(original[0]);
+   const label=code?original[1]:original[1]||original[0];
+   const ratio=[24,41,51].includes(r),total=[13,21,23,38,40,46,48,50].includes(r);
+   if(!code&&!ratio&&!total)section(label);
+   else if(ratio)add(label,indices.map(c=>original[c]),'ratio',1);
+   else take(label,r,total?'total':'detail');
+  }
  }else if(kind==='pnl'){
   section('Pendapatan');take('Pendapatan usaha',13);take('Total Pendapatan',13,'total');
   section('Harga Pokok Penjualan');take('Harga pokok penjualan',21);take('Total Harga Pokok Penjualan',21,'total',true);take('TOTAL LABA KOTOR',23,'total');
@@ -41,6 +52,16 @@ function compact(layout,id,{excel=false}={}){
   if(excel)add('Margin laba bersih',indices.map(c=>old[50][c]),'ratio');
  }else if(kind==='balance'){
   // Source has no verified closing balances: preserve unavailable values, never infer equity.
+  if(excel){
+   const totals=new Set([14,23,25,34,38,40,47,49]),sections=new Set([7,8,16,27,28,36,42]);
+   for(let r=7;r<=49;r++){
+    const original=old[r-1],code=typeof original[0]==='string'&&/^\d-\d{4}$/.test(original[0]);
+    const label=code?original[1]:original[1]||original[0];if(!label)continue;
+    if(r===27)balanceCredit=true;
+    if(sections.has(r))section(label,[8,16,28,36].includes(r)?1:0);
+    else add(label,[],totals.has(r)?'total':'detail',code?2:[14,23,34,38].includes(r)?1:0);
+   }
+  }else{
   section('AKTIVA');section('Aktiva Lancar',1);
   for(const label of ['Kas dan bank','Piutang','Persediaan','Biaya dibayar di muka'])add(label,[],'detail',2);
   add('Total Aktiva Lancar',[],'total',1);section('Aktiva Tetap',1);
@@ -51,6 +72,7 @@ function compact(layout,id,{excel=false}={}){
   add('Total Kewajiban',[],'total',1);section('Ekuitas',1);
   for(const label of ['Modal','Laba ditahan','Laba/(rugi) tahun berjalan','Prive'])add(label,[],'detail',2);
   add('Total Ekuitas',[],'total',1);add('TOTAL PASIVA',[],'total');add('TOTAL',[],'total');
+  }
  }else{
   const takeCash=(label,r,type='detail',level=1)=>add(label,indices.map(c=>old[r-1][c]),type,level);
   section('ARUS KAS DARI AKTIVITAS OPERASI');
@@ -96,7 +118,7 @@ function scoped(layout,id,source,previous,units,filters,options={}){
   const grid=total.grid.map((row,r)=>r===5?headers:r<5?[row[0]]:[row[0],...parts.flatMap(part=>part.grid[r].slice(1)),...row.slice(1)]);
   grid[3]=['Perbandingan cabang · '+layout.period.from+' s.d. '+layout.period.to];
   const types=total.rowTypes;
-  return {...total,grid,scopeMode:'comparison',excelComplete:false,continuations:[],spec:{rows:grid.map((row,r)=>row.map(value=>({value,bold:['section','total','heading'].includes(types[r]),format:'General'}))),widths:headers.map((_,i)=>i?24:65),merges:[]},notes:[...total.notes,'Kolom perusahaan mencakup seluruh cabang; jangan menjumlahkan ulang total perusahaan pada panel lanjutan.']};
+  return {...total,grid,panelUnits:group.map(u=>u.name),scopeMode:'comparison',excelComplete:false,continuations:[],spec:{rows:grid.map((row,r)=>row.map(value=>({value,bold:['section','total','heading'].includes(types[r]),format:'General'}))),widths:headers.map((_,i)=>i?24:65),merges:[]},notes:[...total.notes,'Kolom perusahaan mencakup seluruh cabang; jangan menjumlahkan ulang total perusahaan pada panel lanjutan.']};
  };
  const result=build(panels[0]);result.continuations=panels.slice(1).map(build);return result;
 }

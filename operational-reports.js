@@ -36,6 +36,7 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
   }
   result.templateLayout=require('./report-presentation').scoped(calculatedLayout,id,source,previous,units,f);
   result.templateLayout.excelLayout=require('./report-presentation').scoped(calculatedLayout,id,source,previous,units,f,{excel:true});
+  result.templateLayout.excelLayout.supportingRows=(source.rows||[]).filter(r=>r.income!=null||r.expense!=null).map(r=>[units.find(u=>u.id===r.branch_id)?.name||r.branch_name||'Perusahaan',r.account_name||r.label||'Pos tercatat',r.income??null,r.expense??null]);
   result.presentationData=require('./report-presentation').columnsAndRows(result.templateLayout);
   return result;
  }

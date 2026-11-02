@@ -446,8 +446,19 @@ async function handleRequest(req, res, url, p) {
     const svc=require('./employee-payroll').service({pool:require('./db-postgres').getPool()});
     try{
       if(p==='/api/employee-payroll'&&req.method==='GET')return json(res,200,await svc.list(token));
-      if(p==='/api/employee-payroll/template'&&req.method==='GET'){
+      if(p==='/api/employee-payroll/workbook'&&req.method==='GET'){
         const type=url.searchParams.get('type')||'general';if(!['general','laundry'].includes(type)||url.searchParams.getAll('type').length>1)return json(res,400,{error:'PAYROLL_TEMPLATE_TYPE'});
+        const data=await svc.list(token),rows=data.rows.filter(e=>(e.row.payroll_type==='LAUNDRY')===(type==='laundry')).map(e=>e.row);
+        const bytes=require('./payroll-workbook').workbook(type,rows);
+        res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="gaji-'+type+'.xlsx"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end(bytes);
+      }
+      if(p==='/api/employee-payroll/template'&&req.method==='GET'){
+        if(url.searchParams.getAll('format').length>1||url.searchParams.has('format')&&!['csv','xlsx'].includes(url.searchParams.get('format')))return json(res,400,{error:'PAYROLL_TEMPLATE_TYPE'});
+        const type=url.searchParams.get('type')||'general';if(!['general','laundry'].includes(type)||url.searchParams.getAll('type').length>1)return json(res,400,{error:'PAYROLL_TEMPLATE_TYPE'});
+        if(url.searchParams.get('format')==='xlsx'){
+          const bytes=require('./payroll-workbook').workbook(type);
+          res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="template-gaji-'+type+'.xlsx"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end(bytes);
+        }
         res.writeHead(200,{'Content-Type':'text/csv;charset=utf-8','Content-Disposition':'attachment; filename="template-gaji-'+type+'.csv"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end('\uFEFF'+require('./employee-payroll')[type==='laundry'?'FULL_LAUNDRY_HEADER':'FULL_GENERAL_HEADER']+'\r\n');
       }
       if(p==='/api/employee-payroll/import'&&req.method==='POST'){const body=await readBody(req);return json(res,201,await svc.importCsv(token,body.csv,{company_address:body.company_address}));}
