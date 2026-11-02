@@ -14,14 +14,14 @@ test('Neraca hierarchy is explicit and unchanged in comparison panels, without e
 });
 test('XLSX uses real alignment indent styles for group, detail and subtotal label cells only',()=>{
  const layout=balance(),files=unzip(exportXlsx(layout,'Perusahaan Uji')),styles=files.find(f=>f.name==='xl/styles.xml').data.toString(),sheet=files.find(f=>f.name==='xl/worksheets/sheet1.xml').data.toString();
- assert.match(styles,/<cellXfs count="10">/);assert.match(styles,/<alignment horizontal="left" indent="1"/);assert.match(styles,/<alignment horizontal="left" indent="2"/);
- for(const [label,style] of [['AKTIVA',2],['Aktiva Lancar',8],['Kas dan bank',7],['Total Aktiva Lancar',8]]){const r=layout.grid.findIndex(row=>row[0]===label)+1;assert.match(sheet,new RegExp('<c r="A'+r+'" s="'+style+'"'));}
+ const xfs=styles.match(/<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/)[1].match(/<xf\b[^>]*(?:\/>|>[\s\S]*?<\/xf>)/g);assert.equal(Number(styles.match(/<cellXfs count="(\d+)"/)[1]),xfs.length);assert.match(styles,/<alignment horizontal="left" indent="1"/);assert.match(styles,/<alignment horizontal="left" indent="2"/);
+ for(const [label,level] of [['AKTIVA',0],['Aktiva Lancar',1],['Kas dan bank',2],['Total Aktiva Lancar',1]]){const r=layout.grid.findIndex(row=>row[0]===label)+1,cell=sheet.match(new RegExp('<c r="A'+r+'" s="(\\d+)"'));assert.ok(cell,label);if(level)assert.match(xfs[Number(cell[1])],new RegExp('indent="'+level+'"'),label);}
  assert.doesNotMatch(sheet,/  Kas dan bank/);
 });
 test('PDF label padding follows row levels and document code is included in repeating heading',()=>{
  const layout=balance();layout.documentCode='WIDYA-NERACA-20261026-0001';const tables=[],texts=[];
  class Doc{constructor(){this.internal={pageSize:{getWidth:()=>210,getHeight:()=>297},getNumberOfPages:()=>1};this.lastAutoTable={finalY:230};}setTextColor(){}setFont(){}setFontSize(){}text(...args){texts.push(args);}autoTable(opts){tables.push(opts);opts.didDrawPage();}splitTextToSize(t){return[t];}setPage(){}addPage(){}}
- const context={window:{}};vm.runInNewContext(fs.readFileSync('public/report-template-pdf.js','utf8'),context);context.window.SipekaTemplatePdf.create({templateLayout:layout,branch:'Semua Cabang'},Doc,'Perusahaan Uji');
+ const context={window:{SipekaDocumentApproval:{height:67,draw(){}}}};vm.runInNewContext(fs.readFileSync('public/report-template-pdf.js','utf8'),context);context.window.SipekaTemplatePdf.create({templateLayout:layout,branch:'Semua Cabang'},Doc,'Perusahaan Uji');
  assert.ok(texts.some(t=>String(t[0]).includes(layout.documentCode)));assert.equal(tables[0].startY,43);
  for(const [label,left] of [['AKTIVA',2],['Aktiva Lancar',6],['Kas dan bank',10],['Total Aktiva Lancar',6]]){const cell={styles:{}},r=layout.grid.findIndex(row=>row[0]===label)-6;tables[0].didParseCell({section:'body',column:{index:0},row:{index:r},cell});assert.equal(cell.styles.cellPadding.left,left,label);}
 });

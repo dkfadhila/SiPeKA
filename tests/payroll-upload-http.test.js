@@ -39,5 +39,5 @@ test('current HTTP upload routes enforce authentication/Origin, signed recipient
  await json(await api('/api/employee-payroll/publish',{body:{id:imported.id,preview_token:entry.preview_token,confirmed:true}}),200);
  const delivered=await json(await api('/api/employee-payroll/entries/'+entry.id+'/send',{body:{email:'ayu@example.test',confirmed:true}}),200);assert.equal(delivered.status,'sent');
  const repeat=await json(await api('/api/employee-payroll/entries/'+entry.id+'/send',{body:{email:'ayu@example.test',confirmed:true}}),200);assert.equal(repeat.status,'sent');
- const state=await ipc();assert.equal(state.sent.length,1);assert.equal(state.sent[0].to,'ayu@example.test');assert.equal(state.sent[0].attachments,1);assert.deepEqual(Buffer.from(state.sent[0].pdf,'base64'),pdf);
+ const state=await ipc();assert.equal(state.sent.length,1);assert.equal(state.sent[0].to,'ayu@example.test');assert.equal(state.sent[0].attachments,2);assert.equal(state.sent[0].pdf_count,1);assert.equal(state.sent[0].inline_count,1);assert.deepEqual(Buffer.from(state.sent[0].pdf,'base64'),pdf);
 });

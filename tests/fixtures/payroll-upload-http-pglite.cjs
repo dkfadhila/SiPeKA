@@ -29,7 +29,7 @@ const {PGlite}=require(process.env.PAYROLL_TEST_PGLITE||process.env.REPORTS_TEST
  SET ROLE sipeka_runtime;`);
  require(require.resolve('pg',{paths:[root]})).Pool=Pool;
  const sent=[];
- require(root+'/payroll-resend').createResendTransport=()=>({async sendMail(mail){sent.push({to:mail.to,attachments:mail.attachments.length,pdf:mail.attachments[0].content.toString('base64')});return {accepted:[mail.to],messageId:'offline-'+sent.length};}});
+ require(root+'/payroll-resend').createResendTransport=()=>({async sendMail(mail){sent.push({to:mail.to,attachments:mail.attachments.length,pdf_count:mail.attachments.filter(a=>a.contentType==='application/pdf').length,inline_count:mail.attachments.filter(a=>a.cid==='amc-payroll-header').length,pdf:mail.attachments[0].content.toString('base64')});return {accepted:[mail.to],messageId:'offline-'+sent.length};}});
  globalThis.fetch=async()=>{throw Error('OUTBOUND_NETWORK_DISABLED_IN_TEST');};
  process.on('message',async message=>{
   if(message.action!=='state')return;

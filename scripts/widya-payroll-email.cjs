@@ -9,9 +9,9 @@ function validate(a,s){
  if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(a.period)||!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(a.published_at)||!Number.isFinite(Date.parse(a.published_at)))fail('PAYROLL_PERIOD_OR_PUBLICATION_REQUIRED');
  const amounts=['basic_salary','allowances','deductions','pph21','approved_net_salary'].map(k=>{if(typeof a[k]!=='string'||!/^(0|[1-9]\d{0,15})$/.test(a[k]))fail('EXACT_INTEGER_IDR_REQUIRED');return BigInt(a[k]);});
  if(amounts[0]+amounts[1]-amounts[2]-amounts[3]!==amounts[4])fail('APPROVED_AMOUNT_MISMATCH');
- return {period:a.period,user_id:s.id,username:s.id,full_name:s.name,branch_name:s.branch_name,basic_salary:a.basic_salary,allowances:a.allowances,deductions:a.deductions,pph21:a.pph21,net_salary:a.approved_net_salary};
+ return {period:a.period,user_id:s.id,employee_id:s.id,username:s.id,full_name:s.name,branch_name:s.branch_name,...(s.department?{department:s.department}:{}),...(s.unit_code?{unit_code:s.unit_code}:{}),basic_salary:a.basic_salary,allowances:a.allowances,deductions:a.deductions,pph21:a.pph21,net_salary:a.approved_net_salary};
 }
-function build(a,s,modules){const row=validate(a,s),pdf=modules.renderSlipPdf(row,{publishedAt:a.published_at}),mail=modules.payrollEmail(row,{publishedAt:a.published_at});return {from:'raditya@widyafa.xyz',to:a.email,subject:mail.subject,text:mail.text,html:mail.html,attachments:[{filename:mail.filename,content:pdf}]};}
+function build(a,s,modules){const row=validate(a,s),pdf=modules.renderSlipPdf(row,{publishedAt:a.published_at}),mail=modules.payrollEmail(row,{publishedAt:a.published_at,recipientEmail:a.email});return {from:'raditya@widyafa.xyz',to:a.email,subject:mail.subject,text:mail.text,html:mail.html,attachments:[{filename:mail.filename,content:pdf},...(mail.inlineAttachments||[])]};}
 async function deliver({approval,staff,modules,transport,stateDir}){
  const mail=build(approval,staff,modules);
  // One durable staff-period reservation, including recipient changes. Never auto-retry.
@@ -34,7 +34,7 @@ async function main(){
  const {Client}=require(app+'/node_modules/pg'),db=new Client({connectionString:env.DATABASE_URL,statement_timeout:5000});await db.connect();
  try{await db.query('BEGIN');await db.query("SET LOCAL idle_in_transaction_session_timeout='60s'");
  const owner=(await db.query("SELECT id FROM app_users WHERE id=$1 AND role='OWNER'",[approval.owner_app_id])).rows[0];if(!owner)fail('OWNER_APP_ID_REQUIRED');
- const staff=(await db.query('SELECT s.id,s.name,s.branch_id,s.revision,s.active,b.name branch_name FROM operational_staff s JOIN business_units b ON b.id=s.branch_id AND b.is_active=1 WHERE s.id=$1 FOR SHARE OF s,b',[approval.staff_id])).rows[0];
+ const staff=(await db.query('SELECT s.id,s.name,s.branch_id,s.department,s.revision,s.active,b.name branch_name,b.code unit_code FROM operational_staff s JOIN business_units b ON b.id=s.branch_id AND b.is_active=1 WHERE s.id=$1 FOR SHARE OF s,b',[approval.staff_id])).rows[0];
  validate(approval,staff);if(mode==='--check'){console.log(JSON.stringify({status:'validated_not_sent',channel:'email',requires:'explicit --send with this protected approval UUID'}));return;}
  const transport=require(app+'/payroll-resend').createResendTransport({env});
  console.log(JSON.stringify(await deliver({approval,staff,modules,transport,stateDir:path.join(base,'state')})));

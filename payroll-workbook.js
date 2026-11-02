@@ -11,21 +11,22 @@ function workbook(type,rows=[]){
  const db=files.find(f=>f.name==='xl/worksheets/sheet2.xml');
  if(!db)throw Error('PAYROLL_WORKBOOK_INVALID');
  let xml=db.data.toString();
+ const sourceStyles=new Map([...xml.matchAll(/<c\b[^>]*\br="([A-Z]+)5"[^>]*\bs="(\d+)"/g)].map(m=>[m[1],m[2]]));
  for(let i=0;i<rows.length;i++){
   const row=rows[i],r=i+5;
   const cells=keys.map((key,c)=>{
-   const ref=col(c)+r;
-   if(key==='key')return '<c r="'+ref+'"><f>IF(OR(B'+r+'="",C'+r+'=""),"",B'+r+'&amp;"|"&amp;C'+r+')</f><v></v></c>';
-   const value=row[key];if(value==null)return '<c r="'+ref+'"/>';
+   const ref=col(c)+r,cell='<c r="'+ref+'" s="'+(sourceStyles.get(col(c))||0)+'"';
+   if(key==='key')return cell+'><f>IF(OR(B'+r+'="",C'+r+'=""),"",B'+r+'&amp;"|"&amp;C'+r+')</f><v></v></c>';
+   const value=row[key];if(value==null)return cell+'/>';
    const numeric=/salary|allowance|overtime|bonus|deduction|ironing|pph21/.test(key)&&/^\d{1,15}$/.test(String(value));
-   return '<c r="'+ref+'"'+(numeric?'><v>'+value+'</v>':' t="inlineStr"><is><t xml:space="preserve">'+esc(value)+'</t></is>')+'</c>';
+   return cell+(numeric?'><v>'+value+'</v>':' t="inlineStr"><is><t xml:space="preserve">'+esc(value)+'</t></is>')+'</c>';
   }).join('');
   const regex=new RegExp('<row\\b[^>]*\\br="'+r+'"[^>]*>[\\s\\S]*?<\\/row>');
   if(!regex.test(xml))throw Error('PAYROLL_WORKBOOK_ROWS');xml=xml.replace(regex,'<row r="'+r+'">'+cells+'</row>');
  }
  db.data=Buffer.from(xml.replace(/<pageMargins\b[^>]*\/>|<pageSetup\b[^>]*\/>/g,'').replace('<sheetViews>','<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews>').replace('</worksheet>','<pageMargins left="0.3" right="0.3" top="0.3" bottom="0.3" header="0" footer="0"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>'));
  const slip=files.find(f=>f.name==='xl/worksheets/sheet1.xml');
- if(rows.length){let s=slip.data.toString();for(const [ref,value]of [['D6',rows[0].period],['G6',rows[0].employee_id]])s=s.replace(new RegExp('<c\\b[^>]*\\br="'+ref+'"[^>]*?(?:\\/>|>[\\s\\S]*?<\\/c>)'),'<c r="'+ref+'" t="inlineStr"><is><t>'+esc(value)+'</t></is></c>');slip.data=Buffer.from(s);}
+ if(rows.length){let s=slip.data.toString();for(const [ref,value]of [['D6',rows[0].period],['G6',rows[0].employee_id]])s=s.replace(new RegExp('<c\\b[^>]*\\br="'+ref+'"[^>]*?(?:\\/>|>[\\s\\S]*?<\\/c>)'),full=>'<c r="'+ref+'" s="'+(/\bs="(\d+)"/.exec(full)?.[1]||8)+'" t="inlineStr"><is><t>'+esc(value)+'</t></is></c>');slip.data=Buffer.from(s);}
  // A small text gutter separates right-hand labels from left-hand amounts.
  let padded=slip.data.toString();
  const rightLabels=['Potongan Absen','Potongan Telat','Potongan Pelanggaran',...(type==='laundry'?['Potongan Lainnya']:[]),'PPh 21'];
@@ -45,6 +46,7 @@ function workbook(type,rows=[]){
  const types=files.find(f=>f.name==='[Content_Types].xml');let tx=types.data.toString();if(!/Extension="png"/.test(tx))tx=tx.replace('</Types>','<Default Extension="png" ContentType="image/png"/></Types>');types.data=Buffer.from(tx.replace('</Types>','<Override PartName="/xl/drawings/frame.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>'));
  const book=files.find(f=>f.name==='xl/workbook.xml');let bx=book.data.toString().replace(/<definedNames>[\s\S]*?<\/definedNames>/g,'');bx=bx.replace('</workbook>','<definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">&apos;Slip Gaji&apos;!$A$1:$H$46</definedName><definedName name="_xlnm.Print_Area" localSheetId="1">Database!$A$1:$'+col(keys.length-1)+'$'+Math.max(5,rows.length+4)+'</definedName></definedNames></workbook>');book.data=Buffer.from(bx.replace(/<calcPr\b[^>]*\/>/g,'').replace('</workbook>','<calcPr fullCalcOnLoad="1" forceFullCalc="1"/></workbook>'));
  require('./document-approval-xlsx').payroll(files);
+ require('./payroll-xlsx-style').apply(files,{keys,type,rows});
  return zip(files);
 }
 module.exports={workbook};

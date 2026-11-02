@@ -138,8 +138,8 @@ function service({pool,env=process.env,transport,widyaReviews}={}){
    await client.query('BEGIN');
    await call(token,'FENCE',{id,email:e.row.email},client);
    if(!currentRecipient(e.row,await directory(token,client)))throw fault('PAYROLL_CONTACT_CHANGED',409);
-   const template=require('./payroll-email-template').payrollEmail(e.row,{publishedAt:e.published_at});
-   const result=await mailer.sendMail({from:env.PAYROLL_EMAIL_FROM,to:e.row.email,subject:template.subject,text:template.text,html:template.html,messageId:`<${claim.id}@payroll.sipeka>`,attachments:[{filename:template.filename,content:pdf,contentType:'application/pdf'}]});
+   const template=require('./payroll-email-template').payrollEmail(e.row,{publishedAt:e.published_at,recipientEmail:e.row.email});
+   const result=await mailer.sendMail({from:env.PAYROLL_EMAIL_FROM,to:e.row.email,subject:template.subject,text:template.text,html:template.html,messageId:`<${claim.id}@payroll.sipeka>`,attachments:[{filename:template.filename,content:pdf,contentType:'application/pdf'},...template.inlineAttachments]});
    if(!result?.accepted?.includes(e.row.email)||!result.messageId)throw fault('PAYROLL_EMAIL_ACCEPTANCE_UNKNOWN',503);
    const finished=await call(token,'FINISH',{id:claim.id,status:'sent',provider_id:result.messageId},client);
    await client.query('COMMIT');return finished;

@@ -27,11 +27,11 @@ test('CSV limits, injection, quoting, exact integers and contact privacy',()=>{
  assert.throws(()=>p.validateCsv(h+Array(1001).fill('2026-09,staff,1,0,0,0').join('\n'),users));
  assert.throws(()=>p.validateCsv(h+'2026-09,staff,1,0,0,0',[{...users[0],is_active:false}]));
 });
-test('configured adapter sends single email attachment and private summary only',async()=>{
+test('configured adapter sends one PDF plus inline banner and private Telegram summary only',async()=>{
  const {createNotificationAdapter}=require('../payroll-delivery');let message,payload;
  const row={period:'2026-09',username:'staff',full_name:'Staff',basic_salary:1,allowances:0,deductions:0,pph21:0,net_salary:1};
  const adapter=createNotificationAdapter({emailFrom:'payroll@example.com',emailTransport:{async sendMail(m){message=m;return {accepted:[m.to],messageId:'r'};}},telegramToken:'fixture',fetchImpl:async(u,o)=>{payload=require('./fixtures/payroll-document.cjs')(o.body);return {ok:true,json:async()=>({ok:true,result:{message_id:2,chat:{id:123,type:'private'}}})};}});
- assert.equal((await adapter.email({to:'staff@example.com',row,idempotencyKey:'job'})).providerId,'r');assert.equal(message.to,'staff@example.com');assert.equal(message.cc,undefined);assert.equal(message.bcc,undefined);assert.equal(message.attachments.length,1);assert.equal(message.messageId,'<job@payroll.sipeka>');
+ assert.equal((await adapter.email({to:'staff@example.com',row,idempotencyKey:'job'})).providerId,'r');assert.equal(message.to,'staff@example.com');assert.equal(message.cc,undefined);assert.equal(message.bcc,undefined);assert.equal(message.attachments.length,2);assert.equal(message.attachments[0].contentType,'application/pdf');assert.equal(message.attachments[1].cid,'amc-payroll-header');assert.equal(message.messageId,'<job@payroll.sipeka>');
  assert.equal((await adapter.telegram({to:'123',row})).providerId,'2');assert.equal(payload.parse_mode,undefined);assert.equal(payload.protect_content,true);assert.ok(!payload.text.includes('Potongan'));
 });
 test('CSV strict amounts, unique STAFF matching and template roundtrip',()=>{
