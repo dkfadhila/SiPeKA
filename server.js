@@ -447,7 +447,7 @@ async function handleRequest(req, res, url, p) {
     if(me.role!=='OWNER')return json(res,403,{error:'PAYROLL_OWNER_ONLY'});
     if(!process.env.DATABASE_URL)return json(res,503,{error:'PAYROLL_POSTGRES_REQUIRED'});
     const token=security.cookieToken(req);if(!token)return json(res,401,{error:'PAYROLL_COOKIE_REQUIRED'});
-    const svc=require('./employee-payroll').service({pool:require('./db-postgres').getPool()});
+    const svc=require('./employee-payroll').service({pool:require('./db-postgres').getPool(),widyaReviews:require('./payroll-widya-review').create({sessions:widyaSessions})});
     try{
       if(p==='/api/employee-payroll'&&req.method==='GET')return json(res,200,await svc.list(token));
       if(p==='/api/employee-payroll/workbook'&&req.method==='GET'){
@@ -466,7 +466,8 @@ async function handleRequest(req, res, url, p) {
         res.writeHead(200,{'Content-Type':'text/csv;charset=utf-8','Content-Disposition':'attachment; filename="template-gaji-'+type+'.csv"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end('\uFEFF'+require('./employee-payroll')[type==='laundry'?'FULL_LAUNDRY_HEADER':'FULL_GENERAL_HEADER']+'\r\n');
       }
       if(p==='/api/employee-payroll/review'&&req.method==='POST'){req._bodyLimit=2*1024*1024;return json(res,200,await svc.reviewUpload(token,await readBody(req)));}
-      if(p==='/api/employee-payroll/import'&&req.method==='POST'){req._bodyLimit=2*1024*1024;const body=await readBody(req);return json(res,201,body.format?await svc.importUpload(token,body):await svc.importCsv(token,body.csv,{company_address:body.company_address}));}
+      const reviewMatch=p.match(/^\/api\/employee-payroll\/reviews\/([a-f0-9-]{36})$/);if(reviewMatch&&req.method==='GET')return json(res,200,await svc.reviewStatus(token,reviewMatch[1]));
+      if(p==='/api/employee-payroll/import'&&req.method==='POST'){req._bodyLimit=2*1024*1024;const body=await readBody(req);if(!body.format)return json(res,409,{error:'PAYROLL_UPLOAD_REVIEW_REQUIRED'});return json(res,201,await svc.importUpload(token,body));}
       if(p==='/api/employee-payroll/publish'&&req.method==='POST')return json(res,200,await svc.publish(token,await readBody(req)));
       const match=p.match(/^\/api\/employee-payroll\/entries\/([a-f0-9-]{36})\/(slip.pdf|send)$/);
       if(match&&match[2]==='slip.pdf'&&req.method==='GET'){

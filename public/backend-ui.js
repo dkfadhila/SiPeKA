@@ -1,6 +1,8 @@
 /* Plain-language messages for the API contracts used by the financial workspace. */
 (()=>{'use strict';
  const messages={
+  PAYROLL_WIDYA_UNAVAILABLE:'Pemeriksaan Widya belum terhubung. Draft ditahan; hubungi pengelola atau coba lagi nanti.',
+  PAYROLL_WIDYA_REVIEW_FAILED:'Pemeriksaan Widya belum berhasil. Periksa file dan ulangi pemeriksaan sebelum menyimpan draft.',
   PAYROLL_UPLOAD_FORMAT:'Gunakan file CSV atau PDF untuk pengiriman slip.',
   PAYROLL_UPLOAD_REVIEW_REQUIRED:'Hasil pemeriksaan kedaluwarsa atau datanya berubah. Periksa ulang file dan penerima.',
   PAYROLL_EMAIL_MISSING:'Email belum ada di direktori. Lengkapi dan periksa email karyawan sebelum pengiriman.',

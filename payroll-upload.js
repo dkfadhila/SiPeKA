@@ -25,7 +25,14 @@ function matchPdf(text,staff,period){
  const lines=text.replace(/\r/g,'').split('\n').map(l=>l.trim()).filter(Boolean);
  const labels='Nomor Dokumen|Periode|Nama\\s*(?:Karyawan|Pegawai)|Employee\\s*Name|ID(?:\\s*(?:Karyawan|Pegawai))?|Employee\\s*ID|Departemen|Unit Kerja|Jabatan|Status|E-?mail(?:\\s*Karyawan)?';
  const values=label=>lines.flatMap(l=>[...l.matchAll(new RegExp('(?:^|\\s)(?:'+label+')\\s*:\\s*(.+?)(?=\\s+(?:'+labels+')\\s*:|$)','gi'))].map(m=>m[1].trim()));
- const ids=values('ID(?:\\s*(?:Karyawan|Pegawai))?|Employee\\s*ID').map(v=>v.split(/\s+(?:Jabatan|Status|Periode)\s*:/i)[0].trim());
+ const ids=values('ID(?:\\s*(?:Karyawan|Pegawai))?|Employee\\s*ID').map(v=>{
+  const first=v.split(/\s+(?:Jabatan|Status|Periode)\s*:/i)[0].trim();if(staff.some(s=>s.id===first))return first;
+  // The PDF renderer may wrap an opaque employee ID. Accept a continuation only
+  // if joining the next plain line produces exactly one existing master ID.
+  const lineIndex=lines.findIndex(l=>new RegExp('(?:^|\\s)(?:ID(?:\\s*(?:Karyawan|Pegawai))?|Employee\\s*ID)\\s*:\\s*'+first.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*$','i').test(l));
+  const next=lines[lineIndex+1];if(lineIndex>=0&&/^[A-Za-z0-9_.-]+$/.test(next||'')){const combined=first+next;if(staff.filter(s=>s.id===combined).length===1)return combined;}
+  return first;
+ });
  const names=values('Nama\\s*(?:Karyawan|Pegawai)|Employee\\s*Name').map(v=>v.split(/\s+(?:ID|Departemen|Unit Kerja)\s*:/i)[0].trim());
  if(ids.length!==1||names.length!==1)throw fault('PAYROLL_PDF_IDENTITY_REQUIRED');
  const employees=staff.filter(s=>s.active&&s.id===ids[0]);if(employees.length!==1)throw fault('PAYROLL_STAFF_NOT_FOUND');const employee=employees[0];

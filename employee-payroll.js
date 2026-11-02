@@ -71,7 +71,7 @@ function validate(csv,staff){
   return {...row,...detail[i],employee_id:s.id,department:s.department,email,staff_revision:s.revision??null,branch_id:s.branch_id,branch_name:s.branch_name,...(sourceEmails?{source_email:canonical(sourceEmails[i])}:{})};
  });
 }
-function service({pool,env=process.env,transport}={}){
+function service({pool,env=process.env,transport,widyaReviews}={}){
  const cipher=()=>createCipher(env.PAYROLL_ENCRYPTION_KEY);
  const call=async(token,op,p={},client=pool)=>(await client.query('SELECT employee_payroll_access($1,$2,$3::jsonb) result',[token,op,JSON.stringify(p)])).rows[0].result;
  const company=async token=>(await pool.query('SELECT company_profile_access($1,NULL) result',[token])).rows[0].result;
@@ -97,6 +97,7 @@ function service({pool,env=process.env,transport}={}){
    warnings=match.warnings;blockers=match.blockers;const s=match.employee;
    rows=[{period:match.period,employee_id:s.id,full_name:s.name,department:s.department,branch_id:s.branch_id,branch_name:s.branch_name,email:match.email,staff_revision:s.revision??null,upload_kind:'PDF',source_email:match.source_email,source_pdf:{data_base64:bytes.toString('base64'),sha256:crypto.createHash('sha256').update(bytes).digest('hex')},net_salary:null}];
   }
+  const existing=await entries(token);if(rows.some(row=>existing.some(e=>e.row.employee_id===row.employee_id&&e.period===row.period)))blockers.push('PAYROLL_DUPLICATE_PERIOD_STAFF');
   const digest=upload.fingerprint({format:body.format,rows,company:profile,company_address:body.company_address||''});
   return {profile,units,rows,warnings,blockers,digest};
  }
@@ -110,8 +111,9 @@ function service({pool,env=process.env,transport}={}){
  function pdfBytes(row,publishedAt){if(row.source_pdf){const bytes=upload.pdfBytes(row.source_pdf.data_base64);if(crypto.createHash('sha256').update(bytes).digest('hex')!==row.source_pdf.sha256)throw fault('PAYROLL_PDF_INVALID');return bytes;}return renderSlipPdf(row,{publishedAt,documentIdentity:identity(row)});}
  return {
  async list(token){const staff=await directory(token),rows=(await entries(token)).map(e=>{const {source_pdf,...row}=e.row;return {...e,row,recipient_valid:currentRecipient(e.row,staff)};});return {rows,readiness:{encryption:/^[a-fA-F0-9]{64}$/.test(env.PAYROLL_ENCRYPTION_KEY||''),email:require('./payroll-resend').resendReady(env)}};},
- async reviewUpload(token,body){const p=await preparedUpload(token,body);return {format:body.format,rows:p.rows.map(({source_pdf,...r})=>r),warnings:p.warnings,blockers:p.blockers,review_token:p.blockers.length?null:upload.reviewToken(env.PAYROLL_ENCRYPTION_KEY,token,p.digest),requires_review:true,engine:'sipeka-payroll-verifier'};},
- async importUpload(token,body){if(body.confirmed!==true)throw fault('PAYROLL_CONFIRM_REQUIRED');const p=await preparedUpload(token,body);if(p.blockers.length)throw fault(p.blockers[0]);upload.verifyToken(env.PAYROLL_ENCRYPTION_KEY,token,p.digest,body.review_token);return saveRows(token,p.rows,p.profile,p.units,body.company_address);},
+ async reviewUpload(token,body){const p=await preparedUpload(token,body);if(!widyaReviews)throw fault('PAYROLL_WIDYA_UNAVAILABLE',503);return widyaReviews.start(token,p,body);},
+ async reviewStatus(token,id){if(!widyaReviews)throw fault('PAYROLL_WIDYA_UNAVAILABLE',503);const result=await widyaReviews.status(token,id);const {digest,...view}=result;if(result.status==='completed'&&result.ai?.decision==='LANJUT'&&!result.blockers.length)view.review_token=upload.reviewToken(env.PAYROLL_ENCRYPTION_KEY,token,digest);return view;},
+ async importUpload(token,body){if(body.confirmed!==true)throw fault('PAYROLL_CONFIRM_REQUIRED');const p=await preparedUpload(token,body);if(p.blockers.length)throw fault(p.blockers[0]);upload.verifyToken(env.PAYROLL_ENCRYPTION_KEY,token,p.digest,body.review_token);if(!widyaReviews)throw fault('PAYROLL_WIDYA_UNAVAILABLE',503);const result=await widyaReviews.status(token,body.review_id);if(result.digest!==p.digest||result.status!=='completed'||result.ai?.decision!=='LANJUT'||result.blockers.length)throw fault('PAYROLL_UPLOAD_REVIEW_REQUIRED',409);return saveRows(token,p.rows,p.profile,p.units,body.company_address);},
  async importCsv(token,csv,{company_address}={}){
   if(company_address!==undefined&&(typeof company_address!=='string'||company_address.length>180||/[\x00-\x1f\x7f]/.test(company_address)))throw fault('PAYROLL_COMPANY_ADDRESS_INVALID');
   const profile=await company(token);if(!profile.name)throw fault('PAYROLL_COMPANY_REQUIRED');

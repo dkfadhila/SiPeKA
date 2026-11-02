@@ -36,5 +36,6 @@ const {PGlite}=require(process.env.PAYROLL_TEST_PGLITE||process.env.REPORTS_TEST
   // Read through the application Owner function, preserving payroll direct-table restrictions.
   try{const rows=(await pool.query("SELECT employee_payroll_access('fixture-owner','LIST','{}'::jsonb) result")).rows[0].result;process.send({request:message.request,value:{sent,entries:rows.map(e=>({id:e.id,status:e.status,email_status:e.email_status}))}});}catch(error){process.send({request:message.request,error:error.message});}
  });
+ const reviewModule=require(root+'/payroll-widya-review'),realCreate=reviewModule.create;reviewModule.create=()=>realCreate({sessions:require('./payroll-review-offline.cjs').sessions(pool)});
  require(root+'/server');
 })().catch(error=>{console.error(error.message);process.exit(1);});

@@ -15,24 +15,34 @@ function renderSlipPdf(row,{publishedAt,simulation=false,documentIdentity}={}){
  // Centered letterhead shared by general and laundry; financial fields stay unchanged.
  const compName=documentIdentity?require('./report-identity').companyName(documentIdentity.company_name):'CV ARTHA MULTI CIPTANUSA';
  const address=plain(documentIdentity?.company_address??row.company_address??'Kompleks Roemah Pelangi Ruko No. 3 Jl. Ori II No. 7, Depok, Daerah Istimewa Yogyakarta, Indonesia, 55281',180);
- const measure=(value,size)=>[...value].reduce((sum,c)=>sum+('ilI.,:;!| '.includes(c)?278:'mwMW@'.includes(c)?833:/[A-Z]/.test(c)?667:556),0)*size/1000;
- const centered=(value,y,size,bold=false)=>text(value,Math.max(48,(595-measure(value,size))/2),y,size,bold,'0.12 0.12 0.12');
+ // Standard Helvetica/Helvetica-Bold character advances, in 1/1000 em.
+ // Use the rendered font's metrics when wrapping, especially UUID employee IDs.
+ const advances=[
+  [278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584],
+  [278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584]
+ ];
+ const measure=(value,size,bold=false)=>[...String(value).normalize('NFKD').replace(/[\u0300-\u036f]/g,'')].reduce((sum,c)=>sum+(advances[bold?1:0][c.charCodeAt(0)-32]??556),0)*size/1000;
+ const wrapWidth=(value,maxWidth,size=10,bold=false)=>{const result=[];let current='';for(const word of String(value).split(/\s+/)){const candidate=current?current+' '+word:word;if(measure(candidate,size,bold)<=maxWidth){current=candidate;continue;}if(current){result.push(current);current='';}for(const char of word){if(current&&measure(current+char,size,bold)>maxWidth){result.push(current);current='';}current+=char;}}if(current)result.push(current);return result.length?result:[''];};
+ const centered=(value,y,size,bold=false)=>text(value,Math.max(48,(595-measure(value,size,bold))/2),y,size,bold,'0.12 0.12 0.12');
  const companyLines=compName.length>52?compName.match(/.{1,52}/g):[compName];
  companyLines.forEach((part,i)=>centered(part,780-i*18,16,true));
  const addressLines=[];let addressLine='';const addressLimit=Math.min(499,measure(address,10)/Math.max(1,Math.ceil(measure(address,10)/499))+20);
  for(const word of address.split(/\s+/)){const candidate=addressLine?addressLine+' '+word:word;if(measure(candidate,10)>addressLimit&&addressLine){addressLines.push(addressLine);addressLine=word;}else addressLine=candidate;}if(addressLine)addressLines.push(addressLine);
  addressLines.forEach((part,i)=>centered(part,754-(companyLines.length-1)*18-i*12,10));line(729-(companyLines.length-1)*18);
  const documentCode=require('./document-format').slipCode(row);
- text('Nomor Dokumen',48,710,12,true);text(': '+(documentCode||plain(row.entry_id||'Tidak tersedia',48)),148,710,12);
+ const code=documentCode||plain(row.entry_id||'Tidak tersedia',128);
+ text('Nomor Dokumen',48,710,12,true);
+ let identityY=688;
+ if(measure(': '+code,12)<=190)text(': '+code,148,710,12);
+ else{const lines=wrapWidth(code,499,10);lines.forEach((part,i)=>text(part,48,694-i*14,10));identityY=694-lines.length*14-6;}
  text('Periode',355,710,12,true);text(': '+row.period,430,710,12,true);
- const identity=(label,value,x,y,valueX,max=32)=>{text(label,x,y,12);text(':',valueX-9,y,12);text(plain(value??'-',max),valueX,y,12);};
- identity('Nama Karyawan',row.full_name,48,688,148,39);
- identity('Departemen',employeeLayout?row.department:row.username,48,670,148,39);
- identity('Unit Kerja',documentIdentity?.branch_name||row.branch_name,48,652,148,39);
- identity(employeeLayout?'ID Karyawan':'Username',employeeLayout?row.employee_id:row.username,355,688,443,23);
- identity('Jabatan',row.job_title||row.position,355,670,443,23);
- identity('Status',row.employment_status,355,652,443,23);
- text('Penerbitan: '+publicationDate(publishedAt)+' (WIB)',48,631,10);
+ const identity=(label,value,x,y,valueX,right)=>{const valueText=plain(value??'-',180),size=measure(valueText,12)<=right-valueX?12:10,lines=wrapWidth(valueText,right-valueX,size);text(label,x,y,12);text(':',valueX-9,y,12);lines.forEach((part,i)=>text(part,valueX,y-i*14,size));return lines.length*14;};
+ for(const [left,right]of [
+  [['Nama Karyawan',row.full_name], [employeeLayout?'ID Karyawan':'Username',employeeLayout?row.employee_id:row.username]],
+  [['Departemen',employeeLayout?row.department:row.username], ['Jabatan',row.job_title||row.position]],
+  [['Unit Kerja',documentIdentity?.branch_name||row.branch_name], ['Status',row.employment_status]]
+ ]){const leftHeight=identity(...left,48,identityY,148,337),rightHeight=identity(...right,355,identityY,443,547);identityY-=Math.max(18,leftHeight+6,rightHeight+6);}
+ text('Penerbitan: '+publicationDate(publishedAt)+' (WIB)',48,identityY-3,10);
  line(583);
  commands.push('0.86 0.86 0.86 rg 48 559 499 24 re f');
  text('Pendapatan',128,566,12,true,'0.12 0.12 0.12');text('Potongan',391,566,12,true,'0.12 0.12 0.12');
@@ -50,14 +60,14 @@ function renderSlipPdf(row,{publishedAt,simulation=false,documentIdentity}={}){
  commands.push('0.82 0.82 0.82 RG 0.6 w 297 368 m 297 574 l S');
  commands.push('0.94 0.94 0.94 rg 48 280 499 70 re f');text('TAKE HOME PAY / GAJI BERSIH',64,328,12,true);const net=row.net_salary==null?'Tidak tersedia':money(row.net_salary);text(net,531-width(net,18,true),306,18,true,'0.16 0.16 0.16');if(row.net_salary!=null){const words=require('./payroll-words').rupiahWords(row.net_salary);const lines=words.match(/.{1,78}(?:\s|$)|.{1,78}/g)||[];lines.slice(0,2).forEach((part,i)=>text((i?'':'Terbilang: ')+part.trim(),64,291-i*12,10));}
  const approval=require('./public/document-approval').wording;
- const atCenter=(value,x,y,size=10,bold=false)=>text(value,x-measure(value,size)/2,y,size,bold);
+ const atCenter=(value,x,y,size=10,bold=false)=>text(value,x-measure(value,size,bold)/2,y,size,bold);
  atCenter(approval.prepared,173,239,11,true);atCenter(approval.approved,423,239,11,true);
  atCenter(approval.department,173,223);atCenter(approval.company,423,223);
  atCenter('( '+approval.preparer+' )',173,151,11,true);atCenter('( '+approval.approver+' )',423,151,11,true);
  atCenter(approval.preparerRole,173,135);atCenter(approval.approverRole,423,135);
  line(115);
  const wrap=value=>{const result=[];let current='';for(const word of value.split(' ')){const next=current?current+' '+word:word;if(measure(next,10)>499&&current){result.push(current);current=word;}else current=next;}if(current)result.push(current);return result;};
- let footY=99;for(const sentence of [approval.note,approval.responsibility])for(const part of wrap(sentence)){text(part,48,footY,10);footY-=12;}
+ let footY=99;for(const sentence of [approval.note,approval.responsibility])for(const part of wrap(sentence)){text(part,48,footY,10);footY-=14;}
 
  const stream=Buffer.from(commands.join('\n'),'latin1');
  const frame=require('./assets/payroll-frame-pdf.json');const rgb=Buffer.from(frame.rgb,'base64'),alpha=Buffer.from(frame.alpha,'base64');
