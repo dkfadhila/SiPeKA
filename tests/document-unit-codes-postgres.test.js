@@ -15,7 +15,17 @@ test('real PostgreSQL numbering preserves issued identities while new reports us
  const originalRequest=body(),old=await numbering.issue(pool,'session-owner',originalRequest);
  assert.equal(old.code,'LR/AMC/X/2026/001');
  const before=(await db.query('SELECT * FROM document_registry ORDER BY id')).rows;
+ await db.exec(`CREATE ROLE historical_document_owner;
+ GRANT USAGE ON SCHEMA public TO historical_document_owner;
+ GRANT SELECT ON business_units,document_registry TO historical_document_owner;
+ GRANT UPDATE(name) ON business_units TO historical_document_owner;
+ GRANT INSERT ON document_registry TO historical_document_owner;
+ GRANT SELECT,INSERT,UPDATE ON document_counters TO historical_document_owner;
+ GRANT EXECUTE ON FUNCTION operational_actor(text) TO historical_document_owner;
+ ALTER FUNCTION document_issue(text,text,jsonb) OWNER TO historical_document_owner;`);
  await db.exec(fs.readFileSync(path.join(dir,'019_document_unit_codes.sql'),'utf8'));
+ await assert.rejects(numbering.issue(pool,'session-owner',body({branch_id:'rd',view_mode:'branch'})),{code:'DOCUMENT_UNAVAILABLE',status:403});
+ await db.exec(fs.readFileSync(path.join(dir,'021_document_resolver_owner.sql'),'utf8'));
  assert.deepEqual((await db.query('SELECT * FROM document_registry ORDER BY id')).rows,before);
  assert.equal((await numbering.issue(pool,'session-owner',originalRequest)).code,old.code,'original retries preserve their issued prefix');
  assert.equal((await numbering.get(pool,'session-owner',old.id)).code,old.code,'stored issued identities are still readable');
