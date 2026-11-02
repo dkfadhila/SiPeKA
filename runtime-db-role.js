@@ -4,4 +4,5 @@ function permitted(metadata,env=process.env){
  if(env.SIPEKA_ENVIRONMENT==='staging')return metadata?.role==='sipeka_stage_runtime'&&metadata.database==='sipeka_stage';
  return metadata?.role==='sipeka_runtime';
 }
-module.exports={permitted};
+function externalServicesAllowed(env=process.env){return env.SIPEKA_ENVIRONMENT!=='staging';}
+module.exports={permitted,externalServicesAllowed};

@@ -295,7 +295,7 @@ async function issueSession(res, user, purpose) {
 
 // ---------- Widya AI ----------
 const widyaBridge = require('./widya-bridge').createWidyaBridge();
-const widyaSessions = process.env.DATABASE_URL ? require('./widya-sessions').createWidyaSessions({pool:require('./db-postgres').getPool(),bridge:widyaBridge,context:widyaLedgerContext}) : null;
+const widyaSessions = process.env.DATABASE_URL && require('./runtime-db-role').externalServicesAllowed() ? require('./widya-sessions').createWidyaSessions({pool:require('./db-postgres').getPool(),bridge:widyaBridge,context:widyaLedgerContext}) : null;
 authReady.then(()=>widyaSessions?.start()).catch(()=>{});
 const widyaReceiptRouter = require('./widya-receipt-analysis').createWidyaReceiptRouter({
   authenticate:async(req,options)=>process.env.DATABASE_URL
@@ -427,6 +427,10 @@ async function handleRequest(req, res, url, p) {
 
   if (p.startsWith('/api/') && me && (me.session_purpose !== 'full' || me.password_change_required) && p !== '/api/change-password')
     return json(res, 403, { error: 'Ganti password untuk mengamankan akun', setup_required: true });
+
+  if (!require('./runtime-db-role').externalServicesAllowed() &&
+      (p==='/api/widya'||p.startsWith('/api/widya/')||p==='/api/dewi'||p.startsWith('/api/dewi/')||p==='/api/receipts/analyze'))
+    return json(res,503,{error:'STAGING_EXTERNAL_SERVICES_DISABLED'});
 
   if(p==='/api/documents/issue'||p.startsWith('/api/documents/')){
     if(me.role!=='OWNER')return json(res,403,{error:'DOCUMENT_OWNER_REQUIRED'});

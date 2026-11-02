@@ -1,5 +1,7 @@
 # Widya payroll email-only operator capability
 
+> Historical operator implementation note. As of the 2 November 2026 employee-payroll release, the Owner-only dashboard supports `operational_staff` identities and canonical email, CSV/PDF recipient review and `/api/employee-payroll*`. Read `OPERATING_CONTEXT.md` and verify the running revision/readiness. References below to absent employee email/UI or a paused conversational gateway describe the earlier installation, not current capability. The root-only external approval helper is not a general model tool and must not bypass the dashboard's signed review, exact-recipient checks or Owner confirmation. Email-provider/domain changes remain deferred pending Owner instructions.
+
 Owner request supersedes historical payroll Telegram instructions. Payroll/contact UI stays removed; `/api/payroll*` stays HTTP 410; app worker stays absent. Dedicated payroll Telegram bot stays disabled. Widya conversational gateway is separate.
 
 Dedicated command: `/usr/local/bin/widya-payroll-email --check APPROVAL_UUID` or `--send APPROVAL_UUID`, VPS only, root operator only. This command does not grant Widya unrestricted website/backend mutation or bypass the existing Telegram pause plugin. Current gateway remains paused for website access; therefore conversational invocation is NOT activated. Operator can execute the dedicated delivery command on Widya's behalf after explicit Owner approval. Do not claim autonomous conversational delivery.

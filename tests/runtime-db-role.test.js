@@ -7,3 +7,9 @@ test('production retains exact runtime role; staging requires its dedicated role
  for(const row of [{role:'sipeka_runtime',database:'sipeka_stage'},{role:'sipeka_stage_runtime',database:'sipeka'},{role:'sipeka_stage_runtime'},{role:'sipeka_test',database:'sipeka_stage'}])assert.equal(permitted(row,env),false);
  assert.equal(permitted({role:'sipeka_stage_runtime',database:'sipeka_stage'},{SIPEKA_ENVIRONMENT:'production'}),false);
 });
+test('staging cannot activate live Hermes/vision; production retains its configured access',()=>{
+ const {externalServicesAllowed}=require('../runtime-db-role');
+ assert.equal(externalServicesAllowed({SIPEKA_ENVIRONMENT:'staging'}),false);
+ assert.equal(externalServicesAllowed({}),true);
+ assert.equal(externalServicesAllowed({SIPEKA_ENVIRONMENT:'production'}),true);
+});

@@ -24,9 +24,9 @@
 - Jangan menghapus transaksi, nota, audit log atau backup historis. Cabang bersejarah diarsipkan, bukan cascade-delete. Transfer dana, penghapusan permanen dan aksi infrastruktur destruktif memerlukan konfirmasi spesifik.
 
 ## Payroll
-- CSV disiapkan tim; Owner meninjau dan menerbitkan. Match STAFF berdasarkan username unik/ID, nama sebagai konfirmasi. Tolak nama ambigu, duplikasi periode-user, nominal invalid dan penerima tak dikenal.
+- CSV disiapkan tim; Owner meninjau dan menerbitkan. Identitas payroll saat ini memakai ID karyawan unik pada `operational_staff`, nama, departemen, unit, status aktif/revisi dan email unik; bukan username/ID device login. Tolak nama ambigu, duplikasi periode-karyawan, nominal invalid dan penerima tak dikenal. Periksa `OPERATING_CONTEXT.md` untuk alur CSV/PDF dan revision aktual.
 - Preview, validasi total/potongan/gaji bersih dan kontak master sebelum publish. Jangan menghitung kewajiban pajak dari angka contoh atau asumsi.
-- Akses rincian payroll hanya Owner. Karyawan menerima hanya slip sendiri melalui email resmi dan Telegram private chat; jangan kirim ke grup, user lain atau konteks AI yang tidak diperlukan.
+- Akses rincian payroll hanya Owner. Karyawan menerima hanya slip sendiri melalui alur email resmi yang dikonfirmasi Owner; payroll Telegram lama sudah dinonaktifkan. Bot percakapan Widya tetap untuk laporan umum, bukan pengiriman gaji. Jangan kirim slip melalui helper Telegram umum, grup, user lain atau konteks AI yang tidak diperlukan.
 - Simpan nominal terenkripsi at rest dan catat akses. Jangan menyimpan CSV/gaji plaintext sebagai memory/skill/log umum.
 - Kirim melalui outbox durable per periode/user/channel dan idempotency. Provider accepted bukan bukti delivered; catat status aktual. Timeout ambigu jangan auto-repeat tanpa rekonsiliasi. Konfigurasi/kontak kosong berarti blocked, bukan sent.
 - Beri tahu Owner jumlah sukses, pending/gagal, alasan tersanitasi dan tindak lanjut tanpa membocorkan slip pihak lain ke kanal yang salah.
