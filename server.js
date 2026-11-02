@@ -593,6 +593,7 @@ async function handleRequest(req, res, url, p) {
     }
     if(match[2]){
       if(params.getAll('format').length!==1||!['csv','xlsx'].includes(exportFormat))return json(res,400,{error:'REPORT_CSV_FORMAT_REQUIRED'});
+      if(!exportDocument)return json(res,409,{error:'DOCUMENT_REQUIRED'});
       params.delete('format');
       if(exportFormat==='xlsx'){
         if(!require('./report-template').kinds[match[1]])return json(res,400,{error:'REPORT_XLSX_TEMPLATE_UNAVAILABLE'});
@@ -701,18 +702,16 @@ async function handleRequest(req, res, url, p) {
 
   if (p === "/api/units" && req.method === "POST") {
     if (me.role !== "OWNER") return json(res, 403, { error: "Khusus Owner" });
-    const { name, code, category } = await readBody(req);
-    if (!name || !code) return json(res, 400, { error: "Nama cabang dan kode cabang wajib diisi" });
-    const cleanCode = String(code).trim().toUpperCase();
-    const cleanName = String(name).trim();
-    if (typeof name !== 'string' || typeof code !== 'string' || !cleanName || cleanName.length>120 || !/^[A-Z0-9_-]{1,32}$/.test(cleanCode) || (category!==undefined && (typeof category!=='string' || !category.trim() || category.length>64))) return json(res,400,{error:'Data cabang tidak valid'});
-    const branchId = "UNIT_" + uid();
     try {
-      (await q.insertBranch.run(branchId, cleanCode, cleanName, category || "LAUNDRY"));
-      return json(res, 201, { ok: true, id: branchId, name: cleanName, code: cleanCode });
+      const registration=require('./unit-registration'),body=await readBody(req);
+      if(process.env.DATABASE_URL)return json(res,201,await registration.create({query:require('./db-postgres').query},security.cookieToken(req),body));
+      const {name,code,category}=registration.normalize(body),branchId='UNIT_'+uid();
+      await q.insertBranch.run(branchId,code,name,category);
+      return json(res,201,{ok:true,id:branchId,name,code});
     } catch (e) {
       console.error("[units] write failed");
-      return json(res, 400, { error: "Gagal menambah cabang (kode/nama mungkin sudah ada)" });
+      const messages={UNIT_CODE_INVALID:'Kode unit harus 2–4 huruf A–Z, tanpa angka atau simbol.',UNIT_CODE_RESERVED:'Kode AMC khusus untuk laporan keseluruhan perusahaan. Gunakan kode unit lain.',UNIT_CODE_DUPLICATE:'Kode unit sudah digunakan, termasuk oleh cabang yang diarsipkan. Pilih kode lain.',UNIT_NAME_DUPLICATE:'Nama cabang sudah digunakan. Pilih nama lain.',UNIT_INVALID_REQUEST:'Nama, kode unit, atau kategori cabang tidak valid.'};
+      return json(res,e.status||400,{error:messages[e.code]||'Gagal menambah cabang. Periksa data dan coba kembali.',...(e.code?{code:e.code}:{})});
     }
   }
 

@@ -1,11 +1,24 @@
 'use strict';
 // Authoritative numbers are allocated by PostgreSQL; this module never generates a sequence in memory.
 const crypto=require('node:crypto');
-const reportCodes=Object.freeze({'fund-position':'NRC','recorded-income-expense':'PB','company-profit-loss':'LR','compare-profit-loss':'LR','profit-loss':'LR','cash-flow':'AK','expense-breakdown':'RP','branch-performance':'KC','branch-accountability':'PJC','budget-actual':'AR','tax-summary':'RPK',ppn:'PPN',pph21:'PPH21',pph4:'PPH4',pbjt:'PBJT',umkm:'UMKM','tax-checklist':'KPP','general-ledger':'RT','management-report':'LM','audit-evidence':'BT','fund-requests':'PD','daily-closings':'CL','quarterly-owner':'LT','quarterly-data':'DT'});
+const reportCodes=Object.freeze({'fund-position':'NRC','recorded-income-expense':'PNB','company-profit-loss':'LBR','compare-profit-loss':'LBR','profit-loss':'LBR','cash-flow':'AKS','expense-breakdown':'RBP','branch-performance':'KCB','branch-accountability':'PJC','budget-actual':'ANG','tax-summary':'PJK',ppn:'PPN',pph21:'PPD',pph4:'PPF',pbjt:'PBJ',umkm:'UMK','tax-checklist':'KPP','general-ledger':'BKU','management-report':'MGT','audit-evidence':'BKT','fund-requests':'PDN','daily-closings':'CLS','quarterly-owner':'LTP','quarterly-data':'DTP'});
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const fail=(code,status=400)=>Object.assign(new Error(code),{code,status,statusCode:status});
 function romanMonth(month){if(!Number.isInteger(Number(month))||Number(month)<1||Number(month)>12)throw fail('DOCUMENT_INVALID_MONTH');return ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'][Number(month)-1];}
-function unitCode(unit,overrides={}){if(unit===null||unit==='all')return 'AMC';if(!unit||typeof unit!=='object')throw fail('DOCUMENT_INVALID_UNIT');let code=Object.hasOwn(overrides,String(unit.id))?overrides[String(unit.id)]:/REDDOORZ/i.test(String(unit.name||''))?'RD':String(unit.code||'').toUpperCase().replace(/^UNIT_/,'').replace(/[^A-Z0-9]/g,'');if(typeof code!=='string'||!/^[A-Z0-9]{1,16}$/.test(code)||code==='AMC')throw fail('DOCUMENT_INVALID_UNIT');return code;}
+function unitCode(unit,overrides={}){
+ if(unit===null||unit==='all')return 'AMC';
+ if(!unit||typeof unit!=='object')throw fail('DOCUMENT_INVALID_UNIT');
+ let code;
+ if(Object.hasOwn(overrides,String(unit.id)))code=overrides[String(unit.id)];
+ else{
+  code=String(unit.code||'').trim().toUpperCase();
+  // An Owner-selected code takes precedence over the branch name. Only old
+  // technical UNIT_ codes need the legacy RedDoorz/name mapping.
+  if(code.startsWith('UNIT_'))code=/REDDOORZ/i.test(String(unit.name||''))?'RD':code.slice(5);
+ }
+ if(typeof code!=='string'||!/^[A-Z]{2,4}$/.test(code)||code==='AMC')throw fail('DOCUMENT_INVALID_UNIT');
+ return code;
+}
 function validDate(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&value>='2000-01-01'&&value<='2100-12-31'&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;}
 function normalizedScope(body){
  if(!body||typeof body!=='object'||Array.isArray(body)||!Object.hasOwn(reportCodes,body.report_id)||typeof body.branch_id!=='string'||!body.branch_id||body.branch_id.length>128||/[\x00-\x1f\x7f]/.test(body.branch_id)||!validDate(body.date_from)||!validDate(body.date_to)||body.date_from>body.date_to||(body.report_id!=='general-ledger'&&Date.parse(body.date_to)-Date.parse(body.date_from)>365*86400000))throw fail('DOCUMENT_INVALID_REQUEST');
