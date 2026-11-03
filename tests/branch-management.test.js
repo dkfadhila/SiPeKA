@@ -7,7 +7,7 @@ const { execFileSync } = require('node:child_process');
 test('fresh SQLite operational seed has exactly Laundry active', () => {
   const output = execFileSync(process.execPath, ['-e', "const a=require('./db'); console.log(JSON.stringify(a.q.allUnits.all().map(u=>[u.name,u.category])));a.db.close()"], {
     cwd: require('node:path').join(__dirname, '..'),
-    env: { ...process.env, DB_PATH: ':memory:', SIPEKA_SEED: '1', SIPEKA_OWNER_PASSWORD: randomBytes(24).toString('hex') }, encoding: 'utf8'
+    env: { ...process.env, DB_PATH: ':memory:', SIPEKA_SEED: '1', SIPEKA_OWNER_PASSWORD: 'FixtureA-' + randomBytes(24).toString('hex') }, encoding: 'utf8'
   });
   assert.deepEqual(JSON.parse(output.trim().split('\n').at(-1)), [['Laundry','LAUNDRY']]);
 });
