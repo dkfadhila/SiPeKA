@@ -2055,6 +2055,238 @@ body #content .widya-workspace [hidden]{display:none!important}
 body #content .widya-workspace .widya-refresh{margin-left:auto;font-size:12px;min-height:34px;padding:6px 10px}
 </style>
 <style id="report-scope-modes">body .sr-page .sr-filter{grid-template-columns:minmax(220px,1.5fr) minmax(150px,1fr) minmax(145px,1fr) minmax(145px,1fr) auto}body .sr-page .sr-filter label{min-width:0}body .sr-page .sr-filter select{max-width:100%;width:100%}@media(max-width:1200px){body .sr-page .sr-filter{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){body .sr-page .sr-filter{grid-template-columns:minmax(0,1fr)}}</style>
+<style id="sipeka-ui-polish">
+/* SiPeKA shell polish. Adapted from unslop by Damir Sokolovsky
+ * https://heydamir.design/unslop — CC BY 4.0.
+ * Append after existing styles. CSS only; navigation, session and data contracts remain intact.
+ */
+html body { font-size:14px; line-height:22px; }
+@media(min-width:601px) and (max-width:920px){body #content .owner-overview .table-card table{table-layout:auto;min-width:900px}}
+body #railFab{position:fixed!important;top:auto!important;left:auto!important;bottom:24px!important;right:24px!important;z-index:45!important}
+html[data-theme=dark] body #content .owner-overview .btn.primary{color:#17263d!important}
+@media(max-width:600px){body #content .owner-overview .page-head>div:first-child,body #content .owner-overview .quarterly-owner>.card-head>div{flex:0 1 auto!important}body #railFab{right:16px!important;bottom:16px!important}}
+html[data-theme="light"] { --bg:#f7f7f8; --surface:#fff; --soft:#f1f2f4; --ink:#202126; --sub:#53565f; --muted:#6b6f79; --line:#e1e3e7; --line2:#cbd0d8; --green:#254b83; --green2:#234779; --green-bg:#edf2fa; --nav:#15171b; --nav2:#22252b; --nav-sub:#b1b5bf; --shadow:0 8px 24px #14182014; }
+html[data-theme="dark"] { --bg:#121315; --surface:#1a1c20; --soft:#24272c; --ink:#ededf0; --sub:#b7bbc4; --muted:#989eaa; --line:#30333a; --line2:#454a55; --green:#8aaeea; --green2:#a6c2ef; --green-bg:#202d43; --nav:#101114; --nav2:#202228; --nav-sub:#b1b5bf; --shadow:0 8px 24px #0003; }
+
+/* The existing full sidebar stays. Neutral chrome lets financial status lead. */
+body #sidebar { background:var(--nav); padding:16px 12px; }
+body #sidebar .brand { padding:4px 8px 16px; margin-bottom:12px; }
+body #sidebar .brand strong { font-size:18px; line-height:24px; font-weight:600; }
+body #sidebar .group-title { padding:16px 8px 8px; font-size:12px; line-height:16px; color:#9299a6; font-weight:500; }
+body #sidebar .nav-list { gap:4px; }
+body #sidebar .nav-link { min-height:36px; padding:8px; gap:8px; font-size:14px; line-height:20px; border-radius:6px; font-weight:400; }
+body #sidebar .nav-link:hover { background:#ffffff09; }
+body #sidebar .nav-link.active { background:#ffffff0e; color:#fff; box-shadow:inset 2px 0 #88aee9; }
+body #sidebar .nav-link svg { width:16px; height:16px; stroke-width:1.7; }
+body #sidebar .dewi-primary { background:#ffffff07; border:1px solid #ffffff14; box-shadow:none; margin-bottom:4px; }
+body #sidebar .dewi-primary strong { font-size:14px; font-weight:500; }
+body #sidebar .dewi-nav-state { background:#8aaeea; box-shadow:none; }
+body #sidebar .profile-panel { background:#ffffff05; border-color:#ffffff12; border-radius:8px; }
+body #sidebar .profile { padding:12px 8px; }
+body #sidebar .profile strong { font-size:14px; font-weight:500; }
+body #sidebar .profile small { font-size:12px; line-height:16px; }
+body #sidebar #logoutBtn { font-size:12px!important; color:#c7cbd4!important; background:transparent; border-color:transparent; }
+
+/* Strong selectors are intentional: the old command bar uses !important. */
+html body .workspace .topbar { padding:8px 24px!important; height:64px!important; }
+html body .workspace .top-actions { background:var(--surface)!important; border-color:var(--line)!important; box-shadow:0 1px 2px #00000006!important; border-radius:8px!important; gap:4px!important; padding:4px!important; height:44px!important; }
+html body .workspace .topbar .branch-select,
+html body .workspace .topbar .theme-switch,
+html body .workspace .topbar .search-button,
+html body .workspace .topbar .notification-button,
+html body .workspace .topbar .logout-top { background:var(--surface)!important; color:var(--sub)!important; border-color:transparent!important; border-radius:6px!important; }
+html body .workspace .topbar .branch-select { font-size:14px!important; font-weight:500!important; }
+html body .workspace .topbar .branch-select option { background:var(--surface); color:var(--ink); }
+html body .workspace .topbar :is(.search-button,.notification-button,.logout-top):hover { background:var(--soft)!important; color:var(--ink)!important; }
+html body .workspace .topbar .theme-option { color:var(--muted); }
+html body .workspace .topbar .theme-option.active { background:var(--soft); color:var(--ink); box-shadow:none; }
+body .workspace .staff-branch { background:var(--soft); color:var(--sub); border-color:var(--line); font-size:12px; font-weight:500; }
+body #content { padding:20px 24px 88px; }
+body #content .page-head h1 { font-size:28px; line-height:32px; font-weight:500; letter-spacing:0; }
+body #content .page-head p { font-size:14px; line-height:22px; color:var(--sub); }
+body #content .eyebrow, body #loginGate .eyebrow { font-size:12px; line-height:16px; font-weight:500; text-transform:none; letter-spacing:0; color:var(--muted); }
+
+/* Dashboard only: neutral totals, consistent financial rhythm, no decorative rings. */
+body #content :is(.owner-overview,.staff-overview) { gap:24px; }
+body #content :is(.owner-overview,.staff-overview) .operational-kpis { gap:16px; }
+body #content :is(.owner-overview,.staff-overview) .kpis .kpi { background:var(--surface); border:1px solid var(--line); border-radius:10px; color:var(--ink); box-shadow:none; padding:20px; }
+body #content :is(.owner-overview,.staff-overview) .kpi::after { display:none; }
+body #content :is(.owner-overview,.staff-overview) .kpi .kpi-top { color:var(--sub)!important; min-height:40px; font-size:14px; line-height:20px; font-weight:500; }
+body #content :is(.owner-overview,.staff-overview) .kpi .kpi-value { color:var(--ink)!important; font-size:28px; line-height:32px; font-weight:500; font-variant-numeric:tabular-nums; text-shadow:none; margin:12px 0; }
+body #content :is(.owner-overview,.staff-overview) .kpi .delta { color:var(--muted)!important; font-size:12px; line-height:16px; }
+body #content :is(.owner-overview,.staff-overview) .kpi .spark { display:none; }
+body #content :is(.owner-overview,.staff-overview) .kpi .status-dot { background:var(--muted); box-shadow:none; }
+body #content .owner-overview :is(.quarterly-owner,#advancePanel,.table-card),
+body #content .owner-overview>.card:not(.table-card):not(.quarterly-owner),
+body #content .owner-overview .dash-grid>.card { background:var(--surface); border:1px solid var(--line); border-radius:10px; box-shadow:none; }
+body #content .owner-overview :is(.quarterly-owner,#advancePanel) { padding:24px; }
+body #content .owner-overview .table-card>.card-head { padding:20px 24px; background:var(--surface); border-bottom:1px solid var(--line); }
+body #content .owner-overview :is(h2,h3) { font-size:16px; line-height:24px; font-weight:600; }
+body #content .owner-overview :is(th,.quarterly-table th) { background:var(--soft); color:var(--sub); font-size:12px; line-height:16px; font-weight:500; text-transform:none; letter-spacing:0; padding:12px 16px; }
+body #content .owner-overview :is(td,.quarterly-table td) { font-size:14px; line-height:20px; padding:16px; }
+body #content .owner-overview .quarterly-table tr.row-total td { background:var(--soft); border-top:1px solid var(--line); }
+body #content .owner-overview .quarterly-controls-inline { gap:8px; }
+body #content .owner-overview .quarterly-controls-inline label { font-size:12px; line-height:16px; text-transform:none; letter-spacing:0; font-weight:500; }
+body #content .owner-overview .quarterly-controls-inline :is(input[name=year],select[name=quarter],.btn) { height:40px; min-height:40px; font-size:14px; font-weight:500; background:var(--surface); border:1px solid var(--line2); }
+body #content .owner-overview .quarterly-controls-inline .btn.primary { background:var(--green); border-color:var(--green); color:#fff; }
+html[data-theme="dark"] body #content .owner-overview .quarterly-controls-inline .btn.primary { color:#17263d; }
+body #content .owner-overview :is(.quarterly-status-badge,.quarterly-compare-box,.quarterly-info-note) { background:var(--soft); border-color:var(--line); color:var(--sub); font-size:12px; line-height:20px; }
+body #content .owner-overview #advancePanel>p:last-child { background:var(--soft); border-color:var(--line); font-size:14px; font-weight:400; padding:16px; }
+body #content .owner-overview .tag { min-height:24px; border-radius:5px; padding:2px 8px; font-size:12px; line-height:18px; font-weight:500; }
+body #content .owner-overview .btn,
+body #content .staff-overview .btn { min-height:40px; font-size:14px; line-height:20px; padding:8px 16px; font-weight:500; transition:background-color 150ms ease,border-color 150ms ease,color 150ms ease; }
+body #content .owner-overview .scope-pill { min-height:32px; font-size:12px; line-height:16px; font-weight:500; background:var(--soft); color:var(--sub); border-color:var(--line); }
+body #content .owner-overview .scope-pill::before { background:var(--green); }
+body #content .owner-overview [data-advance-form] input:not([type=checkbox]) { min-height:40px; font-size:14px; padding:8px 12px; }
+body #content .staff-overview .big-action { border:1px solid var(--line); background:var(--surface); border-radius:10px; box-shadow:none; }
+body #content .staff-overview .big-action strong { font-size:16px; line-height:24px; font-weight:600; }
+body #content .staff-overview .big-action small { font-size:12px; line-height:20px; color:var(--sub); }
+body #content .staff-overview .big-action svg { color:var(--green); }
+
+/* Login keeps the existing visual and split. Form has its own measured rhythm. */
+body #loginGate { overflow:auto; }
+body #loginGate .login-form-panel { padding:64px 32px 40px; }
+body #loginGate .login-theme-switch { top:24px; right:24px; }
+body #loginGate .login-form { max-width:360px; }
+body #loginGate .login-form h2 { margin:8px 0; font-size:28px; line-height:32px; font-weight:500; }
+body #loginGate .login-form>p { font-size:14px; line-height:22px; margin:0 0 32px; color:var(--sub); }
+body #loginGate .form-label { font-size:14px; line-height:20px; font-weight:500; margin:0 0 8px; }
+body #loginGate .login-field { font-size:14px; line-height:20px; height:44px; padding:0 12px; margin-bottom:20px; background:var(--surface); border:1px solid var(--line2); border-radius:6px; box-shadow:none; }
+body #loginGate .login-field::placeholder { color:var(--muted); opacity:1; }
+body #loginGate .login-meta { gap:12px; font-size:12px; line-height:20px; margin-bottom:24px; }
+body #loginGate .text-action { font-weight:500; color:var(--green2); }
+body #loginGate .login-submit { height:44px; min-height:44px; font-size:14px; font-weight:500; border-radius:6px; background:var(--green); color:#fff; box-shadow:none; }
+html[data-theme="dark"] body #loginGate .login-submit { color:#17263d; }
+body #loginGate .login-note { margin:24px 0 0!important; font-size:12px!important; line-height:20px; color:var(--muted); }
+body #loginGate .login-error { font-size:12px; line-height:20px; }
+body #loginGate .login-visual h1 { font-weight:500; text-wrap:balance; }
+body #loginGate .login-visual p { line-height:1.6; }
+
+/* Visible keyboard feedback survives the source's outline resets. */
+html body :is(#sidebar,.topbar,#loginGate,.owner-overview,.staff-overview) :is(button,a,input,select,textarea):focus-visible { outline:2px solid var(--green)!important; outline-offset:3px; box-shadow:none; }
+html body #sidebar :is(button,a):focus-visible { outline-color:#a6c2ef!important; }
+
+@media(max-width:920px) {
+  html body .workspace .topbar { padding:8px 16px!important; }
+  body #content { padding:20px 16px 88px; }
+  body #loginGate .login-form-panel { padding:64px 24px 32px; }
+}
+@media(max-width:600px) {
+  html body .workspace .topbar { padding:8px 12px!important; gap:8px; }
+  html body .workspace .top-actions { max-width:calc(100vw - 64px)!important; gap:2px!important; padding:4px!important; }
+  html body .workspace .topbar .branch-select { min-width:88px!important; max-width:104px!important; font-size:12px!important; }
+  body #content { padding:16px 12px 88px; }
+  body #content :is(.owner-overview,.staff-overview) { gap:20px; }
+  body #content :is(.owner-overview,.staff-overview) .operational-kpis { gap:12px; }
+  body #content :is(.owner-overview,.staff-overview) .kpis .kpi { padding:16px; }
+  body #content :is(.owner-overview,.staff-overview) .kpi .kpi-top { min-height:0; }
+  body #content .owner-overview :is(.quarterly-owner,#advancePanel) { padding:16px; }
+  body #content .owner-overview .table-card>.card-head { padding:16px; align-items:flex-start; flex-wrap:wrap; }
+  body #content .owner-overview .quarterly-controls-inline { gap:12px 8px; }
+  body #content .owner-overview table.responsive { min-width:0; }
+  body #content .owner-overview table.responsive td { padding:8px 0; font-size:14px; }
+  body #content .owner-overview table.responsive td::before { font-size:12px; line-height:20px; }
+  body #content .owner-overview table.responsive tr { padding:16px; }
+  body #loginGate .login-form-panel { padding:64px 24px 32px; }
+  body #loginGate .login-form>p { margin-bottom:24px; }
+  body #loginGate .login-visual-copy { left:24px; right:24px; bottom:24px; }
+  body #loginGate .login-visual h1 { font-size:28px; line-height:32px; }
+  body #loginGate .login-visual p { font-size:12px; line-height:18px; }
+}
+@media(max-width:390px) {
+  body #loginGate .login-form-panel { padding-inline:20px; }
+  body #loginGate .login-meta { gap:8px; flex-wrap:wrap; }
+  body #loginGate .login-visual { min-height:320px; flex-basis:320px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  html body :is(#sidebar,.topbar,#loginGate,.owner-overview,.staff-overview) * { transition:none!important; animation:none!important; }
+}
+
+/* Unslop method: Damir Sokolovsky, CC BY 4.0, https://github.com/heydamir/unslop */
+body #content .payroll-workspace{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:24px;max-width:1440px;width:100%;margin:0 auto;min-width:0;background:transparent;border:0;padding:0}
+body #content .payroll-page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin:0}
+body #content .payroll-kicker{font-size:12px;line-height:16px;font-weight:500;color:var(--muted);display:block;margin-bottom:8px;letter-spacing:0}
+body #content .payroll-page-head h1{font-size:32px;line-height:40px;font-weight:500;letter-spacing:-.5px;margin:0 0 8px;color:var(--ink)}
+body #content .payroll-page-head p,body #content .payroll-register-head p{font-size:14px;line-height:22px;color:var(--muted);margin:0;max-width:65ch}
+body #content .payroll-page-head>.btn{flex-shrink:0;margin-top:24px}
+body #content .payroll-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;list-style:none;padding:20px 24px;margin:0;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+body #content .payroll-steps li{display:flex;gap:12px;align-items:center;min-width:0}
+body #content .payroll-steps li>span{display:grid;place-items:center;width:32px;height:32px;flex:0 0 32px;border:1px solid var(--line);background:var(--soft);color:var(--sub);border-radius:8px;font-size:13px;font-variant-numeric:tabular-nums}
+body #content .payroll-steps strong{display:block;font-size:13px;line-height:20px;font-weight:600;color:var(--ink)}
+body #content .payroll-steps small{display:block;font-size:12px;line-height:20px;color:var(--muted)}
+body #content .payroll-preparation{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;align-items:start}
+body #content .payroll-panel{padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--surface);min-width:0;box-shadow:none}
+body #content .payroll-panel-heading{display:flex;gap:12px;align-items:flex-start;margin-bottom:24px}
+body #content .payroll-section-number{flex:0 0 16px;white-space:nowrap;font-size:12px;line-height:24px;color:var(--muted);font-variant-numeric:tabular-nums}
+html[data-theme=dark] body #content .payroll-workspace .btn.primary{background:#8aaeea!important;color:#101c30!important;border-color:#8aaeea!important}
+body #content .payroll-panel-heading h2,body #content .payroll-register-head h2{font-size:20px;line-height:28px;font-weight:600;margin:0 0 4px;color:var(--ink);letter-spacing:0}
+body #content .payroll-panel-heading p,body #content .payroll-template-type p{font-size:13px;line-height:20px;margin:0;color:var(--muted)}
+body #content .payroll-template-type{padding:0 0 24px;margin:0 0 24px;border-bottom:1px solid var(--line)}
+body #content .payroll-template-type h3{font-size:15px;line-height:24px;font-weight:600;margin:0 0 4px;color:var(--ink)}
+body #content .payroll-template-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+body #content .payroll-template-actions .btn{font-size:12px;line-height:20px;min-height:36px;padding:8px 12px;white-space:normal;text-align:center}
+body #content .employee-components{padding:0;margin:0;border:0;background:transparent}
+body #content .employee-components summary{font-size:13px;line-height:20px;color:var(--sub);cursor:pointer;font-weight:500;padding:4px 0}
+body #content .employee-components p{font-size:13px;line-height:22px;margin:12px 0 0;color:var(--sub)}
+body #content .payroll-directory-note{font-size:12px;line-height:20px;color:var(--muted);padding:16px;background:var(--soft);border-radius:8px;margin:20px 0 0}
+body #content .payroll-workspace [data-employee-import]{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;padding:0;margin:0;background:transparent;border:0;max-width:none}
+body #content .payroll-workspace [data-employee-import]>label{display:grid;gap:8px;font-size:13px;line-height:20px;font-weight:500;color:var(--ink);margin:0;min-width:0}
+body #content .payroll-workspace [data-employee-import] label>small{font-size:12px;line-height:20px;color:var(--muted);font-weight:400}
+body #content .payroll-workspace [data-employee-import] .control{width:100%;min-width:0;min-height:40px;font-size:14px;line-height:20px;margin:0;padding:10px 12px;border-radius:8px;background:var(--soft);color:var(--ink);border:1px solid var(--line2)}
+body #content .payroll-workspace [data-employee-import] input[type=file]{font-size:12px;padding:8px;max-width:100%}
+body #content .payroll-workspace [data-employee-import] input[type=file]::file-selector-button{font:inherit;font-weight:500;padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);margin-right:12px;cursor:pointer}
+body #content .payroll-form-action{padding-top:4px;border-top:1px solid var(--line);margin-top:4px;display:flex;justify-content:flex-end}
+body #content .payroll-form-action>.btn{margin-top:16px;min-height:40px;padding:10px 16px;font-size:13px}
+body #content .payroll-workspace .btn:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+body #content .payroll-review[hidden]{display:none!important}
+body #content .payroll-review h3{font-size:20px;line-height:28px;margin:0 0 16px;font-weight:600}
+body #content .payroll-review [data-employee-ai-decision]{font-size:14px;line-height:22px;margin:0 0 12px;color:var(--ink)}
+body #content .payroll-review [data-employee-ai-result]{font-size:14px;line-height:24px;padding:16px;background:var(--soft);border:1px solid var(--line);border-radius:8px;color:var(--sub);margin-bottom:20px}
+body #content .payroll-review details{font-size:13px;line-height:22px;margin:16px 0}
+body #content .payroll-review ul{padding-left:20px;margin:12px 0;overflow-wrap:anywhere}
+body #content .payroll-review p{font-size:13px;line-height:22px;color:var(--sub);margin:12px 0}
+body #content .payroll-review>label{display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:22px;padding-top:16px;border-top:1px solid var(--line);margin:20px 0 16px}
+body #content .payroll-review input[type=checkbox]{margin:4px 0 0;flex-shrink:0;accent-color:#426ab0}
+body #content .payroll-register{min-width:0}
+body #content .payroll-register-head{margin:8px 0 16px}
+body #content .payroll-status{max-width:none!important;padding:12px 16px;border:1px solid var(--line);border-radius:8px;font-size:13px;line-height:22px;color:var(--sub);background:var(--surface);margin:0 0 20px;overflow-wrap:anywhere}
+body #content [data-employee-rows]{display:grid;gap:20px;min-width:0}
+body #content [data-employee-rows]>.card{margin:0;padding:24px;border-radius:12px;border:1px solid var(--line);background:var(--surface);min-width:0}
+body #content [data-employee-rows]>.card>h3{font-size:16px;line-height:24px;font-weight:600;margin:0 0 4px;color:var(--ink)}
+body #content [data-employee-rows]>.card>p{font-size:12px;line-height:20px;color:var(--muted);margin:4px 0;overflow-wrap:anywhere}
+body #content [data-employee-rows] .table-wrap{margin:20px -24px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow-x:auto;max-width:calc(100% + 48px)}
+body #content [data-employee-rows] table{width:100%;min-width:980px;border-collapse:collapse;white-space:normal;table-layout:auto}
+body #content [data-employee-rows] th{font-size:12px;line-height:20px;font-weight:500;background:var(--soft);color:var(--muted);padding:12px 16px;vertical-align:top;white-space:nowrap}
+body #content [data-employee-rows] td{font-size:13px;line-height:22px;padding:16px;vertical-align:top;border-color:var(--line);color:var(--ink);overflow-wrap:anywhere}
+body #content [data-employee-rows] td:nth-child(n+2):nth-child(-n+6),body #content [data-employee-rows] th:nth-child(n+2):nth-child(-n+6){text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+body #content [data-employee-rows] td:first-child{min-width:200px;max-width:260px}
+body #content [data-employee-rows] td:last-child{min-width:240px;max-width:300px}
+body #content [data-employee-rows] td>p,body #content [data-employee-rows] [data-employee-delivery]{font-size:12px;line-height:20px;color:var(--muted);margin:8px 0;overflow-wrap:anywhere}
+body #content [data-employee-rows] label{font-size:12px;line-height:20px;color:var(--sub);display:flex;align-items:flex-start;gap:8px;margin:16px 0 12px;max-width:65ch}
+body #content [data-employee-rows] input[type=checkbox]{margin:4px 0 0;flex-shrink:0;accent-color:#426ab0}
+body #content [data-employee-rows] .btn{font-size:12px;line-height:20px;min-height:36px;padding:8px 12px;margin:0}
+body #content .payroll-components-detail{font-size:13px;line-height:22px;text-align:right;padding:0;margin:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+body #content .payroll-components-detail summary{cursor:pointer;color:var(--ink);font-variant-numeric:tabular-nums}
+body #content .payroll-components-detail>div{padding-top:12px;font-size:12px;line-height:22px;color:var(--sub);white-space:normal;min-width:160px}
+body #content .employee-documents{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px;margin-top:20px}
+body #content .employee-document{padding:20px;background:var(--soft);border:1px solid var(--line);border-radius:8px;min-width:0}
+body #content .employee-document h4{font-size:15px;line-height:24px;margin:0 0 8px}
+body #content .employee-document p{font-size:13px;line-height:22px;overflow-wrap:anywhere}
+@media(max-width:1100px){body #content .payroll-preparation{grid-template-columns:minmax(0,1fr)}body #content .payroll-template-type{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:16px}body #content .payroll-template-actions{margin-top:0;align-items:flex-start}}
+@media(max-width:600px){body #content .payroll-workspace{gap:20px}body #content .payroll-page-head{display:block}body #content .payroll-page-head h1{font-size:28px;line-height:36px}body #content .payroll-page-head>.btn{margin-top:16px}body #content .payroll-steps{grid-template-columns:1fr;gap:16px;padding:20px}body #content .payroll-panel{padding:20px}body #content .payroll-template-type{display:block}body #content .payroll-template-actions{margin-top:12px;display:grid;grid-template-columns:1fr}body #content .payroll-template-actions>.btn{width:100%;text-align:left;min-height:40px;justify-content:flex-start}body #content .payroll-form-action>.btn{width:100%;justify-content:center}body #content [data-employee-rows]>.card{padding:20px}body #content [data-employee-rows] .table-wrap{margin-inline:-20px;max-width:calc(100% + 40px)}body #content .payroll-register-head h2,body #content .payroll-panel-heading h2{font-size:18px;line-height:28px}}
+
+/* Payroll panels share live state; switching tabs never recreates a selected file or review. */
+body #content .payroll-tab-panel[hidden]{display:none!important}
+body #content .payroll-tab-panel{display:grid;gap:24px;min-width:0}
+body #content .payroll-tabs{display:flex;gap:24px;border-bottom:1px solid var(--line);min-width:0}
+body #content .payroll-tabs [role=tab]{appearance:none;flex:0 1 auto;min-width:0;min-height:44px;margin:0 0 -1px;padding:10px 0;font:inherit;font-size:14px;font-weight:500;line-height:22px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);cursor:pointer}
+body #content .payroll-tabs [role=tab][aria-selected=true]{color:var(--green);border-bottom-color:var(--green)}
+body #content .payroll-tabs [role=tab]:hover{color:var(--ink)}
+body #content .payroll-tabs [role=tab]:focus-visible{outline:2px solid var(--green);outline-offset:4px;border-radius:2px}
+body #content .payroll-workspace>.payroll-status{margin:0}
+@media(max-width:600px){body #content .payroll-tab-panel{gap:20px}body #content .payroll-tabs{gap:20px}}
+
+</style>
 </head>
 <body>
 <section class="login-gate" id="loginGate" aria-label="Masuk ke SiPeKA">
@@ -2654,7 +2886,7 @@ function usersPage(){
   + "</section><p class=\"management-note\">Sembunyikan hanya mengatur daftar di browser ini. Akses login device tetap aktif.</p></div>";
 }
 function employeeDirectoryPage(){return pageHead("System control","Karyawan","Kelola nama, departemen, email, dan unit penugasan karyawan.")+'<div class="management-workspace">'+(window.SipekaDeviceStaff?.directory({section:"employees"})||'')+'</div>';}
-function employeePayrollPage(){return pageHead('Penggajian','Slip Gaji','Template umum dan laundry, pemeriksaan penerima, serta pengiriman slip melalui email.')+'<div class="management-workspace">'+(window.SipekaEmployeePayroll?.render()||'')+'</div>';}
+function employeePayrollPage(){return '<div class="management-workspace">'+(window.SipekaEmployeePayroll?.render()||'')+'</div>';}
 function companyPayrollPage(){return pageHead("System control","Perusahaan","Atur identitas perusahaan untuk kop laporan dan slip gaji.")+'<div class="management-workspace">'+(window.SipekaDeviceStaff?.directory({section:"payroll"})||'')+'</div>';}
 function advanceLine(){return '<fieldset data-advance-line><label>Foto nota<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" data-advance-upload required></label><input name="receiptKey" type="hidden"><span data-advance-upload-status></span><label>Kode Akun Beban (COA)<select name="coaId" required>'+window.SipekaCoaInput.options(window.SipekaAdvanceCategories||[],{expenseOnly:true})+'</select></label><label>Realisasi IDR<input name="lineAmount" pattern="[1-9][0-9]*" required></label><button type="button" data-advance-remove>Hapus baris</button></fieldset>';}
 window.SipekaAdvanceLine=advanceLine;
@@ -3930,7 +4162,8 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
  const componentLines=(row,fields)=>fields.filter(([key])=>row[key]!=null).map(([key,label])=>esc(label)+' '+esc(amount(row[key]))).join('<br>');
  const earningsDetail=row=>row.overtime==null?esc(amount(row.allowances)):componentLines(row,[['operational_allowance','Tunjangan operasional'],['health_allowance','Tunjangan kesehatan'],['meal_allowance','Uang makan'],['transport_allowance','Transport'],['ironing_regular','Setrika reguler'],['ironing_express','Setrika express'],['overtime','Lembur'],['bonus','Bonus']])+'<br><strong>Total tambahan '+esc(amount(row.allowances))+'</strong>';
  const deductionsDetail=row=>row.absence_deduction==null?esc(amount(row.deductions)):componentLines(row,[['absence_deduction','Potongan absen'],['late_deduction','Potongan telat'],['violation_deduction','Potongan pelanggaran'],['other_deductions','Potongan lainnya']])+'<br><strong>Total potongan '+esc(amount(row.deductions))+'</strong>';
- function render(){return '<section id="employeePayroll" class="card device-staff"><h2>Template & Pengiriman Slip Gaji</h2><p>1. Lengkapi perusahaan dan direktori karyawan. 2. Widya memeriksa file dan penerima. 3. Periksa hasil, simpan draft, terbitkan, lalu kirim email per karyawan.</p><details class="employee-components"><summary>Komponen dan perhitungan gaji</summary><p>Slip umum: gaji pokok, tunjangan operasional, tunjangan kesehatan, lembur, bonus dan potongan absen, telat serta pelanggaran. Isi juga jabatan dan status karyawan pada CSV. Slip laundry menambahkan uang makan, transport, setrika reguler dan setrika express. Isi nominal hasil perhitungan yang sudah diperiksa; tarif atau jumlah pekerjaan tidak dihitung otomatis.</p></details><div class="employee-tools"><button class="btn" type="button" data-employee-template="general">Template CSV Umum</button><button class="btn" type="button" data-employee-template="laundry">Template CSV Laundry</button><button class="btn" type="button" data-employee-workbook="general">Excel Gaji Umum</button><button class="btn" type="button" data-employee-workbook="laundry">Excel Gaji Laundry</button><button class="btn" type="button" data-employee-blank="general">Template Excel Umum</button><button class="btn" type="button" data-employee-blank="laundry">Template Excel Laundry</button><button class="btn" type="button" data-employee-refresh>Muat Ulang Status</button></div><form data-employee-import><label>Alamat kop perusahaan<input class="control" name="company_address" maxlength="180" value="Kompleks Roemah Pelangi Ruko No. 3 Jl. Ori II No. 7, Depok, Daerah Istimewa Yogyakarta, Indonesia, 55281"></label><p>Nama kop mengikuti profil perusahaan. Alamat ini disimpan bersama draft slip; slip lama tetap memakai kop saat dibuat.</p><label>File gaji CSV / PDF<input class="control" type="file" name="csv" accept=".csv,.pdf,text/csv,application/pdf" required></label><label>Periode PDF<input class="control" type="month" name="pdf_period"><small>Wajib untuk PDF, harus sama dengan periode dalam dokumen. Satu PDF untuk satu karyawan, satu halaman, maksimal 256 KB.</small></label><p>Excel berisi Database dan Slip Gaji; pilih periode dan ID pada sheet Slip Gaji. Untuk impor dashboard, isi template CSV. Gunakan ID karyawan dari tab Karyawan. Satu file untuk satu periode; nominal rupiah bulat tanpa pemisah ribuan.</p><button class="btn primary" disabled>Periksa File dengan Widya</button></form><section data-employee-review hidden aria-live="polite"></section><p data-employee-status role="status" aria-live="polite">Memuat kesiapan dan daftar slip…</p><div data-employee-rows></div></section>';}
+ function render(){return '<section id="employeePayroll" class="payroll-workspace"><header class="payroll-page-head"><div><span class="payroll-kicker">Finance & Accounting</span><h1>Slip Gaji</h1><p>Siapkan dokumen, periksa penerima bersama Widya, lalu terbitkan dan kirim.</p></div><button class="btn" type="button" data-employee-refresh>Muat ulang status</button></header><div class="payroll-tabs" role="tablist" aria-label="Slip Gaji"><button type="button" role="tab" id="payroll-input-tab" aria-controls="payroll-input-panel" aria-selected="true" tabindex="0" data-employee-tab="input">Input Slip Gaji</button><button type="button" role="tab" id="payroll-history-tab" aria-controls="payroll-history-panel" aria-selected="false" tabindex="-1" data-employee-tab="history">Riwayat Slip</button></div><p data-employee-status class="payroll-status" role="status" aria-live="polite">Memuat kesiapan dan daftar slip…</p><section class="payroll-tab-panel" id="payroll-input-panel" role="tabpanel" aria-labelledby="payroll-input-tab" data-employee-panel="input"><ol class="payroll-steps" aria-label="Tahapan slip gaji"><li><span>1</span><div><strong>Siapkan file</strong><small>Template dan direktori karyawan</small></div></li><li><span>2</span><div><strong>Periksa bersama Widya</strong><small>Identitas, komponen, dan penerima</small></div></li><li><span>3</span><div><strong>Terbitkan & kirim</strong><small>Konfirmasi setiap dokumen</small></div></li></ol><div class="payroll-preparation"><section class="payroll-panel payroll-templates"><div class="payroll-panel-heading"><span class="payroll-section-number">01</span><div><h2>Template gaji</h2><p>Pilih format sesuai unit dan cara pengolahan data.</p></div></div><div class="payroll-template-type"><div><h3>Umum</h3><p>Gaji, tunjangan, lembur, bonus, dan potongan.</p></div><div class="payroll-template-actions"><button class="btn" type="button" data-employee-template="general">CSV untuk impor</button><button class="btn" type="button" data-employee-workbook="general">Excel perhitungan</button><button class="btn" type="button" data-employee-blank="general">Excel kosong</button></div></div><div class="payroll-template-type"><div><h3>Laundry</h3><p>Termasuk makan, transport, serta setrika reguler dan express.</p></div><div class="payroll-template-actions"><button class="btn" type="button" data-employee-template="laundry">CSV untuk impor</button><button class="btn" type="button" data-employee-workbook="laundry">Excel perhitungan</button><button class="btn" type="button" data-employee-blank="laundry">Excel kosong</button></div></div><details class="employee-components"><summary>Komponen dan ketentuan file</summary><p>Slip umum: gaji pokok, tunjangan operasional dan kesehatan, lembur, bonus, potongan absen, telat, pelanggaran, serta PPh21. Laundry menambahkan makan, transport, setrika reguler dan express, serta potongan lainnya.</p><p>Excel memuat Database dan Slip Gaji. Impor dashboard memakai CSV atau PDF. Nominal rupiah bulat tanpa pemisah ribuan; tarif dan jumlah pekerjaan tidak dihitung otomatis.</p></details><p class="payroll-directory-note">Pastikan ID, departemen, unit, dan email karyawan sudah sesuai direktori sebelum mengunggah.</p></section><section class="payroll-panel payroll-import"><div class="payroll-panel-heading"><span class="payroll-section-number">02</span><div><h2>Unggah & periksa</h2><p>Draft menunggu hasil LANJUT dan konfirmasi Anda.</p></div></div><form data-employee-import><label>Alamat kop perusahaan<input class="control" name="company_address" maxlength="180" value="Kompleks Roemah Pelangi Ruko No. 3 Jl. Ori II No. 7, Depok, Daerah Istimewa Yogyakarta, Indonesia, 55281"><small>Nama mengikuti profil perusahaan. Kop disimpan bersama draft; dokumen lama tetap memakai identitas saat diterbitkan.</small></label><label class="payroll-file-field">File gaji CSV / PDF<input class="control" type="file" name="csv" accept=".csv,.pdf,text/csv,application/pdf" required><small>CSV maksimal 1 MB. PDF satu slip, satu halaman, maksimal 256 KB.</small></label><label>Periode PDF<input class="control" type="month" name="pdf_period"><small>Wajib untuk PDF dan harus sama dengan periode di dokumen. CSV mengikuti periode pada file.</small></label><div class="payroll-form-action"><button class="btn primary" disabled>Periksa File dengan Widya</button></div></form></section></div><section data-employee-review class="payroll-panel payroll-review" hidden aria-live="polite"></section></section><section class="payroll-register payroll-tab-panel" id="payroll-history-panel" role="tabpanel" aria-labelledby="payroll-history-tab" data-employee-panel="history" hidden><div class="payroll-register-head"><div><span class="payroll-kicker">Dokumen karyawan</span><h2>Draft & riwayat slip</h2><p>Tinjau komponen dan penerima sebelum menerbitkan atau mengirim.</p></div></div><div data-employee-rows></div></section></section>';}
+
  async function download(path,filename,current){
   const response=await fetch(path,{credentials:'same-origin',cache:'no-store'});
   if(!response.ok){const result=await response.json().catch(()=>({}));throw Error(result.error||'Unduhan belum tersedia');}
@@ -3940,6 +4173,18 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
  function bind(content){
   companyController?.abort();const panel=content.querySelector('#employeePayroll');if(!panel)return;companyController=new AbortController();
   const generation=window.SipekaAuth.generation(),current=()=>panel.isConnected&&generation===window.SipekaAuth.generation()&&window.SipekaCurrentUser?.role==='OWNER';
+  function selectTab(name,focus=false){
+   const tabs=[...panel.querySelectorAll('[data-employee-tab]')];
+   if(!tabs.some(tab=>tab.dataset.employeeTab===name))return;
+   for(const tab of tabs){const selected=tab.dataset.employeeTab===name;tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1;if(selected&&focus)tab.focus();}
+   panel.querySelectorAll('[data-employee-panel]').forEach(section=>section.hidden=section.dataset.employeePanel!==name);
+  }
+  panel.querySelector('[role=tablist]').addEventListener('keydown',event=>{
+   const tab=event.target.closest('[data-employee-tab]');if(!tab||!current()||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+   event.preventDefault();const tabs=[...panel.querySelectorAll('[data-employee-tab]')],index=tabs.indexOf(tab);
+   const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
+   selectTab(tabs[next].dataset.employeeTab,true);
+  });
   const status=panel.querySelector('[data-employee-status]'),output=panel.querySelector('[data-employee-rows]'),importButton=panel.querySelector('[data-employee-import] button');
   let entries=[],ready={},loading=0,importing=false,review=null,uploadBody=null,reviewVersion=0,reviewTimer=null,reviewPolling=false;const busy=new Set();
   const notice=e=>{if(current())status.textContent=message(e);};
@@ -3955,7 +4200,7 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
    const request=++loading,result=await api('/api/employee-payroll');if(!current()||request!==loading)return;
    entries=result.rows;ready=result.readiness;
    const groups=new Map();for(const e of entries){if(!groups.has(e.batch_id))groups.set(e.batch_id,[]);groups.get(e.batch_id).push(e);}
-   output.innerHTML=entries.length?[...groups.values()].map(rows=>{const first=rows[0];return '<article class="card"><h3>'+esc(first.period)+' · '+esc(first.status==='PUBLISHED'?'Terbit':'Draft — belum dikirim')+'</h3><p>'+esc(first.row.company_name)+'</p>'+(first.row.upload_kind==='PDF'?'<p>PDF unggahan · nominal mengikuti dokumen asli.</p>':'')+(first.row.company_address?'<p>'+esc(first.row.company_address)+'</p>':'')+(first.row.upload_kind==='PDF'?'<div class="employee-documents">'+rows.map(e=>'<section class="employee-document"><h4>'+esc(e.row.full_name)+'</h4><p>ID: '+esc(e.row.employee_id)+' · '+esc(e.row.department)+' · '+esc(e.row.branch_name)+'</p><button type="button" class="btn" data-employee-pdf="'+esc(e.id)+'">Unduh Slip</button><p>'+esc(e.row.email||'Email belum tersedia')+'</p><p data-employee-delivery>'+esc(sendReason(e))+'</p><label><input type="checkbox" data-employee-consent="'+esc(e.id)+'"'+(!canSend(e)?' disabled':'')+'> Saya periksa penerima dan slip ini</label><button type="button" class="btn" data-employee-send="'+esc(e.id)+'" disabled>Kirim Email</button></section>').join('')+'</div>':'<div class="table-wrap"><table><thead><tr><th>Karyawan / Penempatan</th><th>Gaji pokok</th><th>Tunjangan & tambahan</th><th>Potongan</th><th>PPh 21</th><th>Bersih</th><th>Slip & Email</th></tr></thead><tbody>'+rows.map(e=>'<tr><td>'+esc(e.row.full_name)+'<br>'+esc(e.row.department)+' · '+esc(e.row.branch_name)+'<br><small>ID: '+esc(e.row.employee_id)+'</small><br>'+esc(e.row.job_title||'Jabatan belum diisi')+' · '+esc(e.row.employment_status||'Status belum diisi')+'</td>'+['basic_salary','allowances','deductions','pph21','net_salary'].map(k=>'<td>'+(k==='allowances'?e.row.upload_kind==='PDF'?esc(amount(null)):earningsDetail(e.row):k==='deductions'?e.row.upload_kind==='PDF'?esc(amount(null)):deductionsDetail(e.row):esc(amount(e.row[k])))+'</td>').join('')+'<td><button type="button" class="btn" data-employee-pdf="'+esc(e.id)+'">Unduh Slip</button><p>'+esc(e.row.email||'Email belum diisi saat impor')+'</p><p data-employee-delivery>'+esc(sendReason(e))+'</p><label><input type="checkbox" data-employee-consent="'+esc(e.id)+'"'+(!canSend(e)?' disabled':'')+'> Saya periksa penerima dan slip ini</label><button type="button" class="btn" data-employee-send="'+esc(e.id)+'" disabled>Kirim Email</button></td></tr>').join('')+'</tbody></table></div>')+(first.status==='DRAFT'?'<label><input type="checkbox" data-employee-publish-consent="'+esc(first.batch_id)+'"> Seluruh komponen dan penempatan karyawan sudah saya periksa</label><button type="button" class="btn primary" data-employee-publish="'+esc(first.batch_id)+'" disabled>Terbitkan Slip</button>':'')+'</article>';}).join(''):'<p>Belum ada slip gaji karyawan. Unggah CSV atau PDF untuk memeriksa penerima.</p>';
+   output.innerHTML=entries.length?[...groups.values()].map(rows=>{const first=rows[0];return '<article class="card"><h3>'+esc(first.period)+' · '+esc(first.status==='PUBLISHED'?'Terbit':'Draft — belum dikirim')+'</h3><p>'+esc(first.row.company_name)+'</p>'+(first.row.upload_kind==='PDF'?'<p>PDF unggahan · nominal mengikuti dokumen asli.</p>':'')+(first.row.company_address?'<p>'+esc(first.row.company_address)+'</p>':'')+(first.row.upload_kind==='PDF'?'<div class="employee-documents">'+rows.map(e=>'<section class="employee-document"><h4>'+esc(e.row.full_name)+'</h4><p>ID: '+esc(e.row.employee_id)+' · '+esc(e.row.department)+' · '+esc(e.row.branch_name)+'</p><button type="button" class="btn" data-employee-pdf="'+esc(e.id)+'">Unduh Slip</button><p>'+esc(e.row.email||'Email belum tersedia')+'</p><p data-employee-delivery>'+esc(sendReason(e))+'</p><label><input type="checkbox" data-employee-consent="'+esc(e.id)+'"'+(!canSend(e)?' disabled':'')+'> Saya periksa penerima dan slip ini</label><button type="button" class="btn" data-employee-send="'+esc(e.id)+'" disabled>Kirim Email</button></section>').join('')+'</div>':'<div class="table-wrap"><table><thead><tr><th>Karyawan / Penempatan</th><th>Gaji pokok</th><th>Tunjangan & tambahan</th><th>Potongan</th><th>PPh 21</th><th>Bersih</th><th>Slip & Email</th></tr></thead><tbody>'+rows.map(e=>'<tr><td>'+esc(e.row.full_name)+'<br>'+esc(e.row.department)+' · '+esc(e.row.branch_name)+'<br><small>ID: '+esc(e.row.employee_id)+'</small><br>'+esc(e.row.job_title||'Jabatan belum diisi')+' · '+esc(e.row.employment_status||'Status belum diisi')+'</td>'+['basic_salary','allowances','deductions','pph21','net_salary'].map(k=>'<td>'+(k==='allowances'?e.row.upload_kind==='PDF'?esc(amount(null)):'<details class="payroll-components-detail"><summary>'+esc(amount(e.row.allowances))+'</summary><div>'+earningsDetail(e.row)+'</div></details>':k==='deductions'?e.row.upload_kind==='PDF'?esc(amount(null)):'<details class="payroll-components-detail"><summary>'+esc(amount(e.row.deductions))+'</summary><div>'+deductionsDetail(e.row)+'</div></details>':esc(amount(e.row[k])))+'</td>').join('')+'<td><button type="button" class="btn" data-employee-pdf="'+esc(e.id)+'">Unduh Slip</button><p>'+esc(e.row.email||'Email belum diisi saat impor')+'</p><p data-employee-delivery>'+esc(sendReason(e))+'</p><label><input type="checkbox" data-employee-consent="'+esc(e.id)+'"'+(!canSend(e)?' disabled':'')+'> Saya periksa penerima dan slip ini</label><button type="button" class="btn" data-employee-send="'+esc(e.id)+'" disabled>Kirim Email</button></td></tr>').join('')+'</tbody></table></div>')+(first.status==='DRAFT'?'<label><input type="checkbox" data-employee-publish-consent="'+esc(first.batch_id)+'"> Seluruh komponen dan penempatan karyawan sudah saya periksa</label><button type="button" class="btn primary" data-employee-publish="'+esc(first.batch_id)+'" disabled>Terbitkan Slip</button>':'')+'</article>';}).join(''):'<p>Belum ada slip gaji karyawan. Unggah CSV atau PDF untuk memeriksa penerima.</p>';
    status.textContent=!ready.encryption?'Penyimpanan gaji belum siap. Hubungi pengelola.':!window.SipekaCompany?.name?'Simpan nama perusahaan pada formulir di atas sebelum mengimpor gaji.':!ready.email?'Slip dapat disiapkan. Layanan email belum siap.':'Periksa preview, terbitkan slip, lalu konfirmasi penerima untuk mengirim email.';
    syncButtons();
   }
@@ -3963,7 +4208,7 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
   // Saving the company can make import available without discarding a selected CSV.
   document.addEventListener('sipeka-company-saved',()=>{if(current())load().catch(notice);},{signal:companyController.signal});
   panel.addEventListener('click',async e=>{
-   const button=e.target.closest('button');if(!button||button.type==='submit'||button.disabled||!current()||button.closest('[data-employee-review]'))return;button.disabled=true;
+   const button=e.target.closest('button');if(!button||button.type==='submit'||button.disabled||!current()||button.closest('[data-employee-review]'))return;if(button.hasAttribute('data-employee-tab')){selectTab(button.dataset.employeeTab);return;}button.disabled=true;
    const operation=button.dataset.employeePublish||button.dataset.employeeSend,mutation=!!operation;if(mutation)busy.add(operation);
    try{
     if(button.dataset.employeeWorkbook)await download('/api/employee-payroll/workbook?type='+button.dataset.employeeWorkbook,'gaji-'+button.dataset.employeeWorkbook+'.xlsx',current);
@@ -4012,7 +4257,7 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
    if(button.hasAttribute('data-employee-check-review')){button.disabled=true;await pollReview(reviewVersion);return;}
    if(!button.hasAttribute('data-employee-save')||!canSaveReview()||!reviewPanel.querySelector('[data-employee-review-consent]').checked||importing)return;
    importing=true;button.disabled=true;syncButtons();
-   try{await api('/api/employee-payroll/import',{method:'POST',body:{...uploadBody,review_id:review.review_id,review_token:review.review_token,confirmed:true}});if(current()){invalidate();await load();status.textContent='Draft tersimpan. Periksa PDF, terbitkan slip, lalu konfirmasi penerima sebelum mengirim.';}}
+   try{await api('/api/employee-payroll/import',{method:'POST',body:{...uploadBody,review_id:review.review_id,review_token:review.review_token,confirmed:true}});if(current()){invalidate();await load();if(!current())return;selectTab('history',true);status.textContent='Draft tersimpan. Periksa PDF, terbitkan slip, lalu konfirmasi penerima sebelum mengirim.';}}
    catch(error){invalidate();notice(error);}finally{importing=false;if(current())syncButtons();}
   });
   panel.querySelector('[data-employee-import]').onsubmit=async event=>{
@@ -4030,6 +4275,7 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
  }
  window.SipekaEmployeePayroll={render,bind};
 })();
+
 </script>
 <script>
 /* Render the Owner's spreadsheet layout; rows/sections/column positions come from source XLSX. */

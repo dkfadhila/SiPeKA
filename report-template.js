@@ -35,7 +35,7 @@ function make(id,source,previous,units,filters,panelIndex=null){
   for(let r=7;r<=51;r++){
    if(codes.has(grid[r-1][0])){
     const code=grid[r-1][0];for(let c=2;c<=7;c++)set(r,c,panel[c-2]?code==='6-3000'?null:signed(canonical(sourceRows),code,panel[c-2].id):null);
-    set(r,8,code==='6-3000'?null:signed(canonical(sourceRows),code));set(r,9,code==='6-3000'?null:signed(canonical(priorRows),code));
+    set(r,8,code==='6-3000'?null:signed(canonical(sourceRows),code));set(r,9,!previousPeriod||code==='6-3000'?null:signed(canonical(priorRows),code));
    }else if(pnlRows[r])for(let c=2;c<=9;c++){
     const values=pnlRows[r].map(n=>grid[Math.abs(n)-1][c]);set(r,c,c<8&&!panel[c-2]||values.some(v=>v==null)?null:String(pnlRows[r].reduce((n,v)=>n+(v<0?-1n:1n)*BigInt(grid[Math.abs(v)-1][c]),0n)));
    }else if(ratios[r])for(let c=2;c<=9;c++){const rev=grid[12][c],v=grid[ratios[r]-1][c];set(r,c,rev==null||v==null||BigInt(rev)===0n?null:Number(v)/Number(rev));}

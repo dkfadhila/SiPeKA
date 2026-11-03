@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {chromium}=require('playwright-core'),{createServer}=require('./fixtures/report-ui-preview.cjs');
 test('three scope modes follow preview, CSV, Excel and PDF on desktop and mobile',async t=>{
  const server=createServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
- const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});t.after(()=>browser.close());
+ const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});t.after(()=>browser.close());
  const page=await browser.newPage({viewport:{width:1440,height:1000},acceptDownloads:true}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port+'/reports');await page.waitForFunction(()=>![...document.querySelectorAll('.sr-badge')].some(x=>x.textContent==='Memuat…'));
  assert.equal(await page.locator('.sr-card h2').filter({hasText:/^Laba Rugi$/}).count(),1);
