@@ -227,3 +227,20 @@ body #content .payroll-tabs [role=tab]:hover{color:var(--ink)}
 body #content .payroll-tabs [role=tab]:focus-visible{outline:2px solid var(--green);outline-offset:4px;border-radius:2px}
 body #content .payroll-workspace>.payroll-status{margin:0}
 @media(max-width:600px){body #content .payroll-tab-panel{gap:20px}body #content .payroll-tabs{gap:20px}}
+
+/* Restore colored Owner and Staff overview cards after neutral shell polish. */
+body #content :is(.owner-overview,.staff-overview) .operational-kpis .kpi[data-tone] { border-left-width:4px!important; border-left-style:solid!important; box-shadow:none!important; }
+body #content .operational-kpis .kpi[data-tone=blue] { --kpi-accent:#3478cf; --kpi-tint:#edf4ff; }
+body #content .operational-kpis .kpi[data-tone=coral] { --kpi-accent:#c65b50; --kpi-tint:#fff0ed; }
+body #content .operational-kpis .kpi[data-tone=violet] { --kpi-accent:#7859c8; --kpi-tint:#f2efff; }
+body #content .operational-kpis .kpi[data-tone=amber] { --kpi-accent:#a96c14; --kpi-tint:#fff5df; }
+body #content .operational-kpis .kpi[data-tone=cyan] { --kpi-accent:#1681a3; --kpi-tint:#e8f7fb; }
+body #content .operational-kpis .kpi[data-tone=green] { --kpi-accent:#27824f; --kpi-tint:#eaf7ef; }
+body #content .operational-kpis .kpi[data-tone] { background:linear-gradient(145deg,var(--kpi-tint),var(--surface) 88%)!important; border-color:color-mix(in srgb,var(--kpi-accent) 26%,var(--line))!important; border-left-color:var(--kpi-accent)!important; }
+body #content .operational-kpis .kpi[data-tone] .kpi-top { color:var(--kpi-accent)!important; }
+html[data-theme=dark] body #content .operational-kpis .kpi[data-tone=blue] { --kpi-tint:#1c2b40; }
+html[data-theme=dark] body #content .operational-kpis .kpi[data-tone=coral] { --kpi-tint:#382322; }
+html[data-theme=dark] body #content .operational-kpis .kpi[data-tone=violet] { --kpi-tint:#2a2440; }
+html[data-theme=dark] body #content .operational-kpis .kpi[data-tone=amber] { --kpi-tint:#382d1b; }
+html[data-theme=dark] body #content .operational-kpis .kpi[data-tone=cyan] { --kpi-tint:#1a3039; }
+html[data-theme=dark] body #content .operational-kpis .kpi[data-tone=green] { --kpi-tint:#1e3328; }

@@ -38,7 +38,7 @@ function renderSlipPdf(row,{publishedAt,simulation=false,documentIdentity}={}){
  text('Periode',355,710,12,true);text(': '+row.period,430,710,12,true);
  const identity=(label,value,x,y,valueX,right)=>{const valueText=plain(value??'-',180),size=measure(valueText,12)<=right-valueX?12:10,lines=wrapWidth(valueText,right-valueX,size);text(label,x,y,12);text(':',valueX-9,y,12);lines.forEach((part,i)=>text(part,valueX,y-i*14,size));return lines.length*14;};
  for(const [left,right]of [
-  [['Nama Karyawan',row.full_name], [employeeLayout?'ID Karyawan':'Username',employeeLayout?row.employee_id:row.username]],
+  [['Nama Karyawan',row.full_name], [employeeLayout?'No. Karyawan':'Username',employeeLayout?(row.employee_code||row.employee_number||row.employee_id):row.username]],
   [['Departemen',employeeLayout?row.department:row.username], ['Jabatan',row.job_title||row.position]],
   [['Unit Kerja',documentIdentity?.branch_name||row.branch_name], ['Status',row.employment_status]]
  ]){const leftHeight=identity(...left,48,identityY,148,337),rightHeight=identity(...right,355,identityY,443,547);identityY-=Math.max(18,leftHeight+6,rightHeight+6);}

@@ -17,7 +17,7 @@ function workbook(type,rows=[]){
   const cells=keys.map((key,c)=>{
    const ref=col(c)+r,cell='<c r="'+ref+'" s="'+(sourceStyles.get(col(c))||0)+'"';
    if(key==='key')return cell+'><f>IF(OR(B'+r+'="",C'+r+'=""),"",B'+r+'&amp;"|"&amp;C'+r+')</f><v></v></c>';
-   const value=row[key];if(value==null)return cell+'/>';
+   const value=key==='employee_id'?(row.employee_code||row.employee_number||row.employee_id):row[key];if(value==null)return cell+'/>';
    const numeric=/salary|allowance|overtime|bonus|deduction|ironing|pph21/.test(key)&&/^\d{1,15}$/.test(String(value));
    return cell+(numeric?'><v>'+value+'</v>':' t="inlineStr"><is><t xml:space="preserve">'+esc(value)+'</t></is>')+'</c>';
   }).join('');
@@ -26,7 +26,7 @@ function workbook(type,rows=[]){
  }
  db.data=Buffer.from(xml.replace(/<pageMargins\b[^>]*\/>|<pageSetup\b[^>]*\/>/g,'').replace('<sheetViews>','<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews>').replace('</worksheet>','<pageMargins left="0.3" right="0.3" top="0.3" bottom="0.3" header="0" footer="0"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>'));
  const slip=files.find(f=>f.name==='xl/worksheets/sheet1.xml');
- if(rows.length){let s=slip.data.toString();for(const [ref,value]of [['D6',rows[0].period],['G6',rows[0].employee_id]])s=s.replace(new RegExp('<c\\b[^>]*\\br="'+ref+'"[^>]*?(?:\\/>|>[\\s\\S]*?<\\/c>)'),full=>'<c r="'+ref+'" s="'+(/\bs="(\d+)"/.exec(full)?.[1]||8)+'" t="inlineStr"><is><t>'+esc(value)+'</t></is></c>');slip.data=Buffer.from(s);}
+ if(rows.length){let s=slip.data.toString();for(const [ref,value]of [['D6',rows[0].period],['G6',rows[0].employee_code||rows[0].employee_number||rows[0].employee_id]])s=s.replace(new RegExp('<c\\b[^>]*\\br="'+ref+'"[^>]*?(?:\\/>|>[\\s\\S]*?<\\/c>)'),full=>'<c r="'+ref+'" s="'+(/\bs="(\d+)"/.exec(full)?.[1]||8)+'" t="inlineStr"><is><t>'+esc(value)+'</t></is></c>');slip.data=Buffer.from(s);}
  // A small text gutter separates right-hand labels from left-hand amounts.
  let padded=slip.data.toString();
  const rightLabels=['Potongan Absen','Potongan Telat','Potongan Pelanggaran',...(type==='laundry'?['Potongan Lainnya']:[]),'PPh 21'];

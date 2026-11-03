@@ -62,13 +62,13 @@ function validate(csv,staff){
   });
   csv=LEGACY_HEADER+'\r\n'+normalized.join('\r\n')+'\r\n';
  }
- const users=staff.map(s=>({...s,username:s.id,full_name:s.name,role:'STAFF',is_active:s.active}));
+ const users=staff.map(s=>({...s,username:s.employee_code||s.id,full_name:s.name,role:'STAFF',is_active:s.active}));
  return validateCsv(csv.replace(/^\uFEFF/,'').replace(LEGACY_HEADER,LEGACY_HEADER.replace('employee_id','user_id')),users).map((row,i)=>{
   const s=staff.find(s=>s.id===row.user_id);
   if(!s?.department)throw fault('PAYROLL_EMPLOYEE_DEPARTMENT_REQUIRED');
   const canonical=require('./payroll-upload').canonicalEmail,email=canonical(s.email);
   if(sourceEmails){const source=canonical(sourceEmails[i]);if(sourceEmails[i]&&!source)throw fault('PAYROLL_EMAIL_INVALID');if(source&&source!==email)throw fault('PAYROLL_PDF_EMAIL_MISMATCH');}
-  return {...row,...detail[i],employee_id:s.id,department:s.department,email,staff_revision:s.revision??null,branch_id:s.branch_id,branch_name:s.branch_name,...(sourceEmails?{source_email:canonical(sourceEmails[i])}:{})};
+  return {...row,...detail[i],employee_id:s.id,employee_code:s.employee_code,department:s.department,email,staff_revision:s.revision??null,branch_id:s.branch_id,branch_name:s.branch_name,...(sourceEmails?{source_email:canonical(sourceEmails[i])}:{})};
  });
 }
 function service({pool,env=process.env,transport,widyaReviews}={}){
@@ -81,7 +81,8 @@ function service({pool,env=process.env,transport,widyaReviews}={}){
   if(row.employee_id!==e.staff_id||row.period!==e.period)throw fault('PAYROLL_PAYLOAD_IDENTITY',503);
   const {payload_cipher,...metadata}=e;return {...metadata,row:{...row,document_code:documentFormat.slipCode(row)}};
  });}
- async function entry(token,id){const e=(await entries(token)).find(e=>e.id===id);if(!e)throw fault('PAYROLL_NOT_FOUND',404);return e;}
+ function publicPayrollRow(row,staff){const employee=staff.find(s=>s.id===row.employee_id),employee_code=row.employee_code||employee?.employee_code;if(!employee_code)return row;const code=row.document_code||documentFormat.slipCode(row),suffix=String(code||'').split('/').at(-1),opaque=/^(?:[a-f0-9]{32}|[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})$/i.test(suffix);return {...row,employee_code,...(opaque?{document_code:documentFormat.slipCode({...row,employee_code,document_code:null})}:{})};}
+ async function entry(token,id){const e=(await entries(token)).find(e=>e.id===id);if(!e)throw fault('PAYROLL_NOT_FOUND',404);e.row=publicPayrollRow(e.row,await directory(token));return e;}
  const identity=row=>({company_name:row.company_name,company_address:row.company_address,branch_name:row.branch_name,department:row.department});
  const upload=require('./payroll-upload');
  function currentRecipient(row,staff){const s=staff.find(s=>s.id===row.employee_id);return !!s&&s.active&&upload.canonicalEmail(s.email)===row.email&&!!row.email&&s.name===row.full_name&&s.department===row.department&&s.branch_id===row.branch_id&&(row.staff_revision==null||row.staff_revision===s.revision)&&staff.filter(s=>upload.canonicalEmail(s.email)===row.email).length===1;}
@@ -95,7 +96,7 @@ function service({pool,env=process.env,transport,widyaReviews}={}){
   else{
    const bytes=upload.pdfBytes(body.data_base64),text=await upload.extractPdf(body.data_base64),match=upload.matchPdf(text,staff,body.period);
    warnings=match.warnings;blockers=match.blockers;const s=match.employee;
-   rows=[{period:match.period,employee_id:s.id,full_name:s.name,department:s.department,branch_id:s.branch_id,branch_name:s.branch_name,email:match.email,staff_revision:s.revision??null,upload_kind:'PDF',source_email:match.source_email,source_pdf:{data_base64:bytes.toString('base64'),sha256:crypto.createHash('sha256').update(bytes).digest('hex')},net_salary:null}];
+   rows=[{period:match.period,employee_id:s.id,employee_code:s.employee_code,full_name:s.name,department:s.department,branch_id:s.branch_id,branch_name:s.branch_name,email:match.email,staff_revision:s.revision??null,upload_kind:'PDF',source_email:match.source_email,source_pdf:{data_base64:bytes.toString('base64'),sha256:crypto.createHash('sha256').update(bytes).digest('hex')},net_salary:null}];
   }
   const existing=await entries(token);if(rows.some(row=>existing.some(e=>e.row.employee_id===row.employee_id&&e.period===row.period)))blockers.push('PAYROLL_DUPLICATE_PERIOD_STAFF');
   const digest=upload.fingerprint({format:body.format,rows,company:profile,company_address:body.company_address||''});
@@ -110,7 +111,7 @@ function service({pool,env=process.env,transport,widyaReviews}={}){
  }
  function pdfBytes(row,publishedAt){if(row.source_pdf){const bytes=upload.pdfBytes(row.source_pdf.data_base64);if(crypto.createHash('sha256').update(bytes).digest('hex')!==row.source_pdf.sha256)throw fault('PAYROLL_PDF_INVALID');return bytes;}return renderSlipPdf(row,{publishedAt,documentIdentity:identity(row)});}
  return {
- async list(token){const staff=await directory(token),rows=(await entries(token)).map(e=>{const {source_pdf,...row}=e.row;return {...e,row,recipient_valid:currentRecipient(e.row,staff)};});return {rows,readiness:{encryption:/^[a-fA-F0-9]{64}$/.test(env.PAYROLL_ENCRYPTION_KEY||''),email:require('./payroll-resend').resendReady(env)}};},
+ async list(token){const staff=await directory(token),rows=(await entries(token)).map(e=>{const {source_pdf,...row}=publicPayrollRow(e.row,staff);return {...e,row,recipient_valid:currentRecipient(e.row,staff)};});return {rows,readiness:{encryption:/^[a-fA-F0-9]{64}$/.test(env.PAYROLL_ENCRYPTION_KEY||''),email:require('./payroll-resend').resendReady(env)}};},
  async reviewUpload(token,body){const p=await preparedUpload(token,body);if(!widyaReviews)throw fault('PAYROLL_WIDYA_UNAVAILABLE',503);return widyaReviews.start(token,p,body);},
  async reviewStatus(token,id){if(!widyaReviews)throw fault('PAYROLL_WIDYA_UNAVAILABLE',503);const result=await widyaReviews.status(token,id);const {digest,...view}=result;if(result.status==='completed'&&result.ai?.decision==='LANJUT'&&!result.blockers.length)view.review_token=upload.reviewToken(env.PAYROLL_ENCRYPTION_KEY,token,digest);return view;},
  async importUpload(token,body){if(body.confirmed!==true)throw fault('PAYROLL_CONFIRM_REQUIRED');const p=await preparedUpload(token,body);if(p.blockers.length)throw fault(p.blockers[0]);upload.verifyToken(env.PAYROLL_ENCRYPTION_KEY,token,p.digest,body.review_token);if(!widyaReviews)throw fault('PAYROLL_WIDYA_UNAVAILABLE',503);const result=await widyaReviews.status(token,body.review_id);if(result.digest!==p.digest||result.status!=='completed'||result.ai?.decision!=='LANJUT'||result.blockers.length)throw fault('PAYROLL_UPLOAD_REVIEW_REQUIRED',409);return saveRows(token,p.rows,p.profile,p.units,body.company_address);},

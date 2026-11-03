@@ -27,7 +27,7 @@ function validateCsv(csv,users){
   const [p,username,...amounts]=r;
   if(!/^(?:20\d{2})-(?:0[1-9]|1[0-2])$/.test(p)|| (period&&period!==p))throw fault('PAYROLL_PERIOD');period=p;
   if(!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/.test(username))throw fault('PAYROLL_USERNAME');
-  const matches=users.filter(u=>(byId?u.id:u.username)===username);if(matches.length>1)throw fault('PAYROLL_AMBIGUOUS_USERNAME');
+  const matches=users.filter(u=>(byId?(u.id===username||u.employee_code===username):u.username===username));if(matches.length>1)throw fault('PAYROLL_AMBIGUOUS_USERNAME');
   const u=matches[0];if(!u||u.role!=='STAFF'||u.is_active===false||u.is_active===0)throw fault('PAYROLL_STAFF_NOT_FOUND');
   if(seen.has(u.id))throw fault('PAYROLL_DUPLICATE_PERIOD_STAFF');seen.add(u.id);
   const n=amounts.map(v=>{if(!/^(0|[1-9]\d{0,15})$/.test(v)||!Number.isSafeInteger(Number(v)))throw fault('PAYROLL_INTEGER_IDR');return Number(v);});
