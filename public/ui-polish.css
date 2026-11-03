@@ -216,3 +216,14 @@ body #content .employee-document h4{font-size:15px;line-height:24px;margin:0 0 8
 body #content .employee-document p{font-size:13px;line-height:22px;overflow-wrap:anywhere}
 @media(max-width:1100px){body #content .payroll-preparation{grid-template-columns:minmax(0,1fr)}body #content .payroll-template-type{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:16px}body #content .payroll-template-actions{margin-top:0;align-items:flex-start}}
 @media(max-width:600px){body #content .payroll-workspace{gap:20px}body #content .payroll-page-head{display:block}body #content .payroll-page-head h1{font-size:28px;line-height:36px}body #content .payroll-page-head>.btn{margin-top:16px}body #content .payroll-steps{grid-template-columns:1fr;gap:16px;padding:20px}body #content .payroll-panel{padding:20px}body #content .payroll-template-type{display:block}body #content .payroll-template-actions{margin-top:12px;display:grid;grid-template-columns:1fr}body #content .payroll-template-actions>.btn{width:100%;text-align:left;min-height:40px;justify-content:flex-start}body #content .payroll-form-action>.btn{width:100%;justify-content:center}body #content [data-employee-rows]>.card{padding:20px}body #content [data-employee-rows] .table-wrap{margin-inline:-20px;max-width:calc(100% + 40px)}body #content .payroll-register-head h2,body #content .payroll-panel-heading h2{font-size:18px;line-height:28px}}
+
+/* Payroll panels share live state; switching tabs never recreates a selected file or review. */
+body #content .payroll-tab-panel[hidden]{display:none!important}
+body #content .payroll-tab-panel{display:grid;gap:24px;min-width:0}
+body #content .payroll-tabs{display:flex;gap:24px;border-bottom:1px solid var(--line);min-width:0}
+body #content .payroll-tabs [role=tab]{appearance:none;flex:0 1 auto;min-width:0;min-height:44px;margin:0 0 -1px;padding:10px 0;font:inherit;font-size:14px;font-weight:500;line-height:22px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);cursor:pointer}
+body #content .payroll-tabs [role=tab][aria-selected=true]{color:var(--green);border-bottom-color:var(--green)}
+body #content .payroll-tabs [role=tab]:hover{color:var(--ink)}
+body #content .payroll-tabs [role=tab]:focus-visible{outline:2px solid var(--green);outline-offset:4px;border-radius:2px}
+body #content .payroll-workspace>.payroll-status{margin:0}
+@media(max-width:600px){body #content .payroll-tab-panel{gap:20px}body #content .payroll-tabs{gap:20px}}

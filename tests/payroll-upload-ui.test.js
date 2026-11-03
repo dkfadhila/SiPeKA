@@ -39,12 +39,29 @@ test('Periksa File automatically polls real-review contract; only completed LANJ
   const pending=page.waitForEvent('download');await page.locator(selector).click();assert.match((await pending).suggestedFilename(),new RegExp('\\.'+extension+'$'));
  }
  const choose=async()=>{await page.locator('[name=csv]').setInputFiles({name:'slip-qa.pdf',mimeType:'application/pdf',buffer:pdf});await page.locator('[name=pdf_period]').fill('2026-10');};
- await choose();await page.locator('[data-employee-import] button').click();await page.waitForSelector('[data-employee-review]:not([hidden])');
+ await choose();
+ // Tab switches keep the selected upload and never create a review or save data.
+ const inputTab=page.getByRole('tab',{name:'Input Slip Gaji'}),historyTab=page.getByRole('tab',{name:'Riwayat Slip'});
+ assert.equal(await inputTab.getAttribute('aria-selected'),'true');
+ assert.equal(await page.locator('[data-employee-panel=history]').isHidden(),true);
+ await inputTab.focus();await page.keyboard.press('ArrowRight');
+ assert.equal(await historyTab.getAttribute('aria-selected'),'true');
+ assert.equal(await historyTab.evaluate(el=>el===document.activeElement),true);
+ assert.equal(await page.locator('[data-employee-panel=input]').isHidden(),true);
+ await page.keyboard.press('Home');assert.equal(await inputTab.getAttribute('aria-selected'),'true');
+ assert.equal(await page.locator('[name=csv]').evaluate(el=>el.files[0].name),'slip-qa.pdf');
+ assert.equal(await page.locator('[name=pdf_period]').inputValue(),'2026-10');
+ assert.equal(requests.filter(r=>r.path.endsWith('/review')||r.path.endsWith('/import')).length,0);
+ await page.locator('[data-employee-import] button').click();await page.waitForSelector('[data-employee-review]:not([hidden])');
  assert.match(await page.locator('[data-employee-ai-decision]').innerText(),/Sedang diperiksa Widya/);assert.equal(await page.locator('[data-employee-save]').isDisabled(),true);assert.equal(await page.locator('[data-employee-review-consent]').isDisabled(),true);assert.equal(await page.locator('[data-employee-import] button').isDisabled(),true);
  await page.waitForFunction(()=>!!document.querySelector('[data-employee-ai-result]'));
  const first='review-1';jobs.get(first).mode='LANJUT';await page.waitForFunction(()=>document.querySelector('[data-employee-ai-decision]')?.textContent.includes('LANJUT —'));
  assert.match(await page.locator('[data-employee-ai-result]').innerText(),/komponen sesuai/);assert.match(await page.locator('[data-employee-review]').innerText(),/Email tidak tercantum dalam PDF/);assert.equal(await page.locator('[data-employee-save]').isDisabled(),true);assert.equal(requests.filter(r=>r.path.endsWith('/import')).length,0);
  await page.locator('[data-employee-review-consent]').check();assert.equal(await page.locator('[data-employee-save]').isDisabled(),false);
+ await historyTab.click();await inputTab.click();
+ assert.equal(await page.locator('[data-employee-review-consent]').isChecked(),true);
+ assert.equal(await page.locator('[data-employee-save]').isDisabled(),false);
+ assert.equal(sequence,1);
  // Editing an input invalidates the completed verdict and token.
  await page.locator('[name=pdf_period]').fill('2026-11');assert.equal(await page.locator('[data-employee-review]').isHidden(),true);await page.locator('[name=pdf_period]').fill('2026-10');
  for(const [nextMode,expected]of [['TAHAN','TAHAN —'],['FAILED','belum berhasil'],['BLOCKED','Belum dapat dilanjutkan']]){
@@ -55,6 +72,9 @@ test('Periksa File automatically polls real-review contract; only completed LANJ
  // A transient status read retries the same durable review ID, never creates another AI run.
  mode='LANJUT';pollFailures=1;const beforeReview=sequence;await page.locator('[data-employee-import] button').click();await page.waitForSelector('[data-employee-check-review]');assert.equal(sequence,beforeReview+1);await page.locator('[data-employee-check-review]').click();await page.waitForFunction(()=>document.querySelector('[data-employee-ai-decision]')?.textContent.includes('LANJUT —'));assert.equal(sequence,beforeReview+1);
  await page.locator('[data-employee-review-consent]').check();await page.locator('[data-employee-save]').click();await page.waitForSelector('[data-employee-publish]');assert.equal(requests.filter(r=>r.path.endsWith('/import')).length,1);
+ assert.equal(await historyTab.getAttribute('aria-selected'),'true');
+ assert.equal(await page.locator('[data-employee-panel=input]').isHidden(),true);
+ assert.equal(await page.locator('[data-employee-status]').isVisible(),true);
  assert.equal(await page.locator('[data-employee-send]').isDisabled(),true);assert.equal(await page.locator('[data-employee-publish]').isDisabled(),true);assert.match(await page.locator('[data-employee-rows]').innerText(),/PDF unggahan/);
  const attachment=page.waitForEvent('download');await page.locator('[data-employee-pdf]').click();const slipDownload=await attachment;assert.match(slipDownload.suggestedFilename(),/\.pdf$/);assert.ok(requests.some(request=>request.path==='/api/employee-payroll/entries/entry-qa/slip.pdf'));await slipDownload.cancel();
  await page.locator('[data-employee-publish-consent]').check();await page.locator('[data-employee-publish]').click();await page.waitForFunction(()=>!document.querySelector('[data-employee-publish]'));assert.equal(await page.locator('[data-employee-send]').isDisabled(),true);
