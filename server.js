@@ -588,7 +588,7 @@ async function handleRequest(req, res, url, p) {
     if(documentId!==null){
       if(params.getAll('document_id').length!==1)return json(res,400,{error:'DOCUMENT_INVALID_REQUEST'});
       params.delete('document_id');
-      try{exportDocument=await require('./document-numbering').get(require('./db-postgres').getPool(),token,documentId);require('./document-numbering').assertMatches(exportDocument,{report_id:match[1],branch_id:params.get('branch_id')||'all',date_from:params.get('date_from'),date_to:params.get('date_to'),view_mode:params.get('view_mode')||undefined});}
+      try{exportDocument=await require('./document-numbering').get(require('./db-postgres').getPool(),token,documentId);require('./document-numbering').assertMatches(exportDocument,{report_id:match[1],branch_id:params.get('branch_id')||'all',date_from:params.get('date_from'),date_to:params.get('date_to'),view_mode:params.get('view_mode')||undefined,...(params.has('branch_ids')?{branch_ids:JSON.parse(params.get('branch_ids'))}:{})});}
       catch(e){return json(res,e.status||503,{error:e.code||'DOCUMENT_UNAVAILABLE'});}
     }
     if(match[2]){

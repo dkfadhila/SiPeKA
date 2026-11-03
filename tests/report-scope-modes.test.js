@@ -5,7 +5,7 @@ const units=Array.from({length:8},(_,i)=>({id:'u'+i,name:'Cabang '+i,category:'O
 const transactions=units.flatMap((u,i)=>[{id:'in'+i,branch_id:u.id,account_code:'4-1300',account_name:'Jasa',account_type:'REVENUE',tx_type:'INCOME',amount:String((i+1)*1000),status:'APPROVED',tx_intent:'SETOR_NOTA',payment_method:'CASH_DRAWER',created_at:'2026-10-01T00:00:00Z'}, {id:'out'+i,branch_id:u.id,account_code:'5-1100',account_name:'Bahan',account_type:'EXPENSE',tx_type:'EXPENSE',amount:'100',status:'APPROVED',tx_intent:'SETOR_NOTA',payment_method:'CASH_DRAWER',created_at:'2026-10-02T00:00:00Z'}]);
 const accounts=require('../coa-catalog').definitions.map(([id,account_name,account_type])=>({id,account_code:id,account_name,account_type}));
 const pool={async query(sql,args){if(sql.includes('FROM business_units'))return {rows:units};if(sql.includes('FROM chart_of_accounts'))return {rows:accounts};if(sql.includes('FROM ledger_transactions'))return {rows:transactions.filter(t=>t.created_at>=args[0]&&t.created_at<args[1]&&(args[2]==='all'||t.branch_id===args[2]))};throw Error('Unexpected '+sql);}};
-const params=(mode,branch='all')=>new URLSearchParams({view_mode:mode,branch_id:branch,date_from:'2026-10-01',date_to:'2026-10-24',timezone:'Asia/Jakarta'});
+const params=(mode,branch='all')=>new URLSearchParams({view_mode:mode,...(mode==='comparison'?{branch_ids:JSON.stringify(units.map(u=>u.id))}:{}),branch_id:branch,date_from:'2026-10-01',date_to:'2026-10-24',timezone:'Asia/Jakarta'});
 const read=(id,mode,branch='all')=>reports.read(pool,{role:'OWNER'},'fixture',id,params(mode,branch),{readAdvances:async()=>({rows:[]})});
 test('scope modes reject contradictory or duplicate filters and keep backwards-compatible filter shape',()=>{
  for(const p of [params('branch'),params('company','u1'),params('comparison','u1'),params('unknown')])assert.throws(()=>reports.filters(p));
@@ -14,7 +14,7 @@ test('scope modes reject contradictory or duplicate filters and keep backwards-c
 test('P&L company equals all branch columns; branch isolates exact ID and keeps unknowns unavailable',async()=>{
  const company=await read('company-profit-loss','company'),comparison=await read('company-profit-loss','comparison');
  const row=r=>r.presentationData.rows.find(x=>x.item==='Total Pendapatan');assert.equal(row(company).amount_1,'36000');
- const combined=row(comparison);assert.equal(Object.keys(combined).length,10);assert.equal(Object.values(combined).slice(1,-1).reduce((n,v)=>n+BigInt(v),0n),36000n);assert.equal(combined.amount_9,'36000');assert.equal(comparison.templateLayout.continuations.length,1);
+ const combined=row(comparison);assert.equal(Object.keys(combined).length,10);assert.equal(Object.values(combined).slice(1,-1).reduce((n,v)=>n+BigInt(v),0n),36000n);assert.equal(combined.amount_9,'36000');assert.equal(comparison.templateLayout.continuations.length,1);assert.match(company.templateLayout.notes.join(' '),/daftar aset dan perhitungan penyusutan/);
  for(let i=0;i<8;i++){const branch=await read('company-profit-loss','branch','u'+i);assert.equal(row(branch).amount_1,String((i+1)*1000));assert.equal(branch.templateLayout.units.length,1);assert.equal(branch.templateLayout.grid.find(r=>r[0]==='Biaya penyusutan')[1],null);}
  assert.doesNotMatch(JSON.stringify(comparison.presentationData),/4-1300|5-1100|account_code/);
 });
@@ -23,9 +23,22 @@ test('cash and stafel balance comparisons keep every branch, repeated company co
   const report=await read(id,'comparison'),layout=report.templateLayout,cols=report.presentationData.columns;
   assert.equal(cols.length,id==='fund-position'?19:10);assert.equal(layout.continuations.length,id==='fund-position'?2:1);
   for(const i of [0,7])assert.ok(cols.some(c=>c.label.includes('Cabang '+i)));
-  assert.equal(cols.filter(c=>c.label.startsWith('Perusahaan')).length,id==='fund-position'?2:1);
+  assert.equal(cols.filter(c=>c.label.startsWith('Total terpilih')).length,id==='fund-position'?2:1);
   const table=layout.grid.slice(6).filter((_,i)=>layout.rowTypes[i+6]!=='section');if(id==='fund-position')assert.ok(table.every(row=>row.slice(1).every(v=>v===null||v==='')));else{const net=report.presentationData.rows.find(r=>r.item==='KENAIKAN (PENURUNAN) KAS TERCATAT');assert.equal(net.amount_9,'35200');assert.equal(net.amount_8,'7900');assert.ok(layout.grid.find(r=>r[0]==='KAS DAN SETARA KAS PADA AKHIR PERIODE').slice(1).every(v=>v===null));}
   const csv=reports.toCsv(report);assert.match(csv,/Cabang 7/);assert.doesNotMatch(csv,/account_code|4-1300/);
   const files=unzip(exportXlsx(layout,'Perusahaan QA')),content=files.map(f=>f.data.toString()).join('');assert.match(content,/Cabang 7/);assert.match(content,/Belum tersedia/);assert.doesNotMatch(content,/account_code/);if(id==='cash-flow')assert.match(content,/<f>IF\(COUNT/);
  }
 });
+
+ test('explicit subset excludes other branches from all statement exports and rejects invalid branch choices',async()=>{
+ for(const id of ['company-profit-loss','compare-profit-loss','cash-flow','recorded-income-expense','fund-position']){
+  const p=params('comparison');p.set('branch_ids',JSON.stringify(['u5','u1']));const r=await reports.read(pool,{role:'OWNER'},'fixture',id,p,{readAdvances:async()=>({rows:[]})});
+  assert.deepEqual(r.filters.branchIds,['u1','u5']);assert.deepEqual(r.templateLayout.units.map(u=>u.id),['u1','u5']);
+  const csv=reports.toCsv(r),xlsx=unzip(exportXlsx(r.templateLayout,'QA')).map(f=>f.data.toString()).join('');
+  for(const content of [csv,xlsx]){assert.match(content,/Cabang 1/);assert.match(content,/Cabang 5/);assert.doesNotMatch(content,/Cabang [023467]/);}
+  if(r.totals)assert.equal(r.totals.income,'8000',id);
+  if(id==='cash-flow'){const row=r.presentationData.rows.find(r=>r.item==='KENAIKAN (PENURUNAN) KAS TERCATAT');assert.equal(row.amount_1,'1900');assert.equal(row.amount_2,'5900');assert.equal(row.amount_3,'7800');}
+ }
+ for(const ids of [null,[],['u1'],['u1','u1'],['all','u1']]){const p=params('comparison');if(ids===null)p.delete('branch_ids');else p.set('branch_ids',JSON.stringify(ids));assert.throws(()=>reports.filters(p));}
+ const p=params('comparison');p.set('branch_ids',JSON.stringify(['u1','missing']));await assert.rejects(reports.read(pool,{role:'OWNER'},'fixture','cash-flow',p,{readAdvances:async()=>({rows:[]})}),/REPORT_BRANCH_NOT_FOUND/);
+ });

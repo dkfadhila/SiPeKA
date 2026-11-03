@@ -8,12 +8,13 @@ function make(id,source,previous,units,filters,panelIndex=null){
  const spec=JSON.parse(fs.readFileSync(path.join(__dirname,'report-templates',kind+'.json'),'utf8'));
  const grid=spec.rows.map(row=>row.map(c=>clean(c.value)));
  // Keep the uploaded template's six unit slots. Extra units continue in another panel.
- const selected=units.filter(u=>filters.branch==='all'||u.id===filters.branch);
+ const selected=units.filter(u=>require('./report-branch-scope').includes(filters,u.id));
  const panels=kind==='pnl'?Array.from({length:Math.max(1,Math.ceil(selected.length/6))},(_,i)=>selected.slice(i*6,i*6+6)):[[]];
  const currentPeriod={from:filters.dateFrom,to:filters.dateTo};
  let previousPeriod=previous?.filters?{from:previous.filters.dateFrom,to:previous.filters.dateTo}:null;
  const periodLabel=p=>p.from+' s.d. '+p.to;
  const notes=['Angka hanya mencakup transaksi/realisasi tercatat. Data akrual dan saldo yang belum tersedia ditandai kosong.'];
+ if(kind==='pnl'&&id!=='recorded-income-expense')notes.push('Biaya penyusutan belum tersedia; lengkapi daftar aset dan perhitungan penyusutan agar total beban operasional dan laba bersih dapat dihitung.');
  const panel=panels[panelIndex??0];
  const cells={};
  const set=(r,c,v)=>{grid[r-1][c]=v;cells[col(c)+r]=v;};
@@ -53,6 +54,6 @@ function make(id,source,previous,units,filters,panelIndex=null){
  set(1,0,'[Nama Perusahaan]');set(3,2,kind==='balance'?filters.dateTo:periodLabel(currentPeriod));
  for(let r=0;r<grid.length;r++)for(let c=0;c<grid[r].length;c++)if(typeof grid[r][c]==='string'&&grid[r][c].startsWith('='))grid[r][c]=null;
  const continuations=kind==='pnl'&&panelIndex===null?panels.slice(1).map((_,i)=>make(id,source,previous,units,filters,i+1)):[];
- return {kind,grid,cells,spec,...(kind==='cash'?{cashUnclassified:[source,previous].map(data=>require('./cashflow-classification').classify(data,filters.branch))}:{}),panels,continuations,units:selected,scopeMode:filters.viewMode,notes,period:currentPeriod,previousPeriod,legacyTotal:legacy.reduce((n,r)=>n+BigInt(r.income||0)-BigInt(r.expense||0),0n).toString()};
+ return {kind,grid,cells,spec,...(kind==='cash'?{cashUnclassified:[source,previous].map(data=>require('./cashflow-classification').classify(data,filters.branch))}:{}),panels,continuations,units:selected,scopeMode:filters.viewMode,selectedBranchIds:filters.branchIds,notes,period:currentPeriod,previousPeriod,legacyTotal:legacy.reduce((n,r)=>n+BigInt(r.income||0)-BigInt(r.expense||0),0n).toString()};
 }
 module.exports={make,kinds,col};

@@ -2,11 +2,11 @@
 const {definitions,byCode}=require('./coa-catalog');
 // Uses the existing, reviewed realized-transaction source; does not invent accruals.
 function build(source,units,id){
- const scoped=units.filter(u=>source.filters.branch==='all'||u.id===source.filters.branch);
+ const scoped=units.filter(u=>require('./report-branch-scope').includes(source.filters,u.id));
  const comparison=id==='compare-profit-loss';
  const columns=[{key:'account_code',label:'Kode'},{key:'account_name',label:'Uraian'},
   ...(comparison?scoped.map((u,i)=>({key:'unit_'+i,label:u.name,type:'currency'})):[]),
-  {key:'amount',label:source.filters.branch==='all'?'Total Perusahaan':'Total Unit',type:'currency'}];
+  {key:'amount',label:source.filters.branchIds?'Total Cabang Terpilih':source.filters.branch==='all'?'Total Perusahaan':'Total Unit',type:'currency'}];
  const buckets=new Map(definitions.map(([code])=>[code,new Map()]));
  const legacy=new Map();
  for(const row of source.rows){

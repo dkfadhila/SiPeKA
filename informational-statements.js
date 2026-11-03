@@ -10,8 +10,8 @@ function build(id,transactions,advances,accounts,f){
  let income=0n,expense=0n,disbursements=0n,returns=0n,outstanding=0n,incomeCount=0,expenseCount=0,eventCount=0;
  const groups=new Map(),seen=new Set();
  function spending(value,account){if(!account||account.account_type&&account.account_type!=='EXPENSE')fail('REPORT_SETTLEMENT_ACCOUNT_MISSING');expense+=amount(value);expenseCount++;const key=account.account_code;const g=groups.get(key)||{account_code:key,account_name:account.account_name,expense:'0'};g.expense=String(BigInt(g.expense)+amount(value));groups.set(key,g);}
- for(const t of transactions){if(f.branch!=='all'&&t.branch_id!==f.branch)continue;if(!within(t.created_at)||t.status!=='APPROVED'||t.tx_intent!=='SETOR_NOTA')continue;if(t.tx_type==='INCOME'){income+=amount(t.amount);incomeCount++;}else if(t.tx_type==='EXPENSE')spending(t.amount,t);else fail('REPORT_INVALID_TYPE');}
- for(const a of advances){if(f.branch!=='all'&&a.branchId!==f.branch)continue;let d=0n,s=0n,r=0n;
+ for(const t of transactions){if(!require('./report-branch-scope').includes(f,t.branch_id))continue;if(!within(t.created_at)||t.status!=='APPROVED'||t.tx_intent!=='SETOR_NOTA')continue;if(t.tx_type==='INCOME'){income+=amount(t.amount);incomeCount++;}else if(t.tx_type==='EXPENSE')spending(t.amount,t);else fail('REPORT_INVALID_TYPE');}
+ for(const a of advances){if(!require('./report-branch-scope').includes(f,a.branchId))continue;let d=0n,s=0n,r=0n;
   for(const e of a.events||[]){if(!e.id||seen.has(e.id))fail('REPORT_DUPLICATE_EVENT');seen.add(e.id);const active=within(e.createdAt);
    if(e.action==='DISBURSE'){d+=amount(e.amount);if(active){disbursements+=amount(e.amount);eventCount++;}}
    if(e.action==='RETURN'){r+=amount(e.amount);if(active){returns+=amount(e.amount);eventCount++;}}
@@ -31,8 +31,9 @@ function build(id,transactions,advances,accounts,f){
 async function read(pool,actor,token,id,params,{readAdvances=require('./advance-service').snapshot}={}){
  if(actor?.role!=='OWNER')throw Object.assign(Error('REPORT_OWNER_ONLY'),{statusCode:403});
  const f=require('./operational-reports').filters(params),units=(await pool.query('SELECT id FROM business_units')).rows;
+ require('./report-branch-scope').validate(f,units);
  if(f.branch!=='all'&&!units.some(u=>u.id===f.branch))throw Object.assign(Error('REPORT_BRANCH_NOT_FOUND'),{statusCode:404});
- const transactions=(await pool.query(`SELECT t.id,t.branch_id,t.tx_type,t.amount::text amount,t.status,t.tx_intent,t.created_at,c.account_code,c.account_name,c.account_type FROM ledger_transactions t JOIN chart_of_accounts c ON c.id=t.coa_id WHERE t.created_at >= $1::timestamp AND t.created_at < $2::timestamp AND ($3::text='all' OR t.branch_id=$3) ORDER BY t.created_at,t.id LIMIT 10001`,[f.utcFrom,f.utcToExclusive,f.branch])).rows;
+ const transactions=(await pool.query(`SELECT t.id,t.branch_id,t.tx_type,t.amount::text amount,t.status,t.tx_intent,t.created_at,c.account_code,c.account_name,c.account_type FROM ledger_transactions t JOIN chart_of_accounts c ON c.id=t.coa_id WHERE t.created_at >= $1::timestamp AND t.created_at < $2::timestamp AND ($3::text='all' OR t.branch_id=$3) AND ($4::text[] IS NULL OR t.branch_id=ANY($4)) ORDER BY t.created_at,t.id LIMIT 10001`,[f.utcFrom,f.utcToExclusive,f.branch,f.branchIds||null])).rows.filter(r=>require('./report-branch-scope').includes(f,r.branch_id));
  if(transactions.length>10000)throw Object.assign(Error('REPORT_TOO_LARGE'),{statusCode:413});
  const advances=await readAdvances(pool,token);if(!Array.isArray(advances?.rows))fail('REPORT_ADVANCE_UNAVAILABLE');
  const accounts=(await pool.query('SELECT id,account_code,account_name,account_type FROM chart_of_accounts')).rows;

@@ -2,15 +2,18 @@
 // Read-only operational reports. No migrations, posting, notifications or balance inference.
 const fail=(code,statusCode=400)=>{throw Object.assign(new Error(code),{statusCode});};
 function filters(params){
- const allowed=['branch_id','date_from','date_to','timezone','view_mode'];
+ const allowed=['branch_id','date_from','date_to','timezone','view_mode','branch_ids'];
  for(const key of params.keys())if(!allowed.includes(key)||params.getAll(key).length!==1)fail('REPORT_INVALID_FILTER');
  const start=params.get('date_from'),end=params.get('date_to'),branch=params.get('branch_id')||'all',viewMode=params.get('view_mode');
  if(viewMode!==null&&(!['company','branch','comparison'].includes(viewMode)||(viewMode==='branch'?branch==='all':branch!=='all')))fail('REPORT_INVALID_SCOPE');
+ let branchIds;
+ if(viewMode==='comparison'){try{branchIds=require('./report-branch-scope').normalize(JSON.parse(params.get('branch_ids')));}catch{fail('REPORT_COMPARISON_BRANCHES_REQUIRED');}}
+ else if(params.has('branch_ids'))fail('REPORT_INVALID_SCOPE');
  const valid=s=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&!Number.isNaN(Date.parse(s+'T00:00:00Z'))&&new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s;
  if(!valid(start)||!valid(end)||start>end||params.get('timezone')!=='Asia/Jakarta'||branch.length>120)fail('REPORT_INVALID_FILTER');
  const from=Date.parse(start+'T00:00:00Z')-25200000,to=Date.parse(end+'T00:00:00Z')+86400000-25200000;
  if(to-from>366*86400000)fail('REPORT_RANGE_TOO_LARGE');
- return {branch,dateFrom:start,dateTo:end,timezone:'Asia/Jakarta',utcFrom:new Date(from).toISOString(),utcToExclusive:new Date(to).toISOString(),...(viewMode?{viewMode}:{})};
+ return {branch,dateFrom:start,dateTo:end,timezone:'Asia/Jakarta',utcFrom:new Date(from).toISOString(),utcToExclusive:new Date(to).toISOString(),...(viewMode?{viewMode}:{}),...(branchIds?{branchIds}:{})};
 }
 function exact(v){if(!/^[0-9]+$/.test(String(v)))fail('REPORT_INVALID_AMOUNT',503);return BigInt(v);}
 function total(rows){let income=0n,expense=0n;for(const r of rows){if(r.tx_type==='INCOME')income+=exact(r.amount);else if(r.tx_type==='EXPENSE')expense+=exact(r.amount);else fail('REPORT_INVALID_TYPE',503);}return {income:String(income),expense:String(expense),net:String(income-expense),count:rows.length};}
@@ -25,12 +28,13 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
   const source=sourceId===id?result:await read(pool,actor,token,sourceId,params,{readAdvances,template:false});
   const previous=await read(pool,actor,token,sourceId,previousParams,{readAdvances,template:false});
   const units=(await pool.query('SELECT id,name,category,is_active FROM business_units ORDER BY id')).rows;
+  require('./report-branch-scope').validate(filters(params),units);
   const calculatedLayout=require('./report-template').make(id,source,previous,units,f);
   if(id==='recorded-income-expense'){
    const recordedSummary=structuredClone(result),recordedByBranch={};
-   for(const unit of units.filter(u=>f.branch==='all'||u.id===f.branch)){
+   for(const unit of units.filter(u=>require('./report-branch-scope').includes(f,u.id))){
     if(f.branch===unit.id)recordedByBranch[unit.id]=structuredClone(result);
-    else{const unitParams=new URLSearchParams(params);unitParams.set('branch_id',unit.id);unitParams.set('view_mode','branch');recordedByBranch[unit.id]=await read(pool,actor,token,id,unitParams,{readAdvances,template:false});}
+    else{const unitParams=new URLSearchParams(params);unitParams.set('branch_id',unit.id);unitParams.set('view_mode','branch');unitParams.delete('branch_ids');recordedByBranch[unit.id]=await read(pool,actor,token,id,unitParams,{readAdvances,template:false});}
    }
    const attach=layout=>{layout.recordedSummary=recordedSummary;layout.recordedByBranch=recordedByBranch;layout.recordedPreviousSummary=previous;for(const part of layout.continuations||[])attach(part);};attach(calculatedLayout);
   }
@@ -43,6 +47,7 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
  if(['company-profit-loss','compare-profit-loss'].includes(id)){
   const source=await read(pool,actor,token,'profit-loss',params,{readAdvances,template:false});
   const units=(await pool.query('SELECT id,name,category,is_active FROM business_units ORDER BY id')).rows;
+  require('./report-branch-scope').validate(filters(params),units);
   return require('./company-pnl').build(source,units,id);
  }
  if(id==='quarterly-owner')return require('./quarterly-owner').read(pool,actor,token,params,{readAdvances});
@@ -50,13 +55,14 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
  if(!['profit-loss','cash-flow','fund-requests','daily-closings','audit-evidence','quarterly-data','branch-performance','management-report','expense-breakdown'].includes(id))fail('REPORT_NOT_FOUND',404);
  const f=filters(params);
  const units=(await pool.query('SELECT id,name,category,is_active FROM business_units ORDER BY id')).rows;
+  require('./report-branch-scope').validate(filters(params),units);
  if(f.branch!=='all'&&!units.some(u=>u.id===f.branch))fail('REPORT_BRANCH_NOT_FOUND',404);
  const register=rows=>({id,columns:(id==='daily-closings'?['id','branch_id','branch_name','user_id','user_name','closing_date','system_balance','physical_cash','difference','reason']:['id','branch_id','branch_name','user_id','user_name','created_at','amount','payment_method','status','tx_intent','memo','receipt_key']).map(key=>({key,label:key})),rows,totals:null,filters:f,sourceCount:rows.length,complete:true,readiness:rows.length?'available':'empty',missingDatasets:[],generated_at:new Date().toISOString(),provenance:'Stored operational records; not certified reconciliation.',neracaComplete:false,reconciliationComplete:false,endBalance:null,notices:['Closing adalah observasi uang fisik, bukan reset kas, setoran, atau rekonsiliasi lengkap. Approval pengajuan bukan pencairan.']});
  if(id==='daily-closings'){
-  const rows=(await pool.query(`SELECT c.id,c.branch_id,b.name branch_name,c.user_id,u.full_name user_name,c.closing_date,c.system_balance::text system_balance,c.physical_cash::text physical_cash,c.difference::text difference,c.reason FROM cash_closings c JOIN business_units b ON b.id=c.branch_id JOIN app_users u ON u.id=c.user_id WHERE c.closing_date >= $1::date AND c.closing_date <= $2::date AND ($3::text='all' OR c.branch_id=$3) ORDER BY c.closing_date,c.id LIMIT 10001`,[f.dateFrom,f.dateTo,f.branch])).rows;
+  const rows=(await pool.query(`SELECT c.id,c.branch_id,b.name branch_name,c.user_id,u.full_name user_name,c.closing_date,c.system_balance::text system_balance,c.physical_cash::text physical_cash,c.difference::text difference,c.reason FROM cash_closings c JOIN business_units b ON b.id=c.branch_id JOIN app_users u ON u.id=c.user_id WHERE c.closing_date >= $1::date AND c.closing_date <= $2::date AND ($3::text='all' OR c.branch_id=$3) AND ($4::text[] IS NULL OR c.branch_id=ANY($4)) ORDER BY c.closing_date,c.id LIMIT 10001`,[f.dateFrom,f.dateTo,f.branch,f.branchIds||null])).rows.filter(r=>require('./report-branch-scope').includes(f,r.branch_id));
   if(rows.length>10000)fail('REPORT_TOO_LARGE',413);return register(rows);
  }
- const transactions=(await pool.query(`SELECT t.id,t.branch_id,t.user_id,t.coa_id,t.tx_type,t.amount::text amount,t.payment_method,t.memo,t.receipt_key,t.status,t.tx_intent,t.created_at,u.full_name user_name,b.name branch_name,c.account_code,c.account_name FROM ledger_transactions t JOIN app_users u ON u.id=t.user_id JOIN business_units b ON b.id=t.branch_id JOIN chart_of_accounts c ON c.id=t.coa_id WHERE t.created_at >= $1::timestamp AND t.created_at < $2::timestamp AND ($3::text='all' OR t.branch_id=$3) ORDER BY t.created_at,t.id LIMIT 10001`,[f.utcFrom,f.utcToExclusive,f.branch])).rows;
+ const transactions=(await pool.query(`SELECT t.id,t.branch_id,t.user_id,t.coa_id,t.tx_type,t.amount::text amount,t.payment_method,t.memo,t.receipt_key,t.status,t.tx_intent,t.created_at,u.full_name user_name,b.name branch_name,c.account_code,c.account_name FROM ledger_transactions t JOIN app_users u ON u.id=t.user_id JOIN business_units b ON b.id=t.branch_id JOIN chart_of_accounts c ON c.id=t.coa_id WHERE t.created_at >= $1::timestamp AND t.created_at < $2::timestamp AND ($3::text='all' OR t.branch_id=$3) AND ($4::text[] IS NULL OR t.branch_id=ANY($4)) ORDER BY t.created_at,t.id LIMIT 10001`,[f.utcFrom,f.utcToExclusive,f.branch,f.branchIds||null])).rows.filter(r=>require('./report-branch-scope').includes(f,r.branch_id));
  if(transactions.length>10000)fail('REPORT_TOO_LARGE',413);
  if(id==='fund-requests')return register(transactions.filter(r=>r.tx_intent==='PENGAJUAN_DANA'));
  const advances=await readAdvances(pool,token);
@@ -65,7 +71,7 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
   const pending=(await pool.query("SELECT count(*)::text n FROM ledger_transactions WHERE status='PENDING_APPROVAL' AND tx_intent='PENGAJUAN_DANA' AND ($1::text='all' OR branch_id=$1)",[f.branch])).rows[0];
   return {...require('./quarterly-owner').aggregate(transactions,advances.rows,f),pendingRequests:Number(pending.n)};
  }
- const events=[];for(const a of advances.rows){if(f.branch!=='all'&&a.branchId!==f.branch)continue;for(const e of a.events||[]){const date=Date.parse(e.createdAt);if(!Number.isFinite(date))fail('REPORT_INVALID_EVENT_DATE',503);if(date<Date.parse(f.utcFrom)||date>=Date.parse(f.utcToExclusive))continue;if(id==='cash-flow'){if(['DISBURSE','RETURN'].includes(e.action))events.push({id:e.id,branch_id:a.branchId,tx_type:e.action==='RETURN'?'INCOME':'EXPENSE',amount:String(exact(e.amount)),payment_method:'CASH_DRAWER',status:'APPROVED',tx_intent:'ADVANCE_'+e.action,account_code:'ADVANCE',account_name:'Mutasi advance'});continue;}if(e.action!=='APPROVE')continue;if(!Array.isArray(e.lines)||!e.lines.length||e.lines.reduce((n,l)=>n+exact(l.amount),0n)!==exact(e.amount))fail('REPORT_SETTLEMENT_INCOMPLETE',503);for(const l of e.lines)events.push({id:e.id+':'+l.receiptKey,branch_id:a.branchId,user_id:a.userId,coa_id:l.coaId,tx_type:'EXPENSE',amount:String(exact(l.amount)),payment_method:'CASH_DRAWER',status:'APPROVED',tx_intent:'ADVANCE_APPROVE',receipt_key:l.receiptKey,created_at:e.createdAt,account_code:l.coaId,account_name:'Settlement advance'});}}
+ const events=[];for(const a of advances.rows){if(!require('./report-branch-scope').includes(f,a.branchId))continue;for(const e of a.events||[]){const date=Date.parse(e.createdAt);if(!Number.isFinite(date))fail('REPORT_INVALID_EVENT_DATE',503);if(date<Date.parse(f.utcFrom)||date>=Date.parse(f.utcToExclusive))continue;if(id==='cash-flow'){if(['DISBURSE','RETURN'].includes(e.action))events.push({id:e.id,branch_id:a.branchId,tx_type:e.action==='RETURN'?'INCOME':'EXPENSE',amount:String(exact(e.amount)),payment_method:'CASH_DRAWER',status:'APPROVED',tx_intent:'ADVANCE_'+e.action,account_code:'ADVANCE',account_name:'Mutasi advance'});continue;}if(e.action!=='APPROVE')continue;if(!Array.isArray(e.lines)||!e.lines.length||e.lines.reduce((n,l)=>n+exact(l.amount),0n)!==exact(e.amount))fail('REPORT_SETTLEMENT_INCOMPLETE',503);for(const l of e.lines)events.push({id:e.id+':'+l.receiptKey,branch_id:a.branchId,user_id:a.userId,coa_id:l.coaId,tx_type:'EXPENSE',amount:String(exact(l.amount)),payment_method:'CASH_DRAWER',status:'APPROVED',tx_intent:'ADVANCE_APPROVE',receipt_key:l.receiptKey,created_at:e.createdAt,account_code:l.coaId,account_name:'Settlement advance'});}}
  if(id==='audit-evidence'){
   const scoped=transactions.concat(events),keys=[...new Set(scoped.map(r=>String(r.receipt_key||'').replace(/^\/api\/receipts\//,'')).filter(Boolean))];
   const assets=keys.length?(await pool.query('SELECT filename,user_id,branch_id,mime FROM receipt_assets WHERE filename=ANY($1::text[])',[keys])).rows:[];
@@ -77,7 +83,7 @@ async function read(pool,actor,token,id,params,{readAdvances=require('./advance-
   for(const e of events){const account=accounts.find(a=>a.id===e.coa_id);if(!account)fail('REPORT_SETTLEMENT_ACCOUNT_MISSING',503);e.account_code=account.account_code;e.account_name=account.account_name;}
  }
  const approved=transactions.filter(r=>r.status==='APPROVED'&&r.tx_intent==='SETOR_NOTA').concat(events);
- if(['branch-performance','management-report','expense-breakdown'].includes(id))return require('./branch-reports').build(id,transactions,approved,units,f);
+ if(['branch-performance','management-report','expense-breakdown'].includes(id))return require('./branch-reports').build(id,transactions,approved,units.filter(u=>require('./report-branch-scope').includes(f,u.id)),f);
  const groups=new Map();for(const r of approved){const key=JSON.stringify([r.branch_id,id==='cash-flow'?r.payment_method:r.account_code]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r);}
  const rows=[...groups.values()].map(rs=>({branch_id:rs[0].branch_id,branch:units.find(u=>u.id===rs[0].branch_id)?.name,account_code:rs[0].account_code,account_name:rs[0].account_name,method:rs[0].payment_method,...total(rs)}));
  return {id,columns:(id==='cash-flow'?['branch_id','branch','method','income','expense','net','count']:['branch_id','branch','account_code','account_name','income','expense','net','count']).map(key=>({key,label:key})),rows,...(id==='cash-flow'?{cashEntries:approved.map(r=>({branch_id:r.branch_id,account_code:r.account_code,tx_type:r.tx_type,amount:r.amount,tx_intent:r.tx_intent}))}:{}),totals:total(approved),filters:f,sourceCount:transactions.length,complete:true,readiness:rows.length?'available':'empty',missingDatasets:[],generated_at:new Date().toISOString(),provenance:'Recorded ordinary transactions; approved advance settlement on event WIB day. Approval is not disbursement.',neracaComplete:false,reconciliationComplete:false,endBalance:null,notices:['Mutasi operasional tercatat, bukan laba akrual atau neraca lengkap.']};

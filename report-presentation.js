@@ -5,8 +5,8 @@ function compact(layout,id,{excel=false}={}){
  const unitCols=[2,3,4,5,6,7].filter(c=>old[5][c]);
  const indices=kind==='pnl'?(excel?[...unitCols,8,9]:comparison?[...unitCols,8]:[8]):excel?[2,3]:[2];
  const periodLabel=period=>period?period.from+' s.d. '+period.to:'Belum tersedia';
- const header=kind==='balance'?['Keterangan','Debet (Rp)','Kredit (Rp)']:['Keterangan',...(excel?(kind==='pnl'?[...unitCols.map(c=>old[5][c]),'Konsolidasi (Rp)\n'+periodLabel(layout.period),'Periode sebelumnya (Rp)\n'+periodLabel(layout.previousPeriod),'Perubahan (%)']:['Periode berjalan (Rp)\n'+periodLabel(layout.period),'Periode sebelumnya (Rp)\n'+periodLabel(layout.previousPeriod)]):comparison?[...unitCols.map(c=>old[5][c]),'Total (Rp)']:['Nominal (Rp)'])];
- const grid=[['[Nama Perusahaan]'],[recorded?'Pendapatan & Beban Tercatat':kind==='pnl'?'Laporan Laba & Rugi':kind==='balance'?'Laporan Neraca':'Laporan Arus Kas'],[kind==='balance'?layout.period.to:layout.period.from+' s.d. '+layout.period.to],['Disajikan dalam Rupiah · '+(layout.units.length===1?layout.units[0].name:'Seluruh Cabang / Unit')],[],header];
+ const header=kind==='balance'?['Keterangan','Debet (Rp)','Kredit (Rp)']:['Keterangan',...(excel?(kind==='pnl'?[...unitCols.map(c=>old[5][c]),(layout.selectedBranchIds?'Total cabang terpilih (Rp)\n':'Konsolidasi (Rp)\n')+periodLabel(layout.period),'Periode sebelumnya (Rp)\n'+periodLabel(layout.previousPeriod),'Perubahan (%)']:['Periode berjalan (Rp)\n'+periodLabel(layout.period),'Periode sebelumnya (Rp)\n'+periodLabel(layout.previousPeriod)]):comparison?[...unitCols.map(c=>old[5][c]),layout.selectedBranchIds?'Total terpilih (Rp)':'Total (Rp)']:['Nominal (Rp)'])];
+ const grid=[['[Nama Perusahaan]'],[recorded?'Pendapatan & Beban Tercatat':kind==='pnl'?'Laporan Laba & Rugi':kind==='balance'?'Laporan Neraca':'Laporan Arus Kas'],[kind==='balance'?layout.period.to:layout.period.from+' s.d. '+layout.period.to],['Disajikan dalam Rupiah · '+(layout.selectedBranchIds?'Cabang terpilih: '+layout.units.map(u=>u.name).join(' vs '):layout.units.length===1?layout.units[0].name:'Seluruh Cabang / Unit')],[],header];
  const types=Array(6).fill('heading'),levels=Array(6).fill(0);
  let balanceCredit=false;
  const add=(label,values=[],type='detail',level=0)=>{
@@ -113,12 +113,12 @@ function scoped(layout,id,source,previous,units,filters,options={}){
  const total=compact(layout,id),selected=layout.units,size=layout.kind==='balance'?3:6;
  const panels=Array.from({length:Math.max(1,Math.ceil(selected.length/size))},(_,i)=>selected.slice(i*size,(i+1)*size));
  const build=group=>{
-  const parts=group.map(unit=>compact(require('./report-template').make(id,source,previous,units,{...filters,branch:unit.id,viewMode:'branch'}),id));
-  const headers=['Keterangan',...parts.flatMap((part,i)=>part.grid[5].slice(1).map(label=>group[i].name+' · '+label)),...total.grid[5].slice(1).map(label=>'Perusahaan · '+label)];
+  const parts=group.map(unit=>compact(require('./report-template').make(id,source,previous,units,{...filters,branch:unit.id,branchIds:undefined,viewMode:'branch'}),id));
+  const headers=['Keterangan',...parts.flatMap((part,i)=>part.grid[5].slice(1).map(label=>group[i].name+' · '+label)),...total.grid[5].slice(1).map(label=>(filters.branchIds?'Total terpilih':'Perusahaan')+' · '+label)];
   const grid=total.grid.map((row,r)=>r===5?headers:r<5?[row[0]]:[row[0],...parts.flatMap(part=>part.grid[r].slice(1)),...row.slice(1)]);
   grid[3]=['Perbandingan cabang · '+layout.period.from+' s.d. '+layout.period.to];
   const types=total.rowTypes;
-  return {...total,grid,panelUnits:group.map(u=>u.name),scopeMode:'comparison',excelComplete:false,continuations:[],spec:{rows:grid.map((row,r)=>row.map(value=>({value,bold:['section','total','heading'].includes(types[r]),format:'General'}))),widths:headers.map((_,i)=>i?24:65),merges:[]},notes:[...total.notes,'Kolom perusahaan mencakup seluruh cabang; jangan menjumlahkan ulang total perusahaan pada panel lanjutan.']};
+  return {...total,grid,panelUnits:group.map(u=>u.name),scopeMode:'comparison',excelComplete:false,continuations:[],spec:{rows:grid.map((row,r)=>row.map(value=>({value,bold:['section','total','heading'].includes(types[r]),format:'General'}))),widths:headers.map((_,i)=>i?24:65),merges:[]},notes:[...total.notes,filters.branchIds?'Total terpilih hanya mencakup cabang pembanding; total diulang pada panel lanjutan.':'Kolom perusahaan mencakup seluruh cabang; jangan menjumlahkan ulang total perusahaan pada panel lanjutan.']};
  };
  const result=build(panels[0]);result.continuations=panels.slice(1).map(build);return result;
 }
