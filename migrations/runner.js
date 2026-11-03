@@ -7,7 +7,8 @@ const tables = ['business_units','app_users','chart_of_accounts','ledger_transac
 function files() {
  return fs.readdirSync(__dirname).filter(x => /^\d+_[a-z0-9_]+\.sql$/.test(x)).sort().map(name => {
   const sql = fs.readFileSync(path.join(__dirname,name),'utf8');
-  return { name,sql,sha256:createHash('sha256').update(sql).digest('hex') };
+  const normalized=sql.replace(/\r\n/g,'\n');
+  return { name,sql,sha256:createHash('sha256').update(normalized).digest('hex'),legacySha256:createHash('sha256').update(normalized.replace(/\n/g,'\r\n')).digest('hex') };
  });
 }
 async function migrate(pool) {
@@ -23,7 +24,7 @@ async function migrate(pool) {
   for (const name of applied.keys()) if (!known.some(f => f.name===name)) throw new Error('Unknown migration in database');
   for (const file of known) {
    if (applied.has(file.name)) {
-    if (applied.get(file.name)!==file.sha256) throw new Error('Applied migration checksum mismatch: '+file.name);
+    if (applied.get(file.name)!==file.sha256 && applied.get(file.name)!==file.legacySha256) throw new Error('Applied migration checksum mismatch: '+file.name);
     continue;
    }
    await client.query(file.sql);
@@ -38,7 +39,7 @@ async function verifySchema(pool) {
  await pool.query('SELECT 1');
  const applied = new Map((await pool.query('SELECT name,sha256 FROM schema_migrations')).rows.map(r => [r.name,r.sha256]));
  const known = files();
- if (applied.size!==known.length || known.some(f => applied.get(f.name)!==f.sha256)) throw new Error('PostgreSQL migration schema mismatch; run explicit migrations');
+ if (applied.size!==known.length || known.some(f => applied.get(f.name)!==f.sha256 && applied.get(f.name)!==f.legacySha256)) throw new Error('PostgreSQL migration schema mismatch; run explicit migrations');
  const columns = {
   business_units:'id code name category is_active created_at',
   app_users:'id username password_hash full_name role assigned_branch_id created_at',
@@ -75,4 +76,4 @@ async function main() {
  finally { await pool.end(); }
 }
 if (require.main===module) main().catch(() => { console.error('SiPeKA PostgreSQL migration/verification failed (credentials and SQL values suppressed)'); process.exitCode=1; });
-module.exports = { migrate,verifySchema,tables,LOCK_KEY };
+module.exports = { migrate,verifySchema,tables,LOCK_KEY,files };
