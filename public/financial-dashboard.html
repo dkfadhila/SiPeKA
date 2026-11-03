@@ -624,7 +624,8 @@ body.is-staff [data-view="audit"] {
   const refresh=()=>{const expenseOnly=intent?.value==='PENGAJUAN_DANA',row=rows.find(r=>r.id===select.value),selected=expenseOnly&&row?.account_type==='REVENUE'?'':select.value;select.innerHTML=options(rows,{query:search.value,selected,expenseOnly});describe();};
   search.addEventListener('input',refresh);select.addEventListener('change',describe);intent?.addEventListener('change',refresh);describe();
  }
- window.SipekaCoaInput={options,field,bind};
+ function selectedType(prefix){const select=document.getElementById(prefix+'Coa'),option=select?.selectedOptions[0];if(!select?.value||!['REVENUE','EXPENSE'].includes(option?.dataset.accountType))throw Error('Pilih kode akun COA sesuai transaksi');return option.dataset.accountType==='REVENUE'?'INCOME':'EXPENSE';}
+ window.SipekaCoaInput={options,field,bind,selectedType};
 })();
 </script>
 <script>
@@ -3571,7 +3572,7 @@ window.SipekaAuth.bootstrap=bootstrap;
       const intent=(document.getElementById('mnIntent')||{}).value||'SETOR_NOTA';
       const memo=(document.getElementById('mnMemo')||{}).value.trim()||(intent==='PENGAJUAN_DANA'?'Pengajuan dana lapangan':'Setor nota operasional');
       const coa=(document.getElementById('mnCoa')||{}).value;
-      let txType;try{txType=selectedCoaType('mn');}catch(err){toast(err.message);return;}
+      let txType;try{txType=window.SipekaCoaInput.selectedType('mn');}catch(err){toast(err.message);return;}
       const method=(document.getElementById('mnMethod')||{}).value||'CASH_DRAWER';
       // Use the catalog account type, including non-operating revenue.
       // Transaction direction follows the authoritative COA type (including 7-1100).
@@ -3699,7 +3700,7 @@ window.SipekaAuth.bootstrap=bootstrap;
       if(amount===null){toast('Nominal harus angka bulat positif dalam batas aman');return;}
       const intent=(document.getElementById('scIntent')||{}).value||'SETOR_NOTA';
       const coa=(document.getElementById('scCoa')||{}).value;
-      let txType;try{txType=selectedCoaType('sc');}catch(err){toast(err.message);return;}
+      let txType;try{txType=window.SipekaCoaInput.selectedType('sc');}catch(err){toast(err.message);return;}
       // Use the catalog account type, including non-operating revenue.
       // Transaction direction follows the authoritative COA type (including 7-1100).
       // F06-fix: branch_id untuk owner

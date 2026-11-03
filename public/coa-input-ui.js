@@ -19,5 +19,6 @@
   const refresh=()=>{const expenseOnly=intent?.value==='PENGAJUAN_DANA',row=rows.find(r=>r.id===select.value),selected=expenseOnly&&row?.account_type==='REVENUE'?'':select.value;select.innerHTML=options(rows,{query:search.value,selected,expenseOnly});describe();};
   search.addEventListener('input',refresh);select.addEventListener('change',describe);intent?.addEventListener('change',refresh);describe();
  }
- window.SipekaCoaInput={options,field,bind};
+ function selectedType(prefix){const select=document.getElementById(prefix+'Coa'),option=select?.selectedOptions[0];if(!select?.value||!['REVENUE','EXPENSE'].includes(option?.dataset.accountType))throw Error('Pilih kode akun COA sesuai transaksi');return option.dataset.accountType==='REVENUE'?'INCOME':'EXPENSE';}
+ window.SipekaCoaInput={options,field,bind,selectedType};
 })();
