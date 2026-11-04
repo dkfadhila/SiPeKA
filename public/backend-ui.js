@@ -40,6 +40,7 @@
   PAYROLL_CSV_LIMIT:'CSV maksimal 1 MB dan 1.000 karyawan; periksa juga panjang isi kolom.',
   PAYROLL_CSV_QUOTE:'Tanda kutip CSV belum benar. Gunakan template dan ekspor ulang sebagai CSV.',
   PAYROLL_PREVIEW_TOKEN:'Preview slip sudah berubah. Muat ulang dan periksa kembali sebelum menerbitkan.',
+  PAYROLL_CSV_IDENTITY_MISMATCH:'Nama karyawan pada CSV tidak cocok dengan nomor karyawan di direktori.',
   PAYROLL_CSV_HEADER:'Kolom CSV belum sesuai. Unduh template gaji terbaru dan gunakan urutan kolomnya.',
   PAYROLL_CSV_ROWS:'Isi baris CSV belum lengkap atau kolomnya tidak sesuai template.',
   PAYROLL_CSV_CELL:'Isi CSV sebagai teks atau angka biasa, tanpa rumus.',

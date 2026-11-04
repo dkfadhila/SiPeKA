@@ -11,7 +11,21 @@ const {renderSlipPdf}=require('./payroll-pdf');
 const documentFormat=require('./document-format');
 function validate(csv,staff){
  if(typeof csv!=='string')throw fault('PAYROLL_CSV_HEADER');
- const inputTable=parseCsv(csv.replace(/^\uFEFF/,'')),inputHeader=inputTable[0]||[];
+ const friendly=require('./payroll-csv'),inputTable=friendly.read(csv).rows,inputHeader=inputTable[0]||[];
+ let sourceNames=null;
+ if(inputHeader.includes('full_name')){
+  if(inputHeader.filter(key=>key==='full_name').length!==1)throw fault('PAYROLL_CSV_HEADER');
+  const index=inputHeader.indexOf('full_name');sourceNames=inputTable.slice(1).map(row=>row[index]);
+  inputTable.forEach(row=>row.splice(index,1));
+ }
+ const employeeColumn=inputHeader.indexOf('employee_id');
+ for(const row of inputTable.slice(1)){
+  const value=row[employeeColumn];
+  if(/^\d{1,2}$/.test(value||'')&&!staff.some(s=>s.id===value||s.employee_code===value)){
+   const padded=value.padStart(3,'0');if(staff.filter(s=>s.employee_code===padded).length===1)row[employeeColumn]=padded;
+  }
+ }
+ csv=friendly.encode(inputTable);
  let sourceEmails=null;
  if(inputHeader.at(-1)==='email'){
   sourceEmails=inputTable.slice(1).map(r=>r.at(-1));
@@ -66,6 +80,7 @@ function validate(csv,staff){
  return validateCsv(csv.replace(/^\uFEFF/,'').replace(LEGACY_HEADER,LEGACY_HEADER.replace('employee_id','user_id')),users).map((row,i)=>{
   const s=staff.find(s=>s.id===row.user_id);
   if(!s?.department)throw fault('PAYROLL_EMPLOYEE_DEPARTMENT_REQUIRED');
+  if(sourceNames){const name=sourceNames[i];if(typeof name!=='string'||/[\x00-\x1f\x7f]/.test(name)||/^[=+@-]/.test(name))throw fault('PAYROLL_CSV_CELL');const clean=v=>String(v).normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('id-ID');if(name.trim()&&clean(name)!==clean(s.name))throw fault('PAYROLL_CSV_IDENTITY_MISMATCH');}
   const canonical=require('./payroll-upload').canonicalEmail,email=canonical(s.email);
   if(sourceEmails){const source=canonical(sourceEmails[i]);if(sourceEmails[i]&&!source)throw fault('PAYROLL_EMAIL_INVALID');if(source&&source!==email)throw fault('PAYROLL_PDF_EMAIL_MISMATCH');}
   return {...row,...detail[i],employee_id:s.id,employee_code:s.employee_code,department:s.department,email,staff_revision:s.revision??null,branch_id:s.branch_id,branch_name:s.branch_name,...(sourceEmails?{source_email:canonical(sourceEmails[i])}:{})};

@@ -4,14 +4,15 @@ const HEADER='period,username,basic_salary,allowances,deductions,pph21';
 function fault(code,status=400){const e=new Error(code);e.code=code;e.status=status;return e;}
 function owner(actor){if(!actor||actor.role!=='OWNER'||!actor.id|| (actor.session_purpose&&actor.session_purpose!=='full'))throw fault('PAYROLL_OWNER_ONLY',403);}
 function templateCsv(){return HEADER+'\r\n';}
-function parseCsv(input){
+function parseCsv(input,delimiter=','){
+ if(![',',';'].includes(delimiter))throw fault('PAYROLL_CSV_HEADER');
  if(typeof input!=='string'||Buffer.byteLength(input)>1024*1024)throw fault('PAYROLL_CSV_LIMIT');
  input=input.replace(/^\uFEFF/,'');
  const rows=[];let row=[],cell='',quoted=false,closed=false;
  for(let i=0;i<input.length;i++){const c=input[i];
   if(quoted){if(c==='"'){if(input[i+1]==='"'){cell+='"';i++;}else{quoted=false;closed=true;}}else cell+=c;}
   else if(c==='"'){if(cell||closed)throw fault('PAYROLL_CSV_QUOTE');quoted=true;}
-  else if(c===','||c==='\n'||c==='\r'){row.push(cell);cell='';closed=false;if(c!==','){if(c==='\r'&&input[i+1]==='\n')i++;rows.push(row);row=[];}}
+  else if(c===delimiter||c==='\n'||c==='\r'){row.push(cell);cell='';closed=false;if(c!==delimiter){if(c==='\r'&&input[i+1]==='\n')i++;rows.push(row);row=[];}}
   else {if(closed)throw fault('PAYROLL_CSV_QUOTE');cell+=c;}
   if(cell.length>256||rows.length>1001)throw fault('PAYROLL_CSV_LIMIT');
  }

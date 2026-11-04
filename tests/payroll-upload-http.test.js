@@ -17,7 +17,7 @@ test('current HTTP upload routes enforce authentication/Origin, signed recipient
  assert.equal((await api('/api/employee-payroll/review',{body:csvBody,origin:'https://evil.invalid'})).status,403);
  for(const format of ['csv','xlsx']){
   const template=await api('/api/employee-payroll/template?type=general&format='+format);assert.equal(template.status,200);assert.equal(template.headers.get('cache-control'),'no-store');assert.match(template.headers.get('content-disposition'),new RegExp('template-gaji-general\\.'+format));
-  const content=Buffer.from(await template.arrayBuffer());if(format==='csv')assert.match(content.toString('utf8'),/period,employee_id,basic_salary,operational_allowance/);else{assert.equal(content.subarray(0,2).toString(),'PK');assert.match(template.headers.get('content-type'),/spreadsheetml/);}
+  const content=Buffer.from(await template.arrayBuffer());if(format==='csv')assert.match(content.toString('utf8'),/Periode,No\. Karyawan,Nama Karyawan,Gaji Pokok \(Rp\)/);else{assert.equal(content.subarray(0,2).toString(),'PK');assert.match(template.headers.get('content-type'),/spreadsheetml/);}
  }
  const legacy=await json(await api('/api/employee-payroll/import',{body:{csv}}),409);assert.equal(legacy.error,'PAYROLL_UPLOAD_REVIEW_REQUIRED');
  const csvStart=await json(await api('/api/employee-payroll/review',{body:csvBody}),200);assert.equal(csvStart.review_token,null);const csvReview=await json(await api('/api/employee-payroll/reviews/'+csvStart.review_id),200);assert.ok(csvReview.review_token);assert.equal(csvReview.rows[0].net_salary,3625000);assert.equal(csvReview.rows[0].email,'ayu@example.test');assert.equal((await ipc()).entries.length,0);

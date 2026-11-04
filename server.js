@@ -463,7 +463,7 @@ async function handleRequest(req, res, url, p) {
           const bytes=require('./payroll-workbook').workbook(type);
           res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="template-gaji-'+type+'.xlsx"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end(bytes);
         }
-        res.writeHead(200,{'Content-Type':'text/csv;charset=utf-8','Content-Disposition':'attachment; filename="template-gaji-'+type+'.csv"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end('\uFEFF'+require('./employee-payroll')[type==='laundry'?'FULL_LAUNDRY_HEADER':'FULL_GENERAL_HEADER']+'\r\n');
+        res.writeHead(200,{'Content-Type':'text/csv;charset=utf-8','Content-Disposition':'attachment; filename="template-gaji-'+type+'.csv"','Cache-Control':'no-store',...SECURITY_HEADERS});return res.end(require('./payroll-csv').template(require('./employee-payroll')[type==='laundry'?'FULL_LAUNDRY_HEADER':'FULL_GENERAL_HEADER']));
       }
       if(p==='/api/employee-payroll/review'&&req.method==='POST'){req._bodyLimit=2*1024*1024;return json(res,200,await svc.reviewUpload(token,await readBody(req)));}
       const reviewMatch=p.match(/^\/api\/employee-payroll\/reviews\/([a-f0-9-]{36})$/);if(reviewMatch&&req.method==='GET')return json(res,200,await svc.reviewStatus(token,reviewMatch[1]));
