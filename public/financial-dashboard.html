@@ -2343,6 +2343,33 @@ body #loginGate .login-error:not(:empty) { margin-top:16px; }
   body #loginGate .login-form-panel { padding:24px; }
   body #loginGate .login-theme-switch { top:16px; right:16px; }
 }
+
+/* Payroll decisions: reason, recipient and next action before detailed AI notes. */
+body #content .payroll-review .payroll-review-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
+body #content .payroll-review .payroll-review-heading h3 { margin:0; }
+body #content .payroll-review [data-employee-ai-decision] { margin:0; padding:6px 12px; border:1px solid var(--line2); border-radius:6px; font-size:13px; line-height:20px; }
+body #content .payroll-review[data-review-state=blocked] [data-employee-ai-decision] { color:#a26813; border-color:#a2681366; }
+html[data-theme=dark] body #content .payroll-review[data-review-state=blocked] [data-employee-ai-decision] { color:#e9bd76; border-color:#e9bd7666; }
+body #content .payroll-review[data-review-state=ready] [data-employee-ai-decision] { color:var(--green); }
+body #content .payroll-review .payroll-review-summary { font-size:14px; line-height:24px; color:var(--ink); margin:0 0 24px; max-width:76ch; }
+body #content .payroll-review h4 { font-size:14px; line-height:22px; font-weight:600; margin:0 0 8px; color:var(--ink); }
+body #content .payroll-review :is(.payroll-review-alert,.payroll-review-next) { padding:16px; border:1px solid var(--line); border-radius:8px; background:var(--soft); margin:0 0 20px; }
+body #content .payroll-review .payroll-review-alert ul { margin:0; padding-left:20px; max-width:80ch; }
+body #content .payroll-review .payroll-review-next p { margin:0; max-width:80ch; }
+body #content .payroll-review .payroll-review-next .btn { margin-top:12px; }
+body #content .payroll-review .payroll-review-people { margin-bottom:24px; }
+body #content .payroll-review .payroll-recipient-list { display:grid; gap:12px; }
+body #content .payroll-review .payroll-recipient { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(80px,.5fr) minmax(0,.8fr) minmax(0,1.4fr); gap:16px; padding:16px; border:1px solid var(--line); border-radius:8px; }
+body #content .payroll-review .payroll-recipient>div { min-width:0; display:grid; align-content:start; gap:4px; }
+body #content .payroll-review .payroll-recipient span { font-size:12px; color:var(--muted); line-height:20px; }
+body #content .payroll-review .payroll-recipient strong { font-size:13px; color:var(--ink); line-height:22px; font-weight:500; overflow-wrap:anywhere; }
+body #content .payroll-review .payroll-review-notes { padding:16px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); margin:24px 0 16px; }
+body #content .payroll-review .payroll-review-notes summary { cursor:pointer; font-weight:500; }
+body #content .payroll-review [data-employee-ai-result] { padding:0; margin:12px 0 0; border:0; background:transparent; max-width:80ch; }
+body #content .payroll-review [data-employee-ai-result] p { white-space:pre-wrap; margin:12px 0; }
+body #content .payroll-review .payroll-review-locked { margin:8px 0 0; color:var(--muted); }
+@media(max-width:760px) { body #content .payroll-review .payroll-recipient { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:400px) { body #content .payroll-review .payroll-recipient { grid-template-columns:minmax(0,1fr); } }
 </style>
 </head>
 <body>
@@ -4287,11 +4314,25 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
   const invalidate=()=>{importError="";stopPoll();reviewVersion++;review=null;uploadBody=null;reviewPanel.hidden=true;reviewPanel.replaceChildren();if(current())syncButtons();};
   function paintReview(){
    if(!review||!current())return;
-   const running=['running','queued','pending'].includes(review.status),allowed=canSaveReview(),failed=review.status==='failed',held=review.ai?.decision==='TAHAN';
+   const running=['running','queued','pending'].includes(review.status),allowed=canSaveReview(),failed=review.status==='failed',held=review.ai?.decision==='TAHAN'||(review.blockers||[]).length>0;
    const decision=running?'Sedang diperiksa Widya…':failed?'Pemeriksaan Widya belum berhasil':held?'TAHAN — perlu diperiksa ulang':allowed?'LANJUT — siap ditinjau untuk draft':'Belum dapat dilanjutkan';
    const explanation=running?'Widya sedang membaca file dan mencocokkannya dengan direktori karyawan. Tunggu hasil pemeriksaan sebelum menyimpan draft.':review.ai?.text||message(Error(review.error||'Hasil pemeriksaan belum lengkap. Periksa ulang sebelum melanjutkan.'));
-   const persons=review.rows||[];
-   reviewPanel.innerHTML='<h3>Hasil Pemeriksaan Widya</h3><p data-employee-ai-decision role="status"><strong>'+esc(decision)+'</strong></p><div data-employee-ai-result style="white-space:pre-wrap;overflow-wrap:anywhere">'+esc(explanation)+'</div><details'+(persons.length<=5?' open':'')+'><summary>Penerima yang dicocokkan ('+persons.length+')</summary><ul>'+persons.map(row=>'<li>'+esc(row.full_name)+' · No. '+esc(row.employee_code||row.employee_id)+' · '+esc(row.period)+' · '+esc(row.email||'Email belum tersedia')+'</li>').join('')+'</ul></details>'+[...(review.warnings||[]),...(review.blockers||[])].map(code=>'<p role="alert">'+esc(message(Error(code)))+'</p>').join('')+(review.review_id&&reviewPolling===false&&running?'<button class="btn" type="button" data-employee-check-review>Periksa Status Widya</button>':'')+'<p>Hasil AI membantu pemeriksaan. Penerbitan dan pengiriman email tetap memerlukan konfirmasi Anda.</p><label><input type="checkbox" data-employee-review-consent'+(!allowed?' disabled':'')+'> Saya sudah membaca hasil Widya dan mencocokkan dokumen, identitas, serta email penerima</label><button class="btn primary" type="button" data-employee-save disabled>Simpan Draft</button>';
+   const persons=review.rows||[],blockers=[...new Set(review.blockers||[])],warnings=[...new Set(review.warnings||[])],duplicate=blockers.includes('PAYROLL_DUPLICATE_PERIOD_STAFF');
+   const humanCode=code=>{const text=message(Error(code));return text===code?'Data perlu diperiksa ulang.':text;};
+   const readable=String(explanation).replace(/\b(?:PAYROLL|DOCUMENT)_[A-Z_0-9]+\b/g,humanCode);
+   const periodLabel=value=>/^20\d{2}-(0[1-9]|1[0-2])$/.test(value||'')?new Intl.DateTimeFormat('id-ID',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(value+'-01T00:00:00Z')):String(value||'Belum tersedia');
+   const summary=running?'File sedang dicocokkan dengan direktori karyawan.':duplicate?'Slip karyawan untuk periode ini sudah tercatat. Tidak perlu membuat slip kedua.':allowed?'Pemeriksaan selesai. Cocokkan penerima sebelum menyimpan draft.':failed?'Pemeriksaan belum selesai. Coba lagi melalui tombol Periksa File.':blockers.length?'Ada data yang harus diperbaiki sebelum slip dapat dilanjutkan.':'Baca catatan Widya dan perbaiki file sebelum memeriksa ulang.';
+   const next=duplicate?'Buka Riwayat Slip untuk melihat atau mengirim slip yang sudah ada. Untuk periode lain, ubah periode pada file lalu periksa ulang.':allowed?'Centang konfirmasi setelah memeriksa data, lalu pilih Simpan Draft.':running?'Tunggu hasil pemeriksaan. Draft belum dapat disimpan.':'Perbaiki data yang disebutkan, unggah kembali file, lalu pilih Periksa File dengan Widya.';
+   reviewPanel.dataset.reviewState=running?'running':allowed?'ready':failed?'error':'blocked';
+   reviewPanel.innerHTML='<header class="payroll-review-heading"><h3>Hasil Pemeriksaan Widya</h3><p data-employee-ai-decision role="status"><strong>'+esc(decision)+'</strong></p></header><p class="payroll-review-summary">'+esc(summary)+'</p>'+
+    (blockers.length?'<section class="payroll-review-alert"><h4>Yang perlu diperbaiki</h4><ul>'+blockers.map(code=>'<li>'+esc(humanCode(code))+'</li>').join('')+'</ul></section>':'')+
+    (warnings.length?'<section class="payroll-review-alert"><h4>Perhatian</h4><ul>'+warnings.map(code=>'<li>'+esc(humanCode(code))+'</li>').join('')+'</ul></section>':'')+
+    '<section class="payroll-review-people"><h4>Penerima yang dicocokkan ('+persons.length+')</h4><div class="payroll-recipient-list">'+persons.map(row=>'<article class="payroll-recipient"><div><span>Karyawan</span><strong>'+esc(row.full_name)+'</strong></div><div><span>No. karyawan</span><strong>'+esc(row.employee_code||row.employee_id)+'</strong></div><div><span>Periode</span><strong>'+esc(periodLabel(row.period))+'</strong></div><div><span>Email penerima</span><strong>'+esc(row.email||'Email belum tersedia')+'</strong></div></article>').join('')+'</div></section>'+
+    '<section class="payroll-review-next"><h4>Langkah berikutnya</h4><p>'+esc(next)+'</p>'+(duplicate?'<button class="btn" type="button" data-employee-open-history>Buka Riwayat Slip</button>':'')+'</section>'+
+    '<details class="payroll-review-notes"'+(held&&!blockers.length?' open':'')+'><summary>Catatan lengkap Widya</summary><div data-employee-ai-result>'+readable.split(/\n+/).filter(Boolean).map(line=>'<p>'+esc(line)+'</p>').join('')+'</div></details>'+
+    (review.review_id&&reviewPolling===false&&running?'<button class="btn" type="button" data-employee-check-review>Periksa Status Widya</button>':'')+
+    '<p class="payroll-review-disclaimer">Penerbitan dan pengiriman email tetap memerlukan konfirmasi Anda.</p><label><input type="checkbox" data-employee-review-consent'+(!allowed?' disabled':'')+'> Saya sudah mencocokkan dokumen, identitas, dan email penerima</label><button class="btn primary" type="button" data-employee-save disabled>Simpan Draft</button>'+
+    (!allowed?'<p class="payroll-review-locked">Simpan Draft belum tersedia: '+esc(running?'pemeriksaan masih berjalan.':duplicate?'slip periode ini sudah ada.':'hasil pemeriksaan belum LANJUT tanpa kendala.')+'</p>':'');
    reviewPanel.hidden=false;
    status.textContent=running?'Widya sedang memeriksa file. Simpan Draft menunggu hasil LANJUT.':allowed?'Widya memberi hasil LANJUT. Baca hasilnya dan periksa penerima sebelum menyimpan draft.':held?'Widya memberi hasil TAHAN. Perbaiki data atau dokumen, lalu periksa ulang.':failed?'Pemeriksaan Widya gagal. Draft belum disimpan. Coba periksa file kembali.':'Ada data yang belum cocok. Draft dan pengiriman diblokir.';
    syncButtons();
@@ -4313,6 +4354,7 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
   reviewPanel.addEventListener('change',()=>{const save=reviewPanel.querySelector('[data-employee-save]');if(save)save.disabled=importing||!canSaveReview()||!reviewPanel.querySelector('[data-employee-review-consent]').checked;});
   reviewPanel.addEventListener('click',async event=>{
    const button=event.target.closest('button');if(!button||button.disabled||!current())return;
+   if(button.hasAttribute('data-employee-open-history')){selectTab('history',true);return;}
    if(button.hasAttribute('data-employee-check-review')){button.disabled=true;await pollReview(reviewVersion);return;}
    if(!button.hasAttribute('data-employee-save')||!canSaveReview()||!reviewPanel.querySelector('[data-employee-review-consent]').checked||importing)return;
    importing=true;button.disabled=true;syncButtons();
