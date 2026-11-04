@@ -1,4 +1,16 @@
 /* Payroll history: one readable employee record, with a separate action rail. */
+body #content .payroll-bulk-footer{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;background:var(--soft);padding:24px}
+body #content .payroll-bulk-footer>div{min-width:0}
+body #content .payroll-bulk-footer strong{font-size:14px;line-height:22px;color:var(--ink)}
+body #content .payroll-bulk-footer p{font-size:12px;line-height:20px;margin:8px 0;color:var(--muted);overflow-wrap:anywhere}
+body #content .payroll-bulk-footer [data-employee-bulk-progress]:not(:empty){font-weight:600;color:var(--ink);margin-top:16px}
+body #content .payroll-bulk-footer>.btn{flex-shrink:0}
+body #content .payroll-bulk-results{margin:12px 0 0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;font-size:12px;line-height:20px}
+body #content .payroll-bulk-results summary{cursor:pointer;color:var(--sub)}
+body #content .payroll-bulk-results:has(ul:empty){display:none}
+body #content .payroll-bulk-results ul{padding-left:20px;margin:10px 0 0;max-height:240px;overflow:auto}
+body #content .payroll-bulk-results li{margin:6px 0;overflow-wrap:anywhere}
+@media(max-width:600px){body #content .payroll-bulk-footer{flex-direction:column;gap:12px;padding:20px}body #content .payroll-bulk-footer>.btn{width:100%}}
 body #content .payroll-history-batch{min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
 body #content .payroll-batch-head{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;padding:24px}
 body #content .payroll-batch-head h3{font-size:22px;line-height:30px;color:var(--ink);margin:4px 0}
@@ -52,3 +64,5 @@ html[data-theme=dark] body #content .payroll-batch-status.is-published{color:#9a
 body #content .payroll-history-consent{display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:22px;color:var(--sub)}
 body #content .payroll-history-consent input{margin:4px 0 0;flex-shrink:0;accent-color:var(--green)}
 body #content .payroll-publish-jump{display:block;margin:8px 0 16px;font-size:12px;line-height:20px;text-align:left;text-decoration:underline;text-underline-offset:3px}
+
+body #content .payroll-bulk-jump{font-size:12px;line-height:20px;text-align:right;text-decoration:underline;text-underline-offset:3px}

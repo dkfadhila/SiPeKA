@@ -2379,6 +2379,18 @@ body #content .payroll-review [data-employee-ai-result] .payroll-note-list li { 
 </style>
 <style id="sipeka-payroll-history-polish">
 /* Payroll history: one readable employee record, with a separate action rail. */
+body #content .payroll-bulk-footer{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;background:var(--soft);padding:24px}
+body #content .payroll-bulk-footer>div{min-width:0}
+body #content .payroll-bulk-footer strong{font-size:14px;line-height:22px;color:var(--ink)}
+body #content .payroll-bulk-footer p{font-size:12px;line-height:20px;margin:8px 0;color:var(--muted);overflow-wrap:anywhere}
+body #content .payroll-bulk-footer [data-employee-bulk-progress]:not(:empty){font-weight:600;color:var(--ink);margin-top:16px}
+body #content .payroll-bulk-footer>.btn{flex-shrink:0}
+body #content .payroll-bulk-results{margin:12px 0 0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;font-size:12px;line-height:20px}
+body #content .payroll-bulk-results summary{cursor:pointer;color:var(--sub)}
+body #content .payroll-bulk-results:has(ul:empty){display:none}
+body #content .payroll-bulk-results ul{padding-left:20px;margin:10px 0 0;max-height:240px;overflow:auto}
+body #content .payroll-bulk-results li{margin:6px 0;overflow-wrap:anywhere}
+@media(max-width:600px){body #content .payroll-bulk-footer{flex-direction:column;gap:12px;padding:20px}body #content .payroll-bulk-footer>.btn{width:100%}}
 body #content .payroll-history-batch{min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
 body #content .payroll-batch-head{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;padding:24px}
 body #content .payroll-batch-head h3{font-size:22px;line-height:30px;color:var(--ink);margin:4px 0}
@@ -2432,6 +2444,8 @@ html[data-theme=dark] body #content .payroll-batch-status.is-published{color:#9a
 body #content .payroll-history-consent{display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:22px;color:var(--sub)}
 body #content .payroll-history-consent input{margin:4px 0 0;flex-shrink:0;accent-color:var(--green)}
 body #content .payroll-publish-jump{display:block;margin:8px 0 16px;font-size:12px;line-height:20px;text-align:left;text-decoration:underline;text-underline-offset:3px}
+
+body #content .payroll-bulk-jump{font-size:12px;line-height:20px;text-align:right;text-decoration:underline;text-underline-offset:3px}
 
 </style>
 </head>
@@ -4332,21 +4346,70 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
    selectTab(tabs[next].dataset.employeeTab,true);
   });
   const status=panel.querySelector('[data-employee-status]'),output=panel.querySelector('[data-employee-rows]'),importButton=panel.querySelector('[data-employee-import] button');
-  let entries=[],ready={},loading=0,importing=false,review=null,uploadBody=null,reviewVersion=0,reviewTimer=null,reviewPolling=false,importError="";const busy=new Set();
+  let entries=[],ready={},loading=0,importing=false,review=null,uploadBody=null,reviewVersion=0,reviewTimer=null,reviewPolling=false,importError="";const busy=new Set(),bulkRuns=new Map(),bulkConfirmations=new Map();const sessionSignal=companyController.signal;
   const notice=e=>{if(current())status.textContent=message(e);};
   const sendReason=e=>e.recipient_valid===false?'Identitas atau email berbeda dari direktori. Periksa ulang sebelum mengirim.':e.email_status==='sent'?'Diterima layanan email; belum berarti sudah masuk inbox.':e.email_status==='sending'?'Sedang diproses layanan email. Muat ulang status; pengiriman ulang diblokir.':e.email_status?'Status kirim perlu diperiksa; pengiriman ulang diblokir.':e.status!=='PUBLISHED'?'Terbitkan slip sebelum mengirim email.':!e.row.email?'Email belum diisi saat impor. Pengiriman belum tersedia.':!ready.email?'Layanan email belum siap.':'Belum dikirim. Periksa slip dan email penerima.';
   const canSend=e=>!!e&&ready.email&&e.status==='PUBLISHED'&&!!e.row.email&&!e.email_status&&e.recipient_valid!==false;
   const importReady=()=>ready.encryption&&!!window.SipekaCompany?.name;
+  const bulkEligible=batch=>entries.filter(e=>e.batch_id===batch&&canSend(e)&&!busy.has(e.id));
+  const bulkSummary=run=>{
+   const remaining=run.total-run.done;
+   return (run.running?'Mengirim massal':run.stopped?'Pengiriman massal dihentikan':'Pengiriman massal selesai')+': '+run.sent+' diterima layanan email · '+run.uncertain+' perlu diperiksa · '+run.skipped+' dilewati · '+remaining+' belum diproses.';
+  };
+  function syncBulkProgress(){
+   panel.querySelectorAll('[data-employee-bulk-progress]').forEach(node=>{const run=bulkRuns.get(node.dataset.employeeBulkProgress);node.textContent=run?bulkSummary(run):'';});
+   panel.querySelectorAll('[data-employee-bulk-results]').forEach(node=>{const run=bulkRuns.get(node.dataset.employeeBulkResults);node.innerHTML=run?run.results.map(item=>'<li>'+esc(item)+'</li>').join(''):'';});
+  }
+  async function sendBulk(batch){
+   const consent=panel.querySelector('[data-employee-bulk-consent="'+batch+'"]'),frozen=bulkConfirmations.get(batch);
+   if(!consent?.checked||!frozen?.length||bulkRuns.get(batch)?.running||!current()||sessionSignal.aborted)return;
+   if(frozen.some(item=>busy.has(item.id)))return;
+   const run={running:true,total:frozen.length,done:0,sent:0,uncertain:0,skipped:0,results:[]};bulkRuns.set(batch,run);
+   for(const item of frozen)busy.add(item.id);
+   consent.checked=false;bulkConfirmations.delete(batch);syncButtons();
+   try{
+    for(const item of frozen){
+     if(!current()||sessionSignal.aborted){run.stopped=true;break;}
+     const entry=entries.find(e=>e.id===item.id);
+     if(!canSend(entry)||entry.batch_id!==batch||entry.row.email!==item.email){run.skipped++;run.done++;run.results.push(item.name+': dilewati karena status atau penerima berubah.');syncBulkProgress();continue;}
+     const delivery=panel.querySelector('[data-employee-send="'+item.id+'"]')?.closest('.payroll-entry-actions')?.querySelector('[data-employee-delivery]');
+     if(delivery)delivery.textContent='Sedang mengirim ke '+item.email+'…';
+     status.textContent='Mengirim '+(run.done+1)+' dari '+run.total+' slip: '+item.name;syncBulkProgress();
+     try{
+      const result=await api('/api/employee-payroll/entries/'+encodeURIComponent(item.id)+'/send',{method:'POST',body:{email:item.email,confirmed:true}});
+      entry.email_status=result.status==='sent'?'sent':(result.status||'uncertain');
+      if(result.status==='sent'){run.sent++;run.results.push(item.name+': diterima layanan email.');}
+      else{run.uncertain++;run.results.push(item.name+': status belum pasti; periksa status sebelum tindakan berikutnya.');}
+     }catch(error){entry.email_status='uncertain';run.uncertain++;run.results.push(item.name+': gagal atau belum pasti — '+message(error)+'. Periksa status; tidak dicoba ulang otomatis.');}
+     run.done++;if(current()){if(delivery)delivery.textContent=sendReason(entry);syncButtons();}
+    }
+   }finally{
+    run.running=false;for(const item of frozen)busy.delete(item.id);bulkConfirmations.delete(batch);
+    if(current()){
+     panel.querySelectorAll('[data-employee-bulk-consent]').forEach(box=>{if(box.dataset.employeeBulkConsent===batch)box.checked=false;});
+     syncButtons();status.textContent=bulkSummary(run)+' Status diterima belum menjamin masuk inbox.';
+     if(![...bulkRuns.values()].some(item=>item.running)){try{await load();}catch(error){notice(error);}if(current())status.textContent=bulkSummary(run)+' Status diterima belum menjamin masuk inbox.';}
+    }
+   }
+  }
+
   function syncButtons(){
+   panel.querySelectorAll('[data-employee-refresh]').forEach(button=>{button.disabled=[...bulkRuns.values()].some(run=>run.running);});
    importButton.disabled=importing||reviewPolling;
    importButton.textContent=importing||reviewPolling?'Widya sedang memeriksa…':'Periksa File dengan Widya';
    const help=panel.querySelector('[data-employee-import-help]');
    help.textContent=importing||reviewPolling?'Tunggu hasil Widya sebelum menyimpan draft.':importError?importError:!ready.encryption?'Kesiapan penyimpanan belum terkonfirmasi. Klik Periksa untuk mengecek ulang.':!window.SipekaCompany?.name?'Nama perusahaan belum dimuat. Klik Periksa untuk mengecek ulang; atur identitas di Device & Cabang jika kosong.':'CSV maks. 1 MB atau PDF 1 halaman maks. 256 KB. ID karyawan harus aktif; PDF wajib pilih periode.';
    panel.querySelectorAll('[data-employee-send]').forEach(b=>{const e=entries.find(e=>e.id===b.dataset.employeeSend);b.disabled=busy.has(b.dataset.employeeSend)||!canSend(e)||!panel.querySelector('[data-employee-consent="'+b.dataset.employeeSend+'"]').checked;});
-   panel.querySelectorAll('[data-employee-publish]').forEach(b=>{b.disabled=busy.has(b.dataset.employeePublish)||!panel.querySelector('[data-employee-publish-consent="'+b.dataset.employeePublish+'"]').checked;});
+   panel.querySelectorAll('[data-employee-consent]').forEach(box=>{const entry=entries.find(item=>item.id===box.dataset.employeeConsent);box.disabled=busy.has(box.dataset.employeeConsent)||!canSend(entry);});
+   panel.querySelectorAll('[data-employee-bulk-consent]').forEach(box=>{box.disabled=!!bulkRuns.get(box.dataset.employeeBulkConsent)?.running||!bulkEligible(box.dataset.employeeBulkConsent).length;});
+   panel.querySelectorAll('[data-employee-bulk-send]').forEach(button=>{const batch=button.dataset.employeeBulkSend,run=bulkRuns.get(batch),frozen=bulkConfirmations.get(batch);button.disabled=!!run?.running||!panel.querySelector('[data-employee-bulk-consent="'+batch+'"]')?.checked||!frozen?.length||frozen.some(item=>busy.has(item.id));button.textContent=run?.running?'Mengirim massal…':'Kirim Massal';});
+   syncBulkProgress();
+   panel.querySelectorAll('[data-employee-publish]').forEach(b=>{const bulkRunning=[...bulkRuns.values()].some(run=>run.running);b.disabled=bulkRunning||busy.has(b.dataset.employeePublish)||!panel.querySelector('[data-employee-publish-consent="'+b.dataset.employeePublish+'"]').checked;b.title=bulkRunning?'Tunggu pengiriman massal selesai sebelum menerbitkan batch lain.':'';const help=b.closest('.payroll-publish-footer')?.querySelector('p');if(help)help.textContent=bulkRunning?'Tunggu pengiriman massal selesai sebelum menerbitkan batch lain.':'Centang konfirmasi setelah memeriksa seluruh slip untuk mengaktifkan tombol Terbitkan Slip.';});
   }
   async function load(){
-   const request=++loading,result=await api('/api/employee-payroll');if(!current()||request!==loading)return;
+   if([...bulkRuns.values()].some(run=>run.running))return;
+   bulkConfirmations.clear();
+   const request=++loading,result=await api('/api/employee-payroll');if(!current()||request!==loading||[...bulkRuns.values()].some(run=>run.running))return;
    entries=result.rows;ready=result.readiness||{};syncButtons();
    const groups=new Map();for(const e of entries){if(!groups.has(e.batch_id))groups.set(e.batch_id,[]);groups.get(e.batch_id).push(e);}
    const periodLabel=value=>/^20\d{2}-(0[1-9]|1[0-2])$/.test(value||'')?new Intl.DateTimeFormat('id-ID',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(value+'-01T00:00:00Z')):String(value||'Belum tersedia');
@@ -4358,16 +4421,19 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
    };
    output.innerHTML=entries.length?[...groups.values()].map(rows=>{
     const first=rows[0],draft=first.status==='DRAFT';
-    return '<article class="payroll-history-batch"><header class="payroll-batch-head"><div><span class="payroll-kicker">Periode gaji</span><h3>'+esc(periodLabel(first.period))+'</h3><p>'+esc(first.row.company_name)+'</p>'+(first.row.company_address?'<p class="payroll-batch-address">'+esc(first.row.company_address)+'</p>':'')+'</div><div class="payroll-batch-meta"><span class="payroll-batch-status '+(draft?'is-draft':'is-published')+'">'+(draft?'Draft':'Terbit')+'</span><small>'+rows.length+' slip karyawan</small></div></header><div class="payroll-history-entries">'+rows.map(renderEntry).join('')+'</div>'+(draft?'<footer class="payroll-publish-footer"><div><strong>2. Konfirmasi dan terbitkan</strong><p>Centang konfirmasi setelah memeriksa seluruh slip untuk mengaktifkan tombol Terbitkan Slip.</p><label class="payroll-history-consent"><input type="checkbox" data-employee-publish-consent="'+esc(first.batch_id)+'"> Seluruh komponen dan penempatan karyawan sudah saya periksa</label></div><button type="button" class="btn primary" data-employee-publish="'+esc(first.batch_id)+'" disabled>Terbitkan Slip</button></footer>':'<footer class="payroll-published-footer">Periksa status setiap slip. Email hanya dapat dikirim untuk penerima valid yang belum dikirim.</footer>')+'</article>';
+    return '<article class="payroll-history-batch"><header class="payroll-batch-head"><div><span class="payroll-kicker">Periode gaji</span><h3>'+esc(periodLabel(first.period))+'</h3><p>'+esc(first.row.company_name)+'</p>'+(first.row.company_address?'<p class="payroll-batch-address">'+esc(first.row.company_address)+'</p>':'')+'</div><div class="payroll-batch-meta"><span class="payroll-batch-status '+(draft?'is-draft':'is-published')+'">'+(draft?'Draft':'Terbit')+'</span><small>'+rows.length+' slip karyawan</small>'+(!draft&&bulkEligible(first.batch_id).length?'<button class="text-action payroll-bulk-jump" type="button" data-employee-focus-bulk="'+esc(first.batch_id)+'">Kirim Massal · '+bulkEligible(first.batch_id).length+' siap</button>':'')+'</div></header><div class="payroll-history-entries">'+rows.map(renderEntry).join('')+'</div>'+(draft?'<footer class="payroll-publish-footer"><div><strong>2. Konfirmasi dan terbitkan</strong><p>Centang konfirmasi setelah memeriksa seluruh slip untuk mengaktifkan tombol Terbitkan Slip.</p><label class="payroll-history-consent"><input type="checkbox" data-employee-publish-consent="'+esc(first.batch_id)+'"> Seluruh komponen dan penempatan karyawan sudah saya periksa</label></div><button type="button" class="btn primary" data-employee-publish="'+esc(first.batch_id)+'" disabled>Terbitkan Slip</button></footer>':'<footer class="payroll-published-footer payroll-bulk-footer"><div><strong>3. Kirim slip dalam batch ini</strong><p>'+bulkEligible(first.batch_id).length+' siap dikirim · '+(rows.length-bulkEligible(first.batch_id).length)+' lainnya sudah diproses atau belum memenuhi syarat.</p><label class="payroll-history-consent"><input type="checkbox" data-employee-bulk-consent="'+esc(first.batch_id)+'"> Saya sudah memeriksa seluruh slip dan email penerima yang siap dikirim dalam batch ini.</label><p class="payroll-bulk-help">Konfirmasi memilih daftar penerima saat dicentang. Slip dikirim satu per satu; setiap penerima tetap diperiksa oleh sistem.</p><p data-employee-bulk-progress="'+esc(first.batch_id)+'" role="status" aria-live="polite"></p><details class="payroll-bulk-results"><summary>Hasil per slip</summary><ul data-employee-bulk-results="'+esc(first.batch_id)+'"></ul></details></div><button type="button" class="btn primary" data-employee-bulk-send="'+esc(first.batch_id)+'" disabled>Kirim Massal</button></footer>')+'</article>';
    }).join(''):'<p class="payroll-history-empty">Belum ada slip gaji karyawan. Unggah CSV atau PDF untuk memeriksa penerima.</p>';
    status.textContent=!ready.encryption?'Penyimpanan gaji belum siap. Hubungi pengelola.':!window.SipekaCompany?.name?'Simpan nama perusahaan pada formulir di atas sebelum mengimpor gaji.':!ready.email?'Slip dapat disiapkan. Layanan email belum siap.':'Periksa preview, terbitkan slip, lalu konfirmasi penerima untuk mengirim email.';
    syncButtons();
   }
-  panel.addEventListener('change',e=>{if(e.target.matches('[data-employee-consent],[data-employee-publish-consent]'))syncButtons();});
+  panel.addEventListener('change',e=>{
+   if(e.target.matches('[data-employee-bulk-consent]')){const batch=e.target.dataset.employeeBulkConsent;if(e.target.checked)bulkConfirmations.set(batch,bulkEligible(batch).map(entry=>({id:entry.id,email:entry.row.email,name:entry.row.full_name})));else bulkConfirmations.delete(batch);syncButtons();}
+   if(e.target.matches('[data-employee-consent],[data-employee-publish-consent]'))syncButtons();
+  });
   // Saving the company can make import available without discarding a selected CSV.
   document.addEventListener('sipeka-company-saved',()=>{if(current())load().catch(notice);},{signal:companyController.signal});
   panel.addEventListener('click',async e=>{
-   const button=e.target.closest('button');if(!button||button.type==='submit'||button.disabled||!current()||button.closest('[data-employee-review]'))return;if(button.hasAttribute('data-employee-tab')){selectTab(button.dataset.employeeTab);return;}if(button.hasAttribute('data-employee-focus-publish')){panel.querySelector('[data-employee-publish-consent="'+button.dataset.employeeFocusPublish+'"]')?.focus();return;}const previousLabel=button.textContent;button.disabled=true;
+   const button=e.target.closest('button');if(!button||button.type==='submit'||button.disabled||!current()||button.closest('[data-employee-review]'))return;if(button.hasAttribute('data-employee-tab')){selectTab(button.dataset.employeeTab);return;}if(button.hasAttribute('data-employee-focus-publish')){panel.querySelector('[data-employee-publish-consent="'+button.dataset.employeeFocusPublish+'"]')?.focus();return;}if(button.hasAttribute('data-employee-focus-bulk')){panel.querySelector('[data-employee-bulk-consent="'+button.dataset.employeeFocusBulk+'"]')?.focus();return;}if(button.hasAttribute('data-employee-bulk-send')){await sendBulk(button.dataset.employeeBulkSend);return;}const previousLabel=button.textContent;button.disabled=true;
    const operation=button.dataset.employeePublish||button.dataset.employeeSend,mutation=!!operation;if(mutation){busy.add(operation);button.textContent=button.dataset.employeePublish?'Menerbitkan…':'Mengirim…';}
    try{
     if(button.dataset.employeeWorkbook)await download('/api/employee-payroll/workbook?type='+button.dataset.employeeWorkbook,'gaji-'+button.dataset.employeeWorkbook+'.xlsx',current);
@@ -4376,8 +4442,8 @@ window.addEventListener('load',()=>setTimeout(()=>{if(window.__filterRestrictedU
     if(button.hasAttribute('data-employee-template'))await download('/api/employee-payroll/template?type='+button.dataset.employeeTemplate,'template-gaji-'+button.dataset.employeeTemplate+'.csv',current);
     if(button.dataset.employeePdf)await download('/api/employee-payroll/entries/'+button.dataset.employeePdf+'/slip.pdf','slip-gaji-karyawan.pdf',current);
     if(button.dataset.employeePublish){const row=entries.find(x=>x.batch_id===button.dataset.employeePublish);if(!row||!panel.querySelector('[data-employee-publish-consent="'+row.batch_id+'"]').checked)return;await api('/api/employee-payroll/publish',{method:'POST',body:{id:row.batch_id,preview_token:row.preview_token,confirmed:true}});if(current())await load();}
-    if(button.dataset.employeeSend){const row=entries.find(x=>x.id===button.dataset.employeeSend);if(!canSend(row)||!panel.querySelector('[data-employee-consent="'+row.id+'"]').checked)return;status.textContent='Memproses pengiriman slip ke '+row.row.email+'…';const result=await api('/api/employee-payroll/entries/'+row.id+'/send',{method:'POST',body:{email:row.row.email,confirmed:true}});if(current()){await load();status.textContent=result.status==='sent'?'Layanan email menerima slip. Status ini belum menjamin masuk inbox.':'Status kirim perlu diperiksa. Muat ulang status sebelum tindakan berikutnya.';}}
-   }catch(err){if(mutation&&current())try{await load();}catch{}if(mutation&&current())panel.querySelectorAll('[data-employee-consent],[data-employee-publish-consent]').forEach(c=>c.checked=false);notice(err);}finally{busy.delete(operation);if(current())syncButtons();if(button.isConnected){button.textContent=previousLabel;if(!mutation)button.disabled=false;}}
+    if(button.dataset.employeeSend){const row=entries.find(x=>x.id===button.dataset.employeeSend);if(!canSend(row)||!panel.querySelector('[data-employee-consent="'+row.id+'"]').checked)return;status.textContent='Memproses pengiriman slip ke '+row.row.email+'…';const result=await api('/api/employee-payroll/entries/'+row.id+'/send',{method:'POST',body:{email:row.row.email,confirmed:true}});row.email_status=result.status==='sent'?'sent':(result.status||'uncertain');if(current()){await load();status.textContent=result.status==='sent'?'Layanan email menerima slip. Status ini belum menjamin masuk inbox.':'Status kirim perlu diperiksa. Muat ulang status sebelum tindakan berikutnya.';}}
+   }catch(err){if(button.dataset.employeeSend){const row=entries.find(item=>item.id===button.dataset.employeeSend);if(row)row.email_status='uncertain';}if(mutation&&current())try{await load();}catch{}if(mutation&&current())panel.querySelectorAll('[data-employee-consent],[data-employee-publish-consent]').forEach(c=>c.checked=false);notice(err);}finally{busy.delete(operation);if(current())syncButtons();if(button.isConnected){button.textContent=previousLabel;if(!mutation)button.disabled=false;}}
   });
   const reviewPanel=panel.querySelector('[data-employee-review]');
   const reviewCurrent=stamp=>current()&&stamp===reviewVersion;
