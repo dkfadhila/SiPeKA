@@ -264,3 +264,21 @@ body #content :is(.owner-overview,.staff-overview) .operational-kpis + .hint {
  body #content :is(.owner-overview,.staff-overview) .operational-kpis .kpi[data-tone] .kpi-top { min-height:0; }
  body #content :is(.owner-overview,.staff-overview) .operational-kpis .kpi[data-tone] .kpi-value { font-size:28px; }
 }
+
+/* Centered login. Unslop by Damir Sokolovsky, CC BY 4.0. */
+body #loginGate { display:grid; grid-template-columns:minmax(0,1fr); place-items:center; padding:80px 24px; overflow:auto; background:var(--bg); }
+body #loginGate.is-hidden { display:none; }
+body #loginGate .login-form-panel { width:100%; max-width:400px; min-width:0; flex:none; padding:32px; border:1px solid var(--line); border-radius:12px; background:var(--surface); box-shadow:0 4px 24px #00000006; }
+body #loginGate .login-theme-switch { position:fixed; top:24px; right:24px; }
+body #loginGate .login-form { max-width:none; margin:0; }
+body #loginGate .login-form h2 { margin:0 0 32px; text-align:center; font-size:24px; line-height:32px; font-weight:600; color:var(--ink); }
+body #loginGate .login-field { margin-bottom:24px; font-size:16px; }
+body #loginGate .login-meta { justify-content:flex-end; margin:0 0 24px; }
+body #loginGate .text-action { font-size:13px; line-height:20px; font-weight:500; }
+body #loginGate .login-error { min-height:0; margin:0; }
+body #loginGate .login-error:not(:empty) { margin-top:16px; }
+@media(max-width:600px) {
+  body #loginGate { padding:80px 16px; }
+  body #loginGate .login-form-panel { padding:24px; }
+  body #loginGate .login-theme-switch { top:16px; right:16px; }
+}
