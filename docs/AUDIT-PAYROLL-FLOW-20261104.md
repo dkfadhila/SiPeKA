@@ -33,3 +33,14 @@ Pembacaan read-only tabel dan proses service di VPS menunjukkan dua slip tersimp
 Tidak ada payroll baru, penerbitan baru, perubahan direktori, atau email nyata baru pada audit ini. Sesi Owner QA yang tersedia masih dibatasi penggantian password; audit interaksi lengkap tidak dilakukan melalui sesi Owner produksi. Pemeriksaan UI menggunakan fixture, sedangkan parsing PDF dan kontrak backend diuji di runtime VPS sebelum aktivasi release. Jangan menyatakan pengiriman provider nyata baru sudah lulus dari hasil simulasi.
 
 Rollback menggunakan symlink release sebelumnya dan restart sipeka.service. Patch tidak memerlukan migrasi atau perubahan ciphertext payroll.
+
+
+## Penyempurnaan riwayat dan catatan Widya
+
+Dua subagent GPT-6.1 Sol medium mengerjakan layout dan audit perilaku tombol. Tabel riwayat diganti kartu karyawan dengan ringkasan nominal, rincian tambahan/potongan yang dapat dibuka, area unduh/kirim, dan footer konfirmasi penerbitan. Tautan Lanjut ke konfirmasi penerbitan memfokuskan checkbox tanpa mencentangnya. Periode ditulis sebagai nama bulan. Tombol menampilkan Menerbitkan/Mengirim saat permintaan berjalan.
+
+Catatan AI sesudah tanda titik dua kini menampilkan daftar menjorok; angka rupiah dan email dipertahankan utuh. Modul payroll disinkronkan dengan implementasi dashboard yang disisipkan. Stylesheet history tersendiri disisipkan ke halaman.
+
+Tidak ditemukan tombol publish/send yang kehilangan handler. Penonaktifan sebelum konfirmasi, sebelum terbit, untuk penerima tidak cocok, atau setelah kirim adalah pengamanan yang disengaja. Tiga regression test tambahan memverifikasi eligibility, isolasi busy antar batch/penerima, serta penolakan hasil refresh lama. Dua puluh tiga tes lokal lulus dengan PDF parser dan PostgreSQL terisolasi. Codex Browser juga memverifikasi draft -> unduh -> konfirmasi -> terbit -> konfirmasi penerima -> kirim simulasi -> kirim ulang diblokir, tautan konfirmasi, dan penerima tidak valid. Tidak ada browser lain yang diluncurkan; percobaan test UI subagent berhenti sebelum browser terbuka karena dependency tidak tersedia. Viewport efektif 488 px tidak overflow horizontal.
+
+Tidak ada email nyata atau payroll produksi baru pada penyempurnaan ini.

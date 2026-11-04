@@ -1,0 +1,54 @@
+/* Payroll history: one readable employee record, with a separate action rail. */
+body #content .payroll-history-batch{min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+body #content .payroll-batch-head{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;padding:24px}
+body #content .payroll-batch-head h3{font-size:22px;line-height:30px;color:var(--ink);margin:4px 0}
+body #content .payroll-batch-head p{font-size:13px;line-height:20px;color:var(--sub);margin:0;overflow-wrap:anywhere}
+body #content .payroll-batch-head .payroll-batch-address{font-size:12px;color:var(--muted);margin-top:4px;max-width:70ch}
+body #content .payroll-batch-meta{display:grid;justify-items:end;gap:8px;flex-shrink:0}
+body #content .payroll-batch-meta small{font-size:12px;line-height:20px;color:var(--muted)}
+body #content .payroll-batch-status{display:inline-flex;padding:4px 10px;border:1px solid var(--line);border-radius:6px;font-size:12px;line-height:20px;font-weight:600;background:var(--soft);color:var(--sub)}
+body #content .payroll-batch-status.is-published{color:#26704c;background:#edf7f1;border-color:#cce7d6}
+body #content .payroll-history-entry{display:grid;grid-template-columns:minmax(0,1fr) 310px;border-top:1px solid var(--line);min-width:0}
+body #content .payroll-entry-main{padding:24px;min-width:0}
+body #content .payroll-employee-identity{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+body #content .payroll-employee-identity h4{font-size:17px;line-height:26px;font-weight:600;color:var(--ink);margin:0 0 4px;overflow-wrap:anywhere}
+body #content .payroll-employee-identity p,body #content .payroll-employment{font-size:13px;line-height:20px;color:var(--sub);margin:0;overflow-wrap:anywhere}
+body #content .payroll-employee-code{font-size:12px;line-height:20px;color:var(--muted);text-align:right;overflow-wrap:anywhere;max-width:40%}
+body #content .payroll-employment{font-size:12px;color:var(--muted);margin-top:4px}
+body #content .payroll-salary-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px 20px;margin:24px 0 0;padding:0}
+body #content .payroll-salary-summary>div{min-width:0}
+body #content .payroll-salary-summary dt{font-size:12px;line-height:20px;color:var(--muted);margin:0 0 4px}
+body #content .payroll-salary-summary dd{font-size:14px;line-height:22px;font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums;margin:0;overflow-wrap:anywhere}
+body #content .payroll-salary-summary .payroll-net{grid-column:1/-1;border-top:1px solid var(--line);padding-top:16px;display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+body #content .payroll-salary-summary .payroll-net dt{color:var(--ink);font-weight:600}
+body #content .payroll-salary-summary .payroll-net dd{font-size:22px;line-height:30px;font-weight:600}
+body #content .payroll-history-components{margin:16px 0 0;padding:0;border:0;background:transparent;border-radius:0;box-shadow:none}
+body #content .payroll-history-components summary{font-size:12px;line-height:20px;color:var(--sub);cursor:pointer;padding:4px 0}
+body #content .payroll-component-columns{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding-top:12px;font-size:12px;line-height:23px;color:var(--sub)}
+body #content .payroll-component-columns h5{font-size:12px;line-height:20px;font-weight:600;color:var(--ink);margin:0 0 8px}
+body #content .payroll-original-note{font-size:13px;line-height:22px;color:var(--muted);margin:24px 0 0}
+body #content .payroll-entry-actions{padding:24px;border-left:1px solid var(--line);background:var(--soft);min-width:0}
+body #content .payroll-action-step{display:grid;grid-template-columns:22px minmax(0,1fr);gap:0 10px;align-items:start}
+body #content .payroll-action-step>span{width:22px;height:22px;border:1px solid var(--line2);border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:600;color:var(--muted)}
+body #content .payroll-action-step strong{display:block;font-size:13px;line-height:22px;color:var(--ink);font-weight:600}
+body #content .payroll-action-step small{display:block;font-size:12px;line-height:20px;color:var(--muted);overflow-wrap:anywhere}
+body #content .payroll-action-step>.btn{grid-column:2;justify-self:start;margin-top:12px}
+body #content .payroll-email-step{border-top:1px solid var(--line);padding-top:20px;margin-top:20px}
+body #content .payroll-entry-actions .payroll-delivery-reason{font-size:12px;line-height:20px;margin:10px 0;color:var(--muted)}
+body #content .payroll-entry-actions .payroll-history-consent{margin:12px 0;font-size:12px;line-height:20px}
+body #content .payroll-entry-actions>.btn{width:100%;justify-content:center}
+body #content .payroll-history-consent:has(input:disabled){color:var(--muted)}
+body #content .payroll-publish-footer{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:24px;border-top:1px solid var(--line);background:var(--soft)}
+body #content .payroll-publish-footer strong{font-size:14px;line-height:22px;color:var(--ink);font-weight:600}
+body #content .payroll-publish-footer p,body #content .payroll-published-footer,body #content .payroll-history-empty{font-size:12px;line-height:20px;color:var(--muted);margin:4px 0 0}
+body #content .payroll-publish-footer .payroll-history-consent{margin:12px 0 0}
+body #content .payroll-publish-footer>.btn{flex-shrink:0}
+body #content .payroll-published-footer{padding:16px 24px;border-top:1px solid var(--line);margin:0}
+html[data-theme=dark] body #content .payroll-batch-status.is-published{color:#9ad6b2;background:#193b2b;border-color:#315a42}
+@media(max-width:1100px){body #content .payroll-history-entry{grid-template-columns:minmax(0,1fr) 280px}body #content .payroll-salary-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:850px){body #content .payroll-history-entry{grid-template-columns:minmax(0,1fr)}body #content .payroll-entry-actions{border-left:0;border-top:1px solid var(--line)}body #content .payroll-entry-actions>.btn{width:auto;min-width:150px}body #content .payroll-publish-footer{align-items:flex-start;flex-direction:column;gap:16px}}
+@media(max-width:600px){body #content .payroll-batch-head,body #content .payroll-entry-main,body #content .payroll-entry-actions,body #content .payroll-publish-footer{padding:20px}body #content .payroll-batch-head{gap:12px}body #content .payroll-batch-head h3{font-size:20px;line-height:28px}body #content .payroll-employee-identity{display:block}body #content .payroll-employee-code{display:block;max-width:none;text-align:left;margin-top:8px}body #content .payroll-component-columns{grid-template-columns:1fr;gap:16px}body #content .payroll-salary-summary .payroll-net dd{font-size:20px}body #content .payroll-entry-actions>.btn,body #content .payroll-publish-footer>.btn{width:100%}body #content .payroll-published-footer{padding:16px 20px}}
+
+body #content .payroll-history-consent{display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:22px;color:var(--sub)}
+body #content .payroll-history-consent input{margin:4px 0 0;flex-shrink:0;accent-color:var(--green)}
+body #content .payroll-publish-jump{display:block;margin:8px 0 16px;font-size:12px;line-height:20px;text-align:left;text-decoration:underline;text-underline-offset:3px}
