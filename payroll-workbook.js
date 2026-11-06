@@ -2,6 +2,7 @@
 const fs=require('node:fs'),path=require('node:path');
 const {zip,unzip}=require('./report-template-xlsx'),{col}=require('./report-template');
 const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
+const friendly={key:'Kunci otomatis',period:'Periode (YYYY-MM)',employee_id:'ID Karyawan',full_name:'Nama Karyawan',department:'Departemen',branch_name:'Unit / Cabang',company_name:'Nama Perusahaan',company_address:'Alamat Perusahaan',document_code:'Nomor Dokumen',basic_salary:'Gaji Pokok (Rp)',operational_allowance:'Tunjangan Operasional (Rp)',health_allowance:'Tunjangan Kesehatan (Rp)',meal_allowance:'Uang Makan (Rp)',transport_allowance:'Transport (Rp)',ironing_regular:'Setrika Reguler (Rp)',ironing_express:'Setrika Express (Rp)',overtime:'Lembur (Rp)',bonus:'Bonus (Rp)',absence_deduction:'Potongan Absen (Rp)',late_deduction:'Potongan Telat (Rp)',violation_deduction:'Potongan Pelanggaran (Rp)',other_deductions:'Potongan Lainnya (Rp)',pph21:'PPh 21 (Rp)',job_title:'Jabatan',employment_status:'Status Karyawan',payment_method:'Metode Pembayaran'};
 function workbook(type,rows=[]){
  if(!['general','laundry'].includes(type)||rows.length>1000)throw Error('PAYROLL_TEMPLATE_TYPE');
  const header=require('./employee-payroll')[type==='laundry'?'FULL_LAUNDRY_HEADER':'FULL_GENERAL_HEADER'];
@@ -11,9 +12,24 @@ function workbook(type,rows=[]){
  const db=files.find(f=>f.name==='xl/worksheets/sheet2.xml');
  if(!db)throw Error('PAYROLL_WORKBOOK_INVALID');
  let xml=db.data.toString();
+ const setText=(ref,value)=>{const re=new RegExp('<c\\b([^>]*\\br="'+ref+'"[^>]*)>([\\s\\S]*?)<\\/c>');if(!re.test(xml))throw Error('PAYROLL_WORKBOOK_CELL');xml=xml.replace(re,(_,attrs)=>'<c'+attrs+' t="inlineStr"><is><t xml:space="preserve">'+esc(value)+'</t></is></c>');};
+ setText('A1','TEMPLATE INPUT GAJI — '+(type==='laundry'?'LAUNDRY':'UMUM'));
+ setText('A2','Satu baris untuk satu karyawan. Isi sel kuning; kolom abu-abu dibuat otomatis. Nominal isi angka rupiah tanpa titik, komponen kosong isi 0.');
+ for(let c=0;c<keys.length;c++)setText(col(c)+'4',friendly[keys[c]]||keys[c]);
+ const deductionAt=keys.findIndex(k=>/^(absence_deduction|late_deduction|violation_deduction|other_deductions)$/.test(k));
+ const pphAt=keys.indexOf('pph21'),salaryAt=keys.indexOf('basic_salary'),lastDetail=keys.length-1;
+ const groups=[{start:0,end:0,label:'KUNCI'},{start:1,end:salaryAt-1,label:'IDENTITAS & DOKUMEN'},{start:salaryAt,end:deductionAt-1,label:'PENDAPATAN'},{start:deductionAt,end:pphAt,label:'POTONGAN'},{start:pphAt+1,end:lastDetail,label:'DATA KARYAWAN'}].filter(g=>g.start<=g.end);
+ const groupStarts=new Map(groups.map(g=>[g.start,g.label]));
+ const row3=keys.map((_,c)=>'<c r="'+col(c)+'3"'+(groupStarts.has(c)?' t="inlineStr"><is><t>'+esc(groupStarts.get(c))+'</t></is></c>':'/>')).join('');
+ const merges=groups.filter(g=>g.end>g.start).map(g=>'<mergeCell ref="'+col(g.start)+'3:'+col(g.end)+'3"/>').join('');
+ const widths=keys.map((key,i)=>{let width=key==='key'?18:/address|company_name/.test(key)?28:/allowance|deduction|ironing/.test(key)?22:/salary|overtime|bonus|pph21/.test(key)?17:/period|employee_id|status|method/.test(key)?19:/full_name|department|branch|job_title/.test(key)?21:18;return '<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+width+'" customWidth="1"/>';}).join('');
+ xml=xml.replace(/<cols>[\s\S]*?<\/cols>/,'<cols>'+widths+'</cols>');
  const sourceStyles=new Map([...xml.matchAll(/<c\b[^>]*\br="([A-Z]+)5"[^>]*\bs="(\d+)"/g)].map(m=>[m[1],m[2]]));
- for(let i=0;i<rows.length;i++){
-  const row=rows[i],r=i+5;
+ const headerStyles=new Map([...xml.matchAll(/<c\b[^>]*\br="([A-Z]+)4"[^>]*\bs="(\d+)"/g)].map(m=>[m[1],m[2]]));
+ const rowCount=rows.length?rows.length:1000;
+ let dataRows='';
+ for(let i=0;i<rowCount;i++){
+  const row=rows[i]||{},r=i+5;
   const cells=keys.map((key,c)=>{
    const ref=col(c)+r,cell='<c r="'+ref+'" s="'+(sourceStyles.get(col(c))||0)+'"';
    if(key==='key')return cell+'><f>IF(OR(B'+r+'="",C'+r+'=""),"",B'+r+'&amp;"|"&amp;C'+r+')</f><v></v></c>';
@@ -21,9 +37,16 @@ function workbook(type,rows=[]){
    const numeric=/salary|allowance|overtime|bonus|deduction|ironing|pph21/.test(key)&&/^\d{1,15}$/.test(String(value));
    return cell+(numeric?'><v>'+value+'</v>':' t="inlineStr"><is><t xml:space="preserve">'+esc(value)+'</t></is>')+'</c>';
   }).join('');
-  const regex=new RegExp('<row\\b[^>]*\\br="'+r+'"[^>]*>[\\s\\S]*?<\\/row>');
-  if(!regex.test(xml))throw Error('PAYROLL_WORKBOOK_ROWS');xml=xml.replace(regex,'<row r="'+r+'">'+cells+'</row>');
+  dataRows+='<row r="'+r+'">'+cells+'</row>';
  }
+ const headerCells=keys.map((key,c)=>'<c r="'+col(c)+'4" s="'+(headerStyles.get(col(c))||23)+'" t="inlineStr"><is><t>'+esc(friendly[key]||key)+'</t></is></c>').join('');
+ const row1=keys.map((_,c)=>c===0?'<c r="A1" t="inlineStr"><is><t>'+esc('TEMPLATE INPUT GAJI — '+(type==='laundry'?'LAUNDRY':'UMUM'))+'</t></is></c>':'<c r="'+col(c)+'1"/>').join('');
+ const row2=keys.map((_,c)=>c===0?'<c r="A2" t="inlineStr"><is><t>'+esc('Satu baris untuk satu karyawan. Isi sel kuning. Sel abu-abu tidak perlu diisi; data diambil dari direktori/profil saat impor. Nominal isi angka rupiah tanpa titik, komponen kosong isi 0.')+'</t></is></c>':'<c r="'+col(c)+'2"/>').join('');
+ const sheetRows='<row r="1" ht="30" customHeight="1">'+row1+'</row><row r="2" ht="32" customHeight="1">'+row2+'</row><row r="3" ht="22" customHeight="1">'+row3+'</row><row r="4" ht="40" customHeight="1">'+headerCells+'</row>'+dataRows;
+ xml=xml.replace(/<sheetData>[\s\S]*?<\/sheetData>/,'<sheetData>'+sheetRows+'</sheetData>');
+ xml=xml.replace(/<dimension ref="[^"]*"\/>/,'<dimension ref="A1:'+col(keys.length-1)+(rowCount+4)+'"/>');
+ const allMerges=['<mergeCell ref="A1:'+col(keys.length-1)+'1"/>','<mergeCell ref="A2:'+col(keys.length-1)+'2"/>',merges].join('');
+ xml=xml.replace('</sheetData>','</sheetData><autoFilter ref="A4:'+col(keys.length-1)+(rowCount+4)+'"/><mergeCells count="'+(groups.filter(g=>g.end>g.start).length+2)+'">'+allMerges+'</mergeCells>');
  db.data=Buffer.from(xml.replace(/<pageMargins\b[^>]*\/>|<pageSetup\b[^>]*\/>/g,'').replace('<sheetViews>','<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews>').replace('</worksheet>','<pageMargins left="0.3" right="0.3" top="0.3" bottom="0.3" header="0" footer="0"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>'));
  const slip=files.find(f=>f.name==='xl/worksheets/sheet1.xml');
  if(rows.length){let s=slip.data.toString();for(const [ref,value]of [['D6',rows[0].period],['G6',rows[0].employee_code||rows[0].employee_number||rows[0].employee_id]])s=s.replace(new RegExp('<c\\b[^>]*\\br="'+ref+'"[^>]*?(?:\\/>|>[\\s\\S]*?<\\/c>)'),full=>'<c r="'+ref+'" s="'+(/\bs="(\d+)"/.exec(full)?.[1]||8)+'" t="inlineStr"><is><t>'+esc(value)+'</t></is></c>');slip.data=Buffer.from(s);}

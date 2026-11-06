@@ -102,12 +102,13 @@ function service({pool,env=process.env,transport,widyaReviews}={}){
  const upload=require('./payroll-upload');
  function currentRecipient(row,staff){const s=staff.find(s=>s.id===row.employee_id);return !!s&&s.active&&upload.canonicalEmail(s.email)===row.email&&!!row.email&&s.name===row.full_name&&s.department===row.department&&s.branch_id===row.branch_id&&(row.staff_revision==null||row.staff_revision===s.revision)&&staff.filter(s=>upload.canonicalEmail(s.email)===row.email).length===1;}
  async function preparedUpload(token,body){
-  if(!body||!['csv','pdf'].includes(body.format))throw fault('PAYROLL_UPLOAD_FORMAT');
+  if(!body||!['csv','xlsx','pdf'].includes(body.format))throw fault('PAYROLL_UPLOAD_FORMAT');
   const profile=await company(token);if(!profile.name)throw fault('PAYROLL_COMPANY_REQUIRED');
   const units=(await pool.query('SELECT id,name,code FROM business_units')).rows;
   const staff=(await directory(token)).map(s=>({...s,branch_name:units.find(u=>u.id===s.branch_id)?.name}));
   let rows,warnings=[],blockers=[];
   if(body.format==='csv'){rows=validate(body.csv,staff);if(rows.some(r=>!r.email))blockers.push('PAYROLL_EMAIL_MISSING');}
+  else if(body.format==='xlsx'){const workbook=require('./payroll-xlsx').read(body.data_base64);rows=validate(workbook.csv,staff);if(rows.some(r=>!r.email))blockers.push('PAYROLL_EMAIL_MISSING');for(let i=0;i<rows.length;i++){const source=workbook.metadata[i]||{},row=rows[i];if(source.department&&upload.normalize(source.department)!==upload.normalize(row.department)||source.branch_name&&upload.normalize(source.branch_name)!==upload.normalize(row.branch_name))blockers.push('PAYROLL_DIRECTORY_MISMATCH');if(source.company_name&&upload.normalize(source.company_name)!==upload.normalize(profile.name))blockers.push('PAYROLL_COMPANY_MISMATCH');}}
   else{
    const bytes=upload.pdfBytes(body.data_base64),text=await upload.extractPdf(body.data_base64),match=upload.matchPdf(text,staff,body.period);
    warnings=match.warnings;blockers=match.blockers;const s=match.employee;
