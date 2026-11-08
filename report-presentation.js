@@ -94,7 +94,7 @@ function compact(layout,id,{excel=false}={}){
   for(const row of grid.slice(6))row.push(...row.slice(1));
  }
  const spec={rows:grid.map((row,r)=>row.map(value=>({value,bold:['section','total','heading'].includes(types[r]),fill:types[r]==='total'?'FFF5F5F5':null,format:'General'}))),widths:grid[5].map((_,i)=>i?24:70),merges:[]};
- return {...layout,presentation:'simple',excelComplete:excel,grid,spec,cells:{},rowTypes:types,rowLevels:levels,notes,continuations:comparison?(layout.continuations||[]).map(part=>compact({...part,...(recorded?{recordedSummary:layout.recordedSummary,recordedByBranch:layout.recordedByBranch,recordedPreviousSummary:layout.recordedPreviousSummary}: {})},id,{excel})):[]};
+ return {...layout,reportId:id,presentation:'simple',excelComplete:excel,grid,spec,cells:{},rowTypes:types,rowLevels:levels,notes,continuations:comparison?(layout.continuations||[]).map(part=>compact({...part,...(recorded?{recordedSummary:layout.recordedSummary,recordedByBranch:layout.recordedByBranch,recordedPreviousSummary:layout.recordedPreviousSummary}: {})},id,{excel})):[]};
 }
 function columnsAndRows(layout){
  const parts=[layout,...(layout.continuations||[])];

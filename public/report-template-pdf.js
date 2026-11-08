@@ -2,6 +2,7 @@
 (()=>{'use strict';
  function simple(report,Ctor,company){
   const layout=report.templateLayout,wide=layout.grid[5].length>4;
+  const hasApproval=!layout.recordedSummary&&layout.reportId!=='recorded-income-expense'&&report.id!=='recorded-income-expense'&&['balance','pnl','cash'].includes(layout.kind);
   const doc=new Ctor({orientation:wide?'landscape':'portrait',unit:'mm',format:'a4',compress:true});
   const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=15;
   const money=v=>String(v).startsWith('-')?'('+String(v).slice(1).replace(/\B(?=(\d{3})+(?!\d))/g,'.')+')':String(v).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
@@ -15,7 +16,7 @@
    if(i)doc.addPage();title(part);
    const columnStyles={0:{halign:'left',cellWidth:wide?80:part.kind==='balance'?100:125}};
    part.grid[5].slice(1).forEach((_,c)=>{columnStyles[c+1]={halign:'right'};});
-   doc.autoTable({head:[part.grid[5]],body:part.grid.slice(6).map((row,r)=>row.map((v,c)=>c?(part.rowTypes[r+6]==='section'?'':v==null?'Belum tersedia':v===''?'':money(v)):v)),startY:part.documentCode?43:39,margin:{left:M,right:M,top:part.documentCode?43:39,bottom:window.SipekaDocumentApproval.height+26},theme:'plain',
+   doc.autoTable({head:[part.grid[5]],body:part.grid.slice(6).map((row,r)=>row.map((v,c)=>c?(part.rowTypes[r+6]==='section'?'':v==null?'Belum tersedia':v===''?'':money(v)):v)),startY:part.documentCode?43:39,margin:{left:M,right:M,top:part.documentCode?43:39,bottom:hasApproval?window.SipekaDocumentApproval.height+26:15},theme:'plain',
     styles:{font:'helvetica',fontSize:9,cellPadding:2,textColor:[17,17,17],lineColor:[220,220,220],lineWidth:{bottom:.15}},
     headStyles:{fillColor:[255,255,255],textColor:[17,17,17],fontStyle:'bold'},columnStyles,rowPageBreak:'avoid',
     didParseCell:data=>{if(data.section==='body'&&data.column?.index===0){const level=Math.min(2,Math.max(0,Number(part.rowLevels?.[data.row.index+6])||0));data.cell.styles.cellPadding={top:2,right:2,bottom:2,left:2+level*4};}if(data.section==='body'&&['section','total'].includes(part.rowTypes[data.row.index+6])){data.cell.styles.fontStyle='bold';if(part.rowTypes[data.row.index+6]==='total')data.cell.styles.fillColor=[245,245,245];}},
@@ -23,8 +24,10 @@
   }
   let y=doc.lastAutoTable.finalY+7;doc.setFontSize(8);doc.setTextColor(70,70,70);
   for(const note of layout.notes){const lines=doc.splitTextToSize(note,W-2*M);if(y+lines.length*3.8>H-17){doc.addPage();title(layout);doc.setFontSize(8);doc.setTextColor(70,70,70);y=42;}doc.text(lines,M,y);y+=lines.length*3.8+3;}
-  if(y+window.SipekaDocumentApproval.height>H-17){doc.addPage();title(layout);y=48;}
-  window.SipekaDocumentApproval.draw(doc,{top:Math.max(y+5,H-82),margin:M});
+  if(hasApproval){
+   if(y+window.SipekaDocumentApproval.height>H-17){doc.addPage();title(layout);y=48;}
+   window.SipekaDocumentApproval.draw(doc,{top:Math.max(y+5,H-82),margin:M});
+  }
   const count=doc.internal.getNumberOfPages();for(let n=1;n<=count;n++){doc.setPage(n);doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(90,90,90);doc.text('SiPeKA',M,H-8);doc.text(n+' / '+count,W-M,H-8,{align:'right'});}
   return doc;
  }
@@ -71,8 +74,11 @@
   // Coverage notes are an annex, leaving the source statement/signature layout intact.
   const notes=[...layout.notes,'Periode sebelumnya: '+(layout.previousPeriod?layout.previousPeriod.from+' s.d. '+layout.previousPeriod.to:'belum tersedia')];
   if(notes.length){doc.addPage();doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...navy);doc.text(company,margin,16);doc.setFontSize(10);doc.text('Catatan Laporan',margin,23);y=32;doc.setFont('helvetica','normal');doc.setTextColor(...ink);doc.setFontSize(9);for(const note of notes){const lines=doc.splitTextToSize(note,W-margin*2);if(y+lines.length*4.5>H-17){doc.addPage();y=18;}doc.text(lines,margin,y);y+=lines.length*4.5+4;}}
-  if(y+window.SipekaDocumentApproval.height>H-17){doc.addPage();doc.setFontSize(11);doc.text(String(grid[1][0]||'Laporan')+' — '+company,margin,18);y=30;}
-  window.SipekaDocumentApproval.draw(doc,{top:Math.max(y+5,H-82),margin});
+  const hasApproval=!layout.recordedSummary&&layout.reportId!=='recorded-income-expense'&&report.id!=='recorded-income-expense'&&['balance','pnl','cash'].includes(layout.kind);
+  if(hasApproval){
+   if(y+window.SipekaDocumentApproval.height>H-17){doc.addPage();doc.setFontSize(11);doc.text(String(grid[1][0]||'Laporan')+' — '+company,margin,18);y=30;}
+   window.SipekaDocumentApproval.draw(doc,{top:Math.max(y+5,H-82),margin});
+  }
   const pages=doc.internal.getNumberOfPages();for(let n=1;n<=pages;n++){doc.setPage(n);doc.setDrawColor(210,219,232);doc.line(margin,H-12,W-margin,H-12);doc.setTextColor(100,110,125);doc.setFont('helvetica','normal');doc.setFontSize(7);doc.text('SiPeKA',margin,H-7);doc.text(n+' / '+pages,W-margin,H-7,{align:'right'});}return doc;
  }
  window.SipekaTemplatePdf={create};
