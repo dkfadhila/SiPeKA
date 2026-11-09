@@ -9,6 +9,12 @@ const FULL_GENERAL_HEADER='period,employee_id,basic_salary,operational_allowance
 const FULL_LAUNDRY_HEADER='period,employee_id,basic_salary,operational_allowance,health_allowance,meal_allowance,transport_allowance,ironing_regular,ironing_express,overtime,bonus,absence_deduction,late_deduction,violation_deduction,other_deductions,pph21,job_title,employment_status,payment_method';
 const {renderSlipPdf}=require('./payroll-pdf');
 const documentFormat=require('./document-format');
+// Codes that prove the provider was never asked. Anything else stays ambiguous.
+const RETRYABLE_FAIL_CODES=new Set(['PAYROLL_CONTACT_CHANGED','PAYROLL_TEMPLATE_INVALID','PAYROLL_PAYLOAD_IDENTITY','PAYROLL_PROVIDER_REJECTED','PAYROLL_DELIVERY_LOCAL_FAILURE']);
+function preProviderCode(err){
+ const raw=[err?.code,err?.message].find(v=>typeof v==='string'&&/^PAYROLL_[A-Z_]+$/.test(v))||'';
+ return RETRYABLE_FAIL_CODES.has(raw)?raw:'PAYROLL_DELIVERY_LOCAL_FAILURE';
+}
 function validate(csv,staff){
  if(typeof csv!=='string')throw fault('PAYROLL_CSV_HEADER');
  const friendly=require('./payroll-csv'),inputTable=friendly.read(csv).rows,inputHeader=inputTable[0]||[];
@@ -89,6 +95,11 @@ function validate(csv,staff){
 function service({pool,env=process.env,transport,widyaReviews}={}){
  const cipher=()=>createCipher(env.PAYROLL_ENCRYPTION_KEY);
  const call=async(token,op,p={},client=pool)=>(await client.query('SELECT employee_payroll_access($1,$2,$3::jsonb) result',[token,op,JSON.stringify(p)])).rows[0].result;
+ // Only failures that prove the provider was never asked may leave 'sending' as 'failed'.
+ const settleFailed=async(token,claimId,code)=>{try{return (await pool.query('SELECT employee_payroll_fail_claim($1,$2,$3) result',[token,claimId,code])).rows[0].result;}
+  catch(err){if(/PAYROLL_DELIVERY_STATUS/.test(err?.message||''))throw fault('PAYROLL_DELIVERY_STATUS',409);throw fault('PAYROLL_DELIVERY_LOCAL_FAILURE',503);}};
+ // Best-effort Owner re-arm of a retryable row; CLAIM still decides whether a send happens.
+ const rearm=async(token,entryId)=>{try{return (await pool.query('SELECT employee_payroll_rearm($1,$2) result',[token,entryId])).rows[0].result;}catch{return null;}};
  const company=async token=>(await pool.query('SELECT company_profile_access($1,NULL) result',[token])).rows[0].result;
  const directory=async(token,client=pool)=>(await client.query('SELECT operational_directory($1,NULL) result',[token])).rows[0].result;
  async function entries(token){return (await call(token,'LIST')).map(e=>{
@@ -146,24 +157,49 @@ function service({pool,env=process.env,transport,widyaReviews}={}){
   const e=await entry(token,id);if(e.status!=='PUBLISHED')throw fault('PAYROLL_NOT_PUBLISHED',409);
   if(body.email!==e.row.email||!e.row.email)throw fault('PAYROLL_CONTACT_CHANGED',409);
   if(!currentRecipient(e.row,await directory(token)))throw fault('PAYROLL_CONTACT_CHANGED',409);
-  const mailer=transport||require('./payroll-resend').createResendTransport({env});
-  const pdf=pdfBytes(e.row,e.published_at);
+  // Local-only work before the claim: a rendering/config failure must never consume a claim
+  // nor look like provider contact.
+  let mailer,pdf,template;
+  try{
+   mailer=transport||require('./payroll-resend').createResendTransport({env});
+   pdf=pdfBytes(e.row,e.published_at);
+   template=require('./payroll-email-template').payrollEmail(e.row,{publishedAt:e.published_at,recipientEmail:e.row.email});
+  }catch(err){const code=preProviderCode(err);throw fault(code,code==='PAYROLL_DELIVERY_LOCAL_FAILURE'?503:409);}
+  // A retryable 'failed' row (stale claim or pre-provider failure) needs this explicit Owner send re-armed.
+  if(e.email_status==='failed')await rearm(token,id);
   const claim=await call(token,'CLAIM',{id,email:e.row.email,confirmed:true,job_id:crypto.randomUUID()});
   if(!claim.acquired)return claim;
   const client=await pool.connect();
+  let outcome={kind:'unknown'};
   try{
    await client.query('BEGIN');
-   await call(token,'FENCE',{id,email:e.row.email},client);
-   if(!currentRecipient(e.row,await directory(token,client)))throw fault('PAYROLL_CONTACT_CHANGED',409);
-   const template=require('./payroll-email-template').payrollEmail(e.row,{publishedAt:e.published_at,recipientEmail:e.row.email});
-   const result=await mailer.sendMail({from:env.PAYROLL_EMAIL_FROM,to:e.row.email,subject:template.subject,text:template.text,html:template.html,messageId:`<${claim.id}@payroll.sipeka>`,attachments:[{filename:template.filename,content:pdf,contentType:'application/pdf'},...template.inlineAttachments]});
-   if(!result?.accepted?.includes(e.row.email)||!result.messageId)throw fault('PAYROLL_EMAIL_ACCEPTANCE_UNKNOWN',503);
-   const finished=await call(token,'FINISH',{id:claim.id,status:'sent',provider_id:result.messageId},client);
-   await client.query('COMMIT');return finished;
+   let fenced=false;
+   try{
+    await call(token,'FENCE',{id,email:e.row.email},client);
+    if(!currentRecipient(e.row,await directory(token,client)))throw fault('PAYROLL_CONTACT_CHANGED',409);
+    fenced=true;
+   }catch(err){outcome={kind:'pre',code:preProviderCode(err)};}
+   if(fenced&&outcome.kind!=='pre'){
+    let result=null;
+    // Provider access stays inside the FENCE/FOR SHARE transaction; a throw here is ambiguous.
+    try{result=await mailer.sendMail({from:env.PAYROLL_EMAIL_FROM,to:e.row.email,subject:template.subject,text:template.text,html:template.html,messageId:`<${claim.id}@payroll.sipeka>`,attachments:[{filename:template.filename,content:pdf,contentType:'application/pdf'},...template.inlineAttachments]});}
+    catch{outcome={kind:'unknown'};}
+    if(result){
+     if(!Array.isArray(result.accepted)||!result.accepted.includes(e.row.email))outcome={kind:'pre',code:'PAYROLL_PROVIDER_REJECTED'};
+     else if(!result.messageId)outcome={kind:'unknown'};
+     else outcome={kind:'sent',value:await call(token,'FINISH',{id:claim.id,status:'sent',provider_id:result.messageId},client)};
+    }
+   }
+   if(outcome.kind==='sent')await client.query('COMMIT');else await client.query('ROLLBACK');
   }catch{
    try{await client.query('ROLLBACK');}catch{}
-   try{return await call(token,'FINISH',{id:claim.id,status:'uncertain'},client);}catch{throw fault('PAYROLL_DELIVERY_UNCERTAIN',503);}
+   outcome={kind:'unknown'};
   }finally{client.release();}
+  if(outcome.kind==='sent')return outcome.value;
+  // Provably never sent: 'failed' with a retryable code instead of terminal 'uncertain'.
+  if(outcome.kind==='pre')return settleFailed(token,claim.id,outcome.code);
+  // Provider acceptance unknown: terminal, never auto-resubmitted.
+  try{return await call(token,'FINISH',{id:claim.id,status:'uncertain'});}catch{throw fault('PAYROLL_DELIVERY_UNCERTAIN',503);}
  }
  };
 }

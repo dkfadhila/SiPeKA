@@ -1075,7 +1075,22 @@ async function handleRequest(req, res, url, p) {
 }
 
 Promise.resolve(authReady).then(() => {
-  // Device/unit model: no payroll scheduler, provider initialization or delivery worker.
+  // Device/unit model: no payroll scheduler or delivery worker.
+  // Bounded sweeper only: reclaims stranded 'sending' rows to 'failed'; never resends.
+  let staleRecovery = null;
+  if (process.env.DATABASE_URL && process.env.PAYROLL_STALE_RECOVERY !== "0") {
+    try {
+      staleRecovery = require("./payroll-stale-recovery").createStaleClaimRecovery({
+        pool: require("./db-postgres").getPool(),
+        leaseMinutes: Number(process.env.PAYROLL_STALE_LEASE_MINUTES) || undefined,
+        onError: () => console.error("[sipeka] payroll stale-claim recovery failed"),
+      });
+      staleRecovery.start();
+    } catch { staleRecovery = null; console.error("[sipeka] payroll stale-claim recovery unavailable"); }
+  }
+  const shutdown = () => { try { staleRecovery?.stop(); } catch {} };
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
   server.listen(PORT, HOST, () => {
     console.log(`[sipeka] API + frontend di http://${HOST}:${PORT}`);
     console.log('[sipeka] Widya: authenticated Hermes profile bridge (OCR configured separately)');
